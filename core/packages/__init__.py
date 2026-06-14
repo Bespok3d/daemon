@@ -16,18 +16,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from jinni.loader import get_jinni
-
 from .. import python_env
 from ..intent import (
     RESTART_HOOKS,
-    SERVICE_SCRIPT_DIR,
-    _is_service_action,
-    _restarts_klipper,
-    _restarts_lmd,
-    _restarts_moonraker,
+    is_service_action,
     normalize_install,
-    service_script_name,
+    restarts_klipper,
+    restarts_lmd,
+    restarts_moonraker,
 )
 from ..klippy_uds import query_print_state as _query_print_state
 from ..results import MAX_OUTPUT_BYTES as _MAX_OUTPUT_BYTES
@@ -44,46 +40,34 @@ from ..safety import (
 from ..safety.attribution import AttributionIndex, Placement
 from ..safety.attribution import build_index as build_attribution_index
 from ..safety.health import MQTT_PORT as _MQTT_PORT
-from ..safety.health import config_link_dirs as _config_link_dirs  # noqa: F401  re-export for tests
-from ..safety.health import klipper_healthy as _klipper_healthy  # noqa: F401  re-export for tests
+from ..safety.health import klipper_healthy as _klipper_healthy
 from ..safety.health import klippy_socket_path as _klippy_socket_path
-from ..safety.health import (
-    moonraker_healthy as _moonraker_healthy,  # noqa: F401  re-export for tests
-)
 from ..safety.health import port_listening as _port_listening
 from ..safety.health import probe_moonraker as _probe_moonraker
-from ..safety.health import (
-    prune_dead_config_links as _prune_dead_config_links,  # noqa: F401  re-export
-)
-from ..safety.health import (
-    restart_moonraker as _restart_moonraker,  # noqa: F401  re-export for tests
-)
 from ..safety.health import run_restart_batch as _run_restart_batch
-from ..safety.health import wait_for_klipper_item as _wait_for_klipper_item  # noqa: F401  re-export
-from ..safety.health import (
-    wait_for_moonraker_item as _wait_for_moonraker_item,  # noqa: F401  re-export
-)
 from ..safety.logs import format_tails as _format_tails
 from ..safety.logs import read_log_tail as _read_log_tail
 from ..shell import run_one_command as _run_one_start_command
 from ..shell import start_env as _start_env
 from .errors import ConflictError, DependentsError
-from .patches import _apply_patches, _restore_original_files
+from .patches import apply_patches, restore_original_files
 from .placement import (
-    _apply_modes,
-    _create_dirs,
-    _create_symlinks,
-    _remove_plugin_symlinks,
-    _replace_with_symlink,
+    apply_modes,
+    create_dirs,
+    create_symlinks,
+    remove_plugin_symlinks,
+    replace_with_symlink,
 )
+from .services import generate_service_scripts
+from .templates import render_templates
 from .user_vars import (
-    _USER_VARS_FILE,  # noqa: F401  re-export for tests
-    _expand,
-    _load_user_vars,
-    _missing_required_vars,
-    _persist_user_vars,
-    _with_plugin_venv,
+    USER_VARS_FILE,  # noqa: F401  re-export for tests
+    expand,
+    load_user_vars,
+    missing_required_vars,
+    persist_user_vars,
     validate_user_vars,  # noqa: F401  re-export for api.routes
+    with_plugin_venv,
 )
 
 _DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
@@ -129,14 +113,14 @@ def _print_active() -> tuple[bool, str]:
 def _manifest_restarts_services(manifest: dict) -> bool:
     ops = normalize_install(manifest.get("install", {}))
     start_cmds = ops["start"]
-    if any(_restarts_klipper(cmd) or _restarts_moonraker(cmd) for cmd in start_cmds):
+    if any(restarts_klipper(cmd) or restarts_moonraker(cmd) for cmd in start_cmds):
         return True
     # A plugin that bounces the display service (lmd) is detectable two ways: the generic
     # `restart: ["lmd"]` hook lands an `lmdctl` command in `start`, and a display-owning plugin
     # like camera-hw-accel (whose start runs its own init script with no literal "lmd") declares
     # `lmdctl restart` in its teardown `stop`. Either marks it as display-touching.
     display_cmds = [*start_cmds, *ops["stops"], *manifest.get("stop", [])]
-    return any(_restarts_lmd(cmd) for cmd in display_cmds)
+    return any(restarts_lmd(cmd) for cmd in display_cmds)
 
 
 def _guard_no_print(action: str) -> None:
@@ -174,61 +158,11 @@ def _run_plugin_start_commands(cmds: list[str], vars: dict[str, str]) -> tuple[d
     run them once at the end of a batch instead of bouncing Klipper/Moonraker per plugin.
     """
     env = _start_env()
-    expanded_cmds = [_expand(cmd, vars) for cmd in cmds]
-    immediate = [cmd for cmd in expanded_cmds if not _is_service_action(cmd)]
-    deferred = [cmd for cmd in expanded_cmds if _is_service_action(cmd)]
+    expanded_cmds = [expand(cmd, vars) for cmd in cmds]
+    immediate = [cmd for cmd in expanded_cmds if not is_service_action(cmd)]
+    deferred = [cmd for cmd in expanded_cmds if is_service_action(cmd)]
     items = [_run_one_start_command(cmd, env) for cmd in immediate]
     return _phase("start", "Start commands", items), deferred
-
-
-def _render_one_template(template_def: dict, plugin_dir: Path, vars: dict[str, str]) -> dict:
-    template_rel = template_def["from"]
-    template_to = template_def["to"]
-    label = f"{template_rel} → {template_to}"
-    if template_to.startswith("/") or ".." in Path(template_to).parts:
-        return _item(f"{label}: template 'to' must be relative and within the plugin dir", ok=False)
-    template_path = plugin_dir / template_rel
-    target_path = plugin_dir / template_to
-    try:
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        body = template_path.read_text()
-        target_path.write_text(_expand(body, vars))
-    except Exception as exc:
-        return _item(f"{label}: {exc}", ok=False)
-    return _item(label, ok=True)
-
-
-def _render_templates(templates: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
-    items = [_render_one_template(template_def, plugin_dir, vars) for template_def in templates]
-    return _phase("templates", "Templates", items)
-
-
-def _expand_service(service: dict, vars: dict[str, str]) -> dict:
-    return {
-        **service,
-        "command": _expand(service["command"], vars),
-        "args": [_expand(arg, vars) for arg in service.get("args", [])],
-    }
-
-
-def _write_one_service_script(service: dict, plugin_dir: Path, vars: dict[str, str], jinni: Any) -> dict:  # noqa: E501
-    script_name = service_script_name(service)
-    if "managed-service" not in jinni.capability_flags():
-        return _item(f"{script_name}: managed services not supported on this printer", ok=False)
-    target = plugin_dir / SERVICE_SCRIPT_DIR / script_name
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(jinni.render_service_script(_expand_service(service, vars), vars))
-        target.chmod(0o755)
-    except Exception as exc:
-        return _item(f"{script_name}: {exc}", ok=False)
-    return _item(script_name, ok=True)
-
-
-def _generate_service_scripts(services: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
-    jinni = get_jinni()
-    items = [_write_one_service_script(service, plugin_dir, vars, jinni) for service in services]
-    return _phase("services", "Services", items)
 
 
 def _run_python_command(command: list[str], label: str) -> dict:
@@ -366,7 +300,7 @@ def _link_one_site_package(plugin_dir: Path, site_pkgs: Path, name: str) -> dict
     if terminal is not None:
         return terminal
     try:
-        _replace_with_symlink(_baked_site_packages(plugin_dir) / name, site_pkgs / name)
+        replace_with_symlink(_baked_site_packages(plugin_dir) / name, site_pkgs / name)
     except Exception as exc:
         return _item(f"link {name}: {exc}", ok=False)
     return _item(f"link {name}", ok=True)
@@ -500,12 +434,12 @@ def _install_apply_phases(plugin_dir: Path, manifest: dict, full_vars: dict[str,
     inst = normalize_install(raw_inst)
     notify = on_phase or _noop_phase
     phases = [
-        _emit(_apply_modes(plugin_dir, manifest.get("files", [])), notify),
-        _emit(_create_dirs(inst["dirs"], full_vars), notify),
-        _emit(_render_templates(inst["templates"], plugin_dir, full_vars), notify),
-        _emit(_generate_service_scripts(raw_inst.get("service", []), plugin_dir, full_vars), notify),  # noqa: E501
-        _emit(_create_symlinks(inst["symlinks"], plugin_dir, full_vars), notify),
-        _emit(_apply_patches(inst["patches"], plugin_dir, full_vars), notify),
+        _emit(apply_modes(plugin_dir, manifest.get("files", [])), notify),
+        _emit(create_dirs(inst["dirs"], full_vars), notify),
+        _emit(render_templates(inst["templates"], plugin_dir, full_vars), notify),
+        _emit(generate_service_scripts(raw_inst.get("service", []), plugin_dir, full_vars), notify),  # noqa: E501
+        _emit(create_symlinks(inst["symlinks"], plugin_dir, full_vars), notify),
+        _emit(apply_patches(inst["patches"], plugin_dir, full_vars), notify),
         _emit(_fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")), notify),
     ]
     phases.extend(_emit(phase, notify) for phase in _provision_deps_phases(plugin_dir, full_vars))
@@ -533,8 +467,8 @@ def install(
     extract_items = [_item(f"Extracted {file_count} files", ok=True)]
     log: list[dict] = [_emit(_phase("extract", "Unpack", extract_items), notify)]
 
-    _persist_user_vars(plugin_dir, user_vars or {})
-    full_vars = _with_plugin_venv(vars, plugin_id)
+    persist_user_vars(plugin_dir, user_vars or {})
+    full_vars = with_plugin_venv(vars, plugin_id)
     log.extend(_install_apply_phases(plugin_dir, manifest, full_vars, on_phase))
     if all(phase["ok"] for phase in log):
         _clear_failure_markers(plugin_dir)
@@ -559,12 +493,12 @@ def reconfigure(
     manifest = json.loads(manifest_path.read_text())
     _guard_no_print_during_restart(manifest)
 
-    full_vars = _with_plugin_venv(vars, plugin_id)
+    full_vars = with_plugin_venv(vars, plugin_id)
     inst = normalize_install(manifest.get("install", {}))
-    _persist_user_vars(plugin_dir, user_vars)
+    persist_user_vars(plugin_dir, user_vars)
     start_phase, deferred = _run_plugin_start_commands(inst.get("start", []), full_vars)
     phases = [
-        _render_templates(inst.get("templates", []), plugin_dir, full_vars),
+        render_templates(inst.get("templates", []), plugin_dir, full_vars),
         _fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")),
         start_phase,
     ]
@@ -575,7 +509,7 @@ def reconfigure(
 def _run_stop_commands(cmds: list[str], vars: dict[str, str]) -> None:
     env = {**os.environ, "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
     for cmd in cmds:
-        subprocess.run(_expand(cmd, vars), shell=True, capture_output=True, check=False, env=env)
+        subprocess.run(expand(cmd, vars), shell=True, capture_output=True, check=False, env=env)
 
 
 _DEACTIVATED_MARKER = "deactivated.json"
@@ -715,11 +649,11 @@ def _neutralize_plugin(plugin_dir: Path, vars: dict[str, str]) -> None:
     """Stop a plugin affecting the system: drop its symlinks, restore patched files, remove its
     linked libs and venv. Files in the plugin dir stay, so recover/reactivate can rebuild it."""
     manifest = json.loads((plugin_dir / "manifest.json").read_text())
-    full_vars = {**vars, **_load_user_vars(plugin_dir)}
+    full_vars = {**vars, **load_user_vars(plugin_dir)}
     ops = normalize_install(manifest.get("install", {}))
     _run_stop_commands(ops["stops"] + manifest.get("stop", []), full_vars)
-    _remove_plugin_symlinks(ops["symlinks"], plugin_dir, full_vars)
-    _restore_original_files(ops["patches"], plugin_dir / "patches_orig", full_vars)
+    remove_plugin_symlinks(ops["symlinks"], plugin_dir, full_vars)
+    restore_original_files(ops["patches"], plugin_dir / "patches_orig", full_vars)
     _remove_plugin_site_links(plugin_dir, full_vars)
     _remove_plugin_venv(plugin_dir.name, full_vars)
 
@@ -735,10 +669,10 @@ def _apply_plugin(plugin_dir: Path, raw_inst: dict, inst: dict, full_vars: dict[
     if patches_orig.exists():
         shutil.rmtree(patches_orig)
     phase_log: list[dict] = [
-        _render_templates(inst["templates"], plugin_dir, full_vars),
-        _generate_service_scripts(raw_inst.get("service", []), plugin_dir, full_vars),
-        _create_symlinks(inst["symlinks"], plugin_dir, full_vars),
-        _apply_patches(inst["patches"], plugin_dir, full_vars),
+        render_templates(inst["templates"], plugin_dir, full_vars),
+        generate_service_scripts(raw_inst.get("service", []), plugin_dir, full_vars),
+        create_symlinks(inst["symlinks"], plugin_dir, full_vars),
+        apply_patches(inst["patches"], plugin_dir, full_vars),
     ]
     phase_log.extend(_provision_deps_phases(plugin_dir, full_vars))
     start_phase, deferred = _run_plugin_start_commands(inst["start"], full_vars)
@@ -762,8 +696,8 @@ def _recover_one(
         reason = f"dependency not satisfied: {', '.join(missing_deps)}"
         return {"plugin_id": plugin_id, "ok": False, "skipped": True, "reason": reason, "log": []}, []  # noqa: E501
 
-    full_vars = _with_plugin_venv({**vars, **_load_user_vars(plugin_dir)}, plugin_id)
-    missing_vars = _missing_required_vars(manifest, full_vars)
+    full_vars = with_plugin_venv({**vars, **load_user_vars(plugin_dir)}, plugin_id)
+    missing_vars = missing_required_vars(manifest, full_vars)
     if missing_vars:
         reason = f"missing required variable(s): {', '.join(missing_vars)}; reinstall the plugin"
         return {"plugin_id": plugin_id, "ok": False, "skipped": False, "reason": reason, "log": []}, []  # noqa: E501
@@ -792,9 +726,9 @@ def _recover_one(
 
 def _plugin_placement(plugin_dir: Path, vars: dict[str, str]) -> Placement:
     """What one installed plugin put on the system, as data for the attribution brain."""
-    full_vars = {**vars, **_load_user_vars(plugin_dir)}
+    full_vars = {**vars, **load_user_vars(plugin_dir)}
     ops = normalize_install(_manifest_at(plugin_dir).get("install", {}))
-    destinations = [_expand(link["to"], full_vars) for link in ops["symlinks"]]
+    destinations = [expand(link["to"], full_vars) for link in ops["symlinks"]]
     modules = [_import_name(name) for name in _baked_top_level_names(plugin_dir)]
     return Placement(plugin_dir.name, destinations, modules)
 
@@ -881,7 +815,7 @@ def _auto_recover(deferred_cmds: list[str], vars: dict[str, str],
 def _touches_core_service(deferred_cmds: list[str]) -> bool:
     """Only a Klipper/Moonraker restart needs the safety net; a plugin-service or nginx bounce does
     not put the printer's base functions at risk, so we skip the probe + recovery for those."""
-    return any(_restarts_klipper(cmd) or _restarts_moonraker(cmd) for cmd in deferred_cmds)
+    return any(restarts_klipper(cmd) or restarts_moonraker(cmd) for cmd in deferred_cmds)
 
 
 def _restart_services(deferred_cmds: list[str], vars: dict[str, str], ctx: OperationContext) -> dict:  # noqa: E501
@@ -979,12 +913,12 @@ def _apply_install_deferred(plugin_dir: Path, manifest: dict, vars: dict[str, st
     raw_inst = manifest.get("install", {})
     inst = normalize_install(raw_inst)
     log = [
-        _apply_modes(plugin_dir, manifest.get("files", [])),
-        _create_dirs(inst["dirs"], vars),
-        _render_templates(inst["templates"], plugin_dir, vars),
-        _generate_service_scripts(raw_inst.get("service", []), plugin_dir, vars),
-        _create_symlinks(inst["symlinks"], plugin_dir, vars),
-        _apply_patches(inst["patches"], plugin_dir, vars),
+        apply_modes(plugin_dir, manifest.get("files", [])),
+        create_dirs(inst["dirs"], vars),
+        render_templates(inst["templates"], plugin_dir, vars),
+        generate_service_scripts(raw_inst.get("service", []), plugin_dir, vars),
+        create_symlinks(inst["symlinks"], plugin_dir, vars),
+        apply_patches(inst["patches"], plugin_dir, vars),
         _fix_ownership(plugin_dir, vars.get("RUNTIME_USER", "")),
     ]
     log.extend(_provision_deps_phases(plugin_dir, vars))
@@ -996,8 +930,8 @@ def _apply_install_deferred(plugin_dir: Path, manifest: dict, vars: dict[str, st
 def _update_one(base_vars: dict[str, str], package_path: Path, user_vars: dict[str, str]) -> tuple[dict, list[str]]:  # noqa: E501
     manifest, plugin_dir, file_count = _unpack_package(package_path)
     plugin_id = manifest["name"]
-    full_vars = _with_plugin_venv({**base_vars, **user_vars}, plugin_id)
-    _persist_user_vars(plugin_dir, user_vars)
+    full_vars = with_plugin_venv({**base_vars, **user_vars}, plugin_id)
+    persist_user_vars(plugin_dir, user_vars)
     extract = _phase("extract", "Unpack", [_item(f"Extracted {file_count} files", ok=True)])
     phases, deferred = _apply_install_deferred(plugin_dir, manifest, full_vars)
     log = [extract, *phases]
@@ -1043,10 +977,10 @@ def update_batch(
 def _uninstall_from_manifest(manifest_path: Path, plugin_dir: Path, vars: dict[str, str]) -> None:
     manifest = json.loads(manifest_path.read_text())
     install_spec = normalize_install(manifest.get("install", {}))
-    full_vars = {**vars, **_load_user_vars(plugin_dir)}
+    full_vars = {**vars, **load_user_vars(plugin_dir)}
     _run_stop_commands(install_spec["stops"] + manifest.get("stop", []), full_vars)
-    _remove_plugin_symlinks(install_spec["symlinks"], plugin_dir, full_vars)
-    _restore_original_files(install_spec["patches"], plugin_dir / "patches_orig", full_vars)
+    remove_plugin_symlinks(install_spec["symlinks"], plugin_dir, full_vars)
+    restore_original_files(install_spec["patches"], plugin_dir / "patches_orig", full_vars)
 
 
 def _remove_plugin_venv(plugin_id: str, vars: dict[str, str]) -> None:
@@ -1090,7 +1024,7 @@ def _removal_restart_commands(plugin_ids: list[str], vars: dict[str, str]) -> li
         for hook in manifest.get("install", {}).get("restart", []):
             command = RESTART_HOOKS.get(hook)
             if command:
-                commands.append(_expand(command, vars))
+                commands.append(expand(command, vars))
     return list(dict.fromkeys(commands))
 
 

@@ -62,6 +62,7 @@ fi
 
 echo "Daemon gate (Python $("$VENV/bin/python" --version 2>&1 | awk '{print $2}'))"
 run_check "em-dash / en-dash ban" "$VENV/bin/python" scripts/em_dash_guard.py
+run_check "cross-file private imports" "$VENV/bin/python" scripts/private_import_guard.py
 run_check "pytest" "$VENV/bin/pytest" --tb=short -q
 run_check "ruff"   "$VENV/bin/ruff" check .
 run_check "mypy"   "$VENV/bin/mypy" .

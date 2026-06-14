@@ -2,7 +2,7 @@
 diagnostics, and a backup of every original so teardown can restore it.
 
 Each target is patched on a working copy via the `patch` binary; the pristine original is copied
-into the plugin's `patches_orig/` the first time so `_restore_original_files` can put it back.
+into the plugin's `patches_orig/` the first time so `restore_original_files` can put it back.
 """
 
 import re
@@ -13,7 +13,7 @@ from pathlib import Path
 from ..results import MAX_OUTPUT_BYTES as _MAX_OUTPUT_BYTES
 from ..results import item as _item
 from ..results import phase as _phase
-from .user_vars import _expand
+from .user_vars import expand
 
 
 def _normalize_line_endings(path: Path) -> bool:
@@ -76,12 +76,12 @@ def _apply_one_patch(target: Path, patch_file: Path, orig_dir: Path) -> tuple[bo
     return result.returncode == 0, raw
 
 
-def _apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
+def apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
     items: list[dict] = []
     orig_dir = plugin_dir / "patches_orig"
     orig_dir.mkdir(parents=True, exist_ok=True)
     for patch_def in patches:
-        target = Path(_expand(patch_def["file"], vars))
+        target = Path(expand(patch_def["file"], vars))
         patch_file = plugin_dir / patch_def["patch"]
         label = f"patch {target.name}"
         if not target.exists():
@@ -93,9 +93,9 @@ def _apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) 
     return _phase("patches", "Patches", items)
 
 
-def _restore_original_files(patches: list[dict], orig_dir: Path, vars: dict[str, str]) -> None:
+def restore_original_files(patches: list[dict], orig_dir: Path, vars: dict[str, str]) -> None:
     for patch_def in patches:
-        target = Path(_expand(patch_def["file"], vars))
+        target = Path(expand(patch_def["file"], vars))
         orig_path = orig_dir / target.name
         if orig_path.exists():
             shutil.copy2(orig_path, target)

@@ -178,6 +178,19 @@ concern, so a reader has to hunt through unrelated code to find the part they ne
   supporting file (a `helpers` or `lib` or `<concept>` module) and keep the named call site. Keep the
   upper layers a contributor meets first low-entropy; the rarely-visited machinery lives deeper.
 
+- **Public and private must make sense; no file is all-private.** The `_` prefix means "private to this
+  file": used only inside the module that defines it. If another file imports a name, that name is public,
+  full stop; it carries no `_`. There is no such thing as a cross-file private. The corollary: a module
+  cannot consist only of `_`-private names, because then nothing answers "how do I call this?" When you
+  split a file, the call edges that were inside it become inter-file; in the SAME change, promote every
+  entry point another file now calls to a public name and keep only the genuine single-file internals
+  private. Never let this drift into a later cleanup pass. The split is the test of the boundary: a name
+  reaching across files with a `_` means it is misnamed. (Tests are white-box and may reach into a
+  module's genuine internals directly from that module; that is the one place a `_`-name is read across
+  files, and it needs no re-export shim through a package `__init__`. Import the internal from its home
+  module.) This is gated: `scripts/private_import_guard.py` fails the build on any cross-file import of a
+  `_`-name in `core/`, `api/`, or `jinni/`, so it is caught mechanically, not by enumeration.
+
 ---
 
 ## Functions and flow

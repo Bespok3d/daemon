@@ -155,25 +155,25 @@ def normalize_install(install: dict) -> dict:
 _SERVICE_ACTION_RE = re.compile(r"\b(?:restart|start|reload)\b")
 
 
-def _restarts_moonraker(expanded_cmd: str) -> bool:
+def restarts_moonraker(expanded_cmd: str) -> bool:
     if "moonraker" not in expanded_cmd:
         return False
     return bool(_SERVICE_ACTION_RE.search(expanded_cmd))
 
 
-def _restarts_klipper(expanded_cmd: str) -> bool:
+def restarts_klipper(expanded_cmd: str) -> bool:
     if "klipper" not in expanded_cmd:
         return False
     return bool(_SERVICE_ACTION_RE.search(expanded_cmd))
 
 
-def _restarts_lmd(expanded_cmd: str) -> bool:
+def restarts_lmd(expanded_cmd: str) -> bool:
     if "lmdctl" not in expanded_cmd:
         return False
     return bool(_SERVICE_ACTION_RE.search(expanded_cmd))
 
 
-def _is_service_action(expanded_cmd: str) -> bool:
+def is_service_action(expanded_cmd: str) -> bool:
     """True for init-script / nginx service commands, which recover defers to one batch.
 
     Config-generation commands (sed, chown, cp) carry no service-action verb, so they keep

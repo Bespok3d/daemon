@@ -11,12 +11,12 @@ from pathlib import Path
 
 from ..results import item as _item
 from ..results import phase as _phase
-from .user_vars import _expand
+from .user_vars import expand
 
 _SYMLINK_ORIG_DIR = "symlink_orig"
 
 
-def _apply_modes(plugin_dir: Path, files: list[dict]) -> dict:
+def apply_modes(plugin_dir: Path, files: list[dict]) -> dict:
     items: list[dict] = []
     for entry in files:
         path = plugin_dir / entry["path"]
@@ -29,10 +29,10 @@ def _apply_modes(plugin_dir: Path, files: list[dict]) -> dict:
     return _phase("modes", "File modes", items)
 
 
-def _create_dirs(dirs: list[str], vars: dict[str, str]) -> dict:
+def create_dirs(dirs: list[str], vars: dict[str, str]) -> dict:
     items: list[dict] = []
     for directory in dirs:
-        expanded = _expand(directory, vars)
+        expanded = expand(directory, vars)
         try:
             Path(expanded).mkdir(parents=True, exist_ok=True)
             items.append(_item(expanded, ok=True))
@@ -73,7 +73,7 @@ def _displace_existing_destination(destination: Path, backup: Path) -> None:
     shutil.move(str(destination), str(backup))
 
 
-def _replace_with_symlink(source: Path, destination: Path, backup: Path | None = None) -> None:
+def replace_with_symlink(source: Path, destination: Path, backup: Path | None = None) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     if backup is None:
         _clear_existing_destination(destination)
@@ -84,23 +84,23 @@ def _replace_with_symlink(source: Path, destination: Path, backup: Path | None =
 
 def _create_one_symlink(link: dict, plugin_dir: Path, vars: dict[str, str]) -> dict:
     source = (plugin_dir / link["from"]).resolve()
-    destination = Path(_expand(link["to"], vars))
+    destination = Path(expand(link["to"], vars))
     backup = _symlink_backup_path(plugin_dir, destination)
     label = f"{link['from']} → {destination}"
     try:
-        _replace_with_symlink(source, destination, backup)
+        replace_with_symlink(source, destination, backup)
     except Exception as exc:
         return _item(f"{label}: {exc}", ok=False)
     return _item(label, ok=True)
 
 
-def _create_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
+def create_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
     items = [_create_one_symlink(link, plugin_dir, vars) for link in symlinks]
     return _phase("symlinks", "Symlinks", items)
 
 
 def _restore_one_symlink(link: dict, plugin_dir: Path, vars: dict[str, str]) -> None:
-    destination = Path(_expand(link["to"], vars))
+    destination = Path(expand(link["to"], vars))
     backup = _symlink_backup_path(plugin_dir, destination)
     if destination.is_symlink():
         destination.unlink()
@@ -109,6 +109,6 @@ def _restore_one_symlink(link: dict, plugin_dir: Path, vars: dict[str, str]) -> 
         shutil.move(str(backup), str(destination))
 
 
-def _remove_plugin_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> None:
+def remove_plugin_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> None:
     for link in symlinks:
         _restore_one_symlink(link, plugin_dir, vars)

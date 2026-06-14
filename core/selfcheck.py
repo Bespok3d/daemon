@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import packages
-from .packages import _expand, _load_user_vars
+from .packages import expand, load_user_vars
 
 _DEACTIVATED_MARKER = "deactivated.json"
 
@@ -24,7 +24,7 @@ def _expected_link_endpoints(
     plugin_dir: Path, link: dict, vars: dict[str, str]
 ) -> tuple[Path, Path]:
     expected_target = (plugin_dir / link["from"]).resolve()
-    link_path = Path(_expand(link["to"], vars))
+    link_path = Path(expand(link["to"], vars))
     return expected_target, link_path
 
 
@@ -56,7 +56,7 @@ def _plugin_drift(plugin_dir: Path, vars: dict[str, str]) -> dict[str, Any] | No
     if not manifest_path.exists():
         return None
     manifest = json.loads(manifest_path.read_text())
-    full_vars = {**vars, **_load_user_vars(plugin_dir)}
+    full_vars = {**vars, **load_user_vars(plugin_dir)}
     declared_links = manifest.get("install", {}).get("symlinks", [])
     classified = [_classify_symlink(plugin_dir, link, full_vars) for link in declared_links]
     symlink_issues = [issue for issue in classified if issue is not None]

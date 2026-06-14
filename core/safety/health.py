@@ -17,7 +17,7 @@ from pathlib import Path
 from jinni.loader import get_jinni
 
 from .. import klippy_uds, moonraker_uds
-from ..intent import RESTART_HOOKS, _restarts_klipper, _restarts_moonraker
+from ..intent import RESTART_HOOKS, restarts_klipper, restarts_moonraker
 from ..results import MAX_OUTPUT_BYTES, item, phase
 from ..shell import run_one_command, start_env
 from .logs import service_log_tails
@@ -215,9 +215,9 @@ def run_restart_batch(deferred_cmds: list[str], vars: dict[str, str]) -> dict:
     """Run every deferred init-script restart once (deduped), then wait for Klipper + Moonraker."""
     env = start_env()
     items = [run_one_command(cmd, env) for cmd in deferred_cmds]
-    if any(_restarts_moonraker(cmd) for cmd in deferred_cmds):
+    if any(restarts_moonraker(cmd) for cmd in deferred_cmds):
         items.append(wait_for_moonraker_item())
-    if any(_restarts_klipper(cmd) for cmd in deferred_cmds):
+    if any(restarts_klipper(cmd) for cmd in deferred_cmds):
         items.append(wait_for_klipper_item())
     if not all(entry["ok"] for entry in items):
         items.append(item("captured service log for diagnosis", ok=False, output=service_log_tails(vars)))  # noqa: E501

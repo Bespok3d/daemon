@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from core import packages
+from core.packages import services
 from core.safety import health
 
 MP = pytest.MonkeyPatch
@@ -371,7 +372,7 @@ def test_managed_service_generates_and_wires_script(tmp_path: Path, monkeypatch:
     import subprocess as sp
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     fake_adapter = FakeServiceAdapter()
-    monkeypatch.setattr(packages, "get_jinni", lambda: fake_adapter)
+    monkeypatch.setattr(services, "get_jinni", lambda: fake_adapter)
     ran: list[str] = []
 
     class FakeResult:
@@ -407,7 +408,7 @@ def test_managed_service_refused_without_capability(tmp_path: Path, monkeypatch:
             return set()
 
     no_service = NoServiceAdapter()
-    monkeypatch.setattr(packages, "get_jinni", lambda: no_service)
+    monkeypatch.setattr(services, "get_jinni", lambda: no_service)
     manifest = minimal_manifest(
         extra={"install": {"service": [{"name": "worker", "command": "/bin/worker"}]}}
     )
@@ -416,9 +417,9 @@ def test_managed_service_refused_without_capability(tmp_path: Path, monkeypatch:
 
     _plugin_id, log = packages.install(zip_path, {"BESPOK3D": str(tmp_path / "b3d")})
 
-    services = [phase for phase in log if phase["id"] == "services"][0]
-    assert services["ok"] is False
-    assert "not supported" in services["items"][0]["label"]
+    service_phase = [phase for phase in log if phase["id"] == "services"][0]
+    assert service_phase["ok"] is False
+    assert "not supported" in service_phase["items"][0]["label"]
 
 
 def test_patch_failure_shows_actual_context(tmp_path: Path, monkeypatch: MP) -> None:
@@ -935,40 +936,40 @@ def test_install_persists_user_vars(tmp_path: Path, monkeypatch: MP) -> None:
 
 
 def test_restarts_moonraker_detection() -> None:
-    assert packages._restarts_moonraker("/etc/init.d/S61moonraker restart")
-    assert packages._restarts_moonraker("/etc/init.d/S61moonraker start")
-    assert packages._restarts_moonraker("systemctl reload moonraker")
-    assert not packages._restarts_moonraker("/etc/init.d/S60klipper restart")
-    assert not packages._restarts_moonraker("echo moonraker is great")
+    assert packages.restarts_moonraker("/etc/init.d/S61moonraker restart")
+    assert packages.restarts_moonraker("/etc/init.d/S61moonraker start")
+    assert packages.restarts_moonraker("systemctl reload moonraker")
+    assert not packages.restarts_moonraker("/etc/init.d/S60klipper restart")
+    assert not packages.restarts_moonraker("echo moonraker is great")
 
 
 def test_restarts_lmd_detection() -> None:
-    assert packages._restarts_lmd("/userdata/bespok3d/etc/init.d/lmdctl restart")
-    assert packages._restarts_lmd("/userdata/bespok3d/etc/init.d/lmdctl start")
-    assert not packages._restarts_lmd("/etc/init.d/S60klipper restart")
-    assert not packages._restarts_lmd("echo lmdctl is great")
+    assert packages.restarts_lmd("/userdata/bespok3d/etc/init.d/lmdctl restart")
+    assert packages.restarts_lmd("/userdata/bespok3d/etc/init.d/lmdctl start")
+    assert not packages.restarts_lmd("/etc/init.d/S60klipper restart")
+    assert not packages.restarts_lmd("echo lmdctl is great")
 
 
 def test_lmd_restart_is_deferred_but_not_a_core_service() -> None:
     cmd = "/userdata/bespok3d/etc/init.d/lmdctl restart"
-    assert packages._is_service_action(cmd)
-    assert not packages._restarts_klipper(cmd)
-    assert not packages._restarts_moonraker(cmd)
+    assert packages.is_service_action(cmd)
+    assert not packages.restarts_klipper(cmd)
+    assert not packages.restarts_moonraker(cmd)
 
 
 def test_service_action_detection() -> None:
-    assert packages._restarts_klipper("/etc/init.d/S60klipper restart")
-    assert packages._restarts_moonraker("/etc/init.d/S61moonraker restart")
+    assert packages.restarts_klipper("/etc/init.d/S60klipper restart")
+    assert packages.restarts_moonraker("/etc/init.d/S61moonraker restart")
     # every init-script restart / start and nginx reload is deferred to the end
-    assert packages._is_service_action("/etc/init.d/S61moonraker restart")
-    assert packages._is_service_action("/etc/init.d/S60klipper restart")
-    assert packages._is_service_action("/b/etc/init.d/autostart/s65camera-hw restart")
-    assert packages._is_service_action("sh /b/files/etc/init.d/s90mainsail start 8080")
-    assert packages._is_service_action("/usr/sbin/nginx -s reload")
+    assert packages.is_service_action("/etc/init.d/S61moonraker restart")
+    assert packages.is_service_action("/etc/init.d/S60klipper restart")
+    assert packages.is_service_action("/b/etc/init.d/autostart/s65camera-hw restart")
+    assert packages.is_service_action("sh /b/files/etc/init.d/s90mainsail start 8080")
+    assert packages.is_service_action("/usr/sbin/nginx -s reload")
     # config-generation commands run inline, never deferred
-    assert not packages._is_service_action("sed 's/X/Y/g' > /b/moonraker/spoolman.cfg")
-    assert not packages._is_service_action("chown lava:lava /b/moonraker/spoolman.cfg")
-    assert not packages._is_service_action("sed -i '/^\\[rfid\\]/d' /b/printer.cfg")
+    assert not packages.is_service_action("sed 's/X/Y/g' > /b/moonraker/spoolman.cfg")
+    assert not packages.is_service_action("chown lava:lava /b/moonraker/spoolman.cfg")
+    assert not packages.is_service_action("sed -i '/^\\[rfid\\]/d' /b/printer.cfg")
 
 
 def test_recover_defers_plugin_service_restarts(tmp_path: Path, monkeypatch: MP) -> None:
@@ -1139,13 +1140,13 @@ def test_start_phase_skips_moonraker_wait_when_not_restarted(
     tmp_path: Path, monkeypatch: MP,
 ) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
-    health_calls: list[bool] = []
+    probe_calls: list[bool] = []
 
-    def fake_health() -> tuple[bool, str]:
-        health_calls.append(True)
-        return True, ""
+    def fake_probe() -> object:
+        probe_calls.append(True)
+        return None
 
-    monkeypatch.setattr(packages, "_moonraker_healthy", fake_health)
+    monkeypatch.setattr(packages, "_probe_moonraker", fake_probe)
     manifest = minimal_manifest(
         extra={
             "install": {"dirs": [], "symlinks": [], "patches": [], "start": ["echo hello"]}
@@ -1156,7 +1157,7 @@ def test_start_phase_skips_moonraker_wait_when_not_restarted(
 
     packages.install(zip_path, {})
 
-    assert not health_calls
+    assert not probe_calls
 
 
 def test_validate_user_vars_accepts_valid_values() -> None:
@@ -1573,7 +1574,7 @@ def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: 
 
     packages.update_batch({}, [package], {"spoolman": {"SPOOLMAN_SERVER": "printer.local"}})
 
-    saved = json.loads((plugin_root / "spoolman" / packages._USER_VARS_FILE).read_text())
+    saved = json.loads((plugin_root / "spoolman" / packages.USER_VARS_FILE).read_text())
     assert saved == {"SPOOLMAN_SERVER": "printer.local"}
 
 

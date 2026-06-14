@@ -28,7 +28,9 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
    named functions, a named lookup instead of a nested ternary. When you must nest, comment why.
 3. **Separation of concerns.** One responsibility per file and function. A concern gets a directory named
    for it. Worry at ~80 to 100 lines and treat ~150 as the ceiling; a file past that is doing too much.
-   Split by concern into sibling files, not into many functions in one file.
+   Split by concern into sibling files, not into many functions in one file. Each file has a sensible
+   public/private split: a name another file imports is public (no `_`); only single-file internals carry
+   `_`. No file is made of only `_`-private names.
 4. **Generic daemon, device-specific jinni.** Generic `core/` code must never name `lmd`, a Klipper init
    path, or any concrete device fact. Those belong to the adapter's jinni, which the daemon delegates to.
 5. **Rule of three.** The third copy of a logic block, shape, or constant gets extracted. Duplication is a

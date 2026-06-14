@@ -8,8 +8,8 @@ from core.packages import patches
 
 
 def test_symbols_reexported_from_package_namespace() -> None:
-    assert packages._apply_patches is patches._apply_patches
-    assert packages._restore_original_files is patches._restore_original_files
+    assert packages.apply_patches is patches.apply_patches
+    assert packages.restore_original_files is patches.restore_original_files
 
 
 def test_normalize_line_endings_strips_crlf(tmp_path: Path) -> None:
@@ -61,5 +61,5 @@ def test_restore_original_files_copies_backup_over_target(tmp_path: Path) -> Non
     target = tmp_path / "klippy" / "toolhead.py"
     target.parent.mkdir()
     target.write_text("patched\n")
-    patches._restore_original_files([{"file": str(target)}], orig_dir, {})
+    patches.restore_original_files([{"file": str(target)}], orig_dir, {})
     assert target.read_text() == "stock\n"
