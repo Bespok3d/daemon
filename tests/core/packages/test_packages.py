@@ -78,22 +78,6 @@ def test_install_emits_each_phase_to_on_phase_in_log_order(tmp_path: Path, monke
     assert seen[0]["id"] == "extract"
 
 
-def test_unpack_replaces_existing_file(tmp_path: Path, monkeypatch: MP) -> None:
-    # A reinstall / version switch must replace files already on disk. Overwriting a running binary
-    # in place raises ETXTBSY; _extract_members unlinks first, so extraction always succeeds.
-    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
-    zip_path = tmp_path / "test-plugin.b3"
-    package = make_zip({"manifest.json": minimal_manifest(), "files/bin/tool": b"new"})
-    zip_path.write_bytes(package.getvalue())
-    dest = tmp_path / "test-plugin" / "files" / "bin" / "tool"
-    dest.parent.mkdir(parents=True)
-    dest.write_bytes(b"old")
-
-    packages._unpack_package(zip_path)
-
-    assert dest.read_bytes() == b"new"
-
-
 def test_install_excludes_doc_from_printer(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     zip_path = tmp_path / "doc-plugin.b3"

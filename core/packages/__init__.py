@@ -10,7 +10,6 @@ import json
 import os
 import shutil
 import subprocess
-import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -44,6 +43,7 @@ from ..safety.logs import format_tails as _format_tails
 from ..safety.logs import read_log_tail as _read_log_tail
 from ..shell import run_one_command as _run_one_start_command
 from ..shell import start_env as _start_env
+from .archive import fix_ownership, read_manifest, unpack_package
 from .errors import ConflictError, DependentsError
 from .patches import apply_patches, restore_original_files
 from .placement import (
@@ -61,8 +61,6 @@ from .print_guard import (
 from .python_deps import (
     baked_top_level_names,
     provision_deps_phases,
-    reject_conflicting_dep_files,
-    reject_unbaked_deps,
     remove_plugin_site_links,
     remove_plugin_venv,
 )
@@ -110,58 +108,6 @@ def ensure_lmd_control_script(jinni: Any, paths: dict[str, str]) -> None:
     target.chmod(0o755)
 
 
-def _fix_ownership(plugin_dir: Path, runtime_user: str) -> dict:
-    items: list[dict] = []
-    chmod_result = subprocess.run(
-        ["chmod", "-R", "755", str(plugin_dir)], capture_output=True, check=False,
-    )
-    items.append(_item(f"chmod -R 755 {plugin_dir.name}", ok=chmod_result.returncode == 0))
-    if runtime_user:
-        chown_result = subprocess.run(
-            ["chown", "-R", f"{runtime_user}:{runtime_user}", str(plugin_dir)],
-            capture_output=True,
-            check=False,
-        )
-        items.append(_item(
-            f"chown -R {runtime_user} {plugin_dir.name}",
-            ok=chown_result.returncode == 0,
-        ))
-    return _phase("ownership", "Permissions", items)
-
-
-def _is_doc_member(name: str) -> bool:
-    return name == "doc" or name.startswith("doc/")
-
-
-def _extract_members(zf: zipfile.ZipFile, plugin_dir: Path, members: list[str]) -> None:
-    # Unlink an existing file before extracting over it. Overwriting a running binary in place fails
-    # with ETXTBSY ("Text file busy"); unlinking keeps the running process's inode and writes a new
-    # file, so a reinstall or version switch can replace a binary that is currently executing.
-    for name in members:
-        dest = plugin_dir / name
-        if dest.is_file() or dest.is_symlink():
-            dest.unlink()
-        zf.extract(name, plugin_dir)
-
-
-def _unpack_package(package_path: Path) -> tuple[dict, Path, int]:
-    with zipfile.ZipFile(package_path) as zf:
-        if "manifest.json" not in zf.namelist():
-            raise ValueError("missing manifest.json")
-        manifest = json.loads(zf.read("manifest.json"))
-        guard_no_print_during_restart(manifest)
-        plugin_dir = PLUGIN_ROOT / manifest["name"]
-        plugin_dir.mkdir(parents=True, exist_ok=True)
-        # doc/ is catalog documentation, never deployed: printer space is at a premium.
-        members = [name for name in zf.namelist() if not _is_doc_member(name)]
-        _extract_members(zf, plugin_dir, members)
-        file_count = len(members)
-    shutil.rmtree(plugin_dir / "doc", ignore_errors=True)
-    reject_conflicting_dep_files(plugin_dir)
-    reject_unbaked_deps(plugin_dir)
-    return manifest, plugin_dir, file_count
-
-
 PhaseListener = Callable[[dict], None]
 
 
@@ -190,7 +136,7 @@ def _install_apply_phases(plugin_dir: Path, manifest: dict, full_vars: dict[str,
         _emit(generate_service_scripts(raw_inst.get("service", []), plugin_dir, full_vars), notify),  # noqa: E501
         _emit(create_symlinks(inst["symlinks"], plugin_dir, full_vars), notify),
         _emit(apply_patches(inst["patches"], plugin_dir, full_vars), notify),
-        _emit(_fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")), notify),
+        _emit(fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")), notify),
     ]
     phases.extend(_emit(phase, notify) for phase in provision_deps_phases(PLUGIN_ROOT, plugin_dir, full_vars))  # noqa: E501
     start_phase, deferred = _run_plugin_start_commands(inst["start"], full_vars)
@@ -205,7 +151,7 @@ def install(
     user_vars: dict[str, str] | None = None,
     on_phase: PhaseListener | None = None,
 ) -> tuple[str, list[dict]]:
-    manifest, plugin_dir, file_count = _unpack_package(package_path)
+    manifest, plugin_dir, file_count = unpack_package(PLUGIN_ROOT, package_path)
     plugin_id: str = manifest["name"]
 
     conflicts = installed_conflicts(plugin_id, manifest)
@@ -249,7 +195,7 @@ def reconfigure(
     start_phase, deferred = _run_plugin_start_commands(inst.get("start", []), full_vars)
     phases = [
         render_templates(inst.get("templates", []), plugin_dir, full_vars),
-        _fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")),
+        fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")),
         start_phase,
     ]
     phases.extend(_restart_phases(deferred, full_vars, _op_context(OperationKind.RECONFIGURE, manifest)))  # noqa: E501
@@ -640,11 +586,6 @@ def recover(vars: dict[str, str]) -> list[dict]:
     return results
 
 
-def _read_manifest(package_path: Path) -> dict:
-    with zipfile.ZipFile(package_path) as archive:
-        return cast(dict, json.loads(archive.read("manifest.json")))
-
-
 def _apply_install_deferred(plugin_dir: Path, manifest: dict, vars: dict[str, str]) -> tuple[list[dict], list[str]]:  # noqa: E501
     """Run a fresh install's file phases, deferring service restarts to the batch end."""
     raw_inst = manifest.get("install", {})
@@ -656,7 +597,7 @@ def _apply_install_deferred(plugin_dir: Path, manifest: dict, vars: dict[str, st
         generate_service_scripts(raw_inst.get("service", []), plugin_dir, vars),
         create_symlinks(inst["symlinks"], plugin_dir, vars),
         apply_patches(inst["patches"], plugin_dir, vars),
-        _fix_ownership(plugin_dir, vars.get("RUNTIME_USER", "")),
+        fix_ownership(plugin_dir, vars.get("RUNTIME_USER", "")),
     ]
     log.extend(provision_deps_phases(PLUGIN_ROOT, plugin_dir, vars))
     start_phase, deferred = _run_plugin_start_commands(inst["start"], vars)
@@ -665,7 +606,7 @@ def _apply_install_deferred(plugin_dir: Path, manifest: dict, vars: dict[str, st
 
 
 def _update_one(base_vars: dict[str, str], package_path: Path, user_vars: dict[str, str]) -> tuple[dict, list[str]]:  # noqa: E501
-    manifest, plugin_dir, file_count = _unpack_package(package_path)
+    manifest, plugin_dir, file_count = unpack_package(PLUGIN_ROOT, package_path)
     plugin_id = manifest["name"]
     full_vars = with_plugin_venv({**base_vars, **user_vars}, plugin_id)
     persist_user_vars(plugin_dir, user_vars)
@@ -694,7 +635,7 @@ def update_batch(
     """
     if not package_paths:
         return []
-    specs = [(package_path, _read_manifest(package_path)) for package_path in package_paths]
+    specs = [(package_path, read_manifest(package_path)) for package_path in package_paths]
     guard_batch_no_print([manifest for _, manifest in specs])
     results: list[dict] = []
     deferred_restarts: list[str] = []
