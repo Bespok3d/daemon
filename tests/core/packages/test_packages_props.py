@@ -5,12 +5,11 @@ manifest.json), so each example writes a small generated service graph into a fr
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from core import packages
+from core.packages import dependencies
 
 
 @st.composite
@@ -47,7 +46,7 @@ def test_topo_sort_places_every_provider_before_its_requirers(graph: list[list[i
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         dirs = [write_plugin(root, index, requires) for index, requires in enumerate(graph)]
-        ordered = packages._topo_sort(dirs)
+        ordered = dependencies.topo_sort(dirs)
         position = {entry.name: slot for slot, entry in enumerate(ordered)}
         assert len(ordered) == len(dirs)
         for index, requires in enumerate(graph):
@@ -64,7 +63,6 @@ def test_installed_dependents_lists_every_requirer_of_a_provided_service(
         root = Path(tmp)
         for index, requires in enumerate(graph):
             write_plugin(root, index, requires)
-        with patch.object(packages, "PLUGIN_ROOT", root):
-            for index, requires in enumerate(graph):
-                for provider in requires:
-                    assert f"p{index}" in packages.installed_dependents(f"p{provider}")
+        for index, requires in enumerate(graph):
+            for provider in requires:
+                assert f"p{index}" in dependencies.installed_dependents(root, f"p{provider}")

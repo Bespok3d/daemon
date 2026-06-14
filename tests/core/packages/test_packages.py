@@ -1301,17 +1301,15 @@ def write_plugin(
     return plugin_dir
 
 
-def test_installed_dependents_reports_consumer(tmp_path: Path, monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+def test_installed_dependents_reports_consumer(tmp_path: Path) -> None:
     write_plugin(tmp_path, "provider", provides=["svc"])
     write_plugin(tmp_path, "consumer", depends=["svc@>=1.0"])
 
-    assert packages.installed_dependents("provider") == ["consumer"]
-    assert packages.installed_dependents("consumer") == []
+    assert packages.installed_dependents(tmp_path, "provider") == ["consumer"]
+    assert packages.installed_dependents(tmp_path, "consumer") == []
 
 
-def test_installed_dependents_reads_service_model(tmp_path: Path, monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+def test_installed_dependents_reads_service_model(tmp_path: Path) -> None:
     manifests = {
         "provider": {"provides": [{"service": "svc"}], "require": []},
         "consumer": {"provides": [], "require": [{"service": "svc", "cardinality": "one"}]},
@@ -1322,7 +1320,7 @@ def test_installed_dependents_reads_service_model(tmp_path: Path, monkeypatch: M
         manifest = {"name": name, "version": "0.1.0", "install": {}, **fields}
         (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
 
-    assert packages.installed_dependents("provider") == ["consumer"]
+    assert packages.installed_dependents(tmp_path, "provider") == ["consumer"]
 
 
 def test_uninstall_refuses_when_a_dependent_is_installed(tmp_path: Path, monkeypatch: MP) -> None:

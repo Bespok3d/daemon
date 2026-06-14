@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from ..intent import (
     RESTART_HOOKS,
@@ -44,7 +44,15 @@ from ..safety.logs import read_log_tail as _read_log_tail
 from ..shell import run_one_command as _run_one_start_command
 from ..shell import start_env as _start_env
 from .archive import fix_ownership, read_manifest, unpack_package
+from .dependencies import (
+    installed_conflicts,
+    installed_dependents,
+    provided_services,
+    required_services,
+    topo_sort,
+)
 from .errors import ConflictError, DependentsError
+from .manifest import installed_manifest_dirs, manifest_at
 from .patches import apply_patches, restore_original_files
 from .placement import (
     apply_modes,
@@ -154,7 +162,7 @@ def install(
     manifest, plugin_dir, file_count = unpack_package(PLUGIN_ROOT, package_path)
     plugin_id: str = manifest["name"]
 
-    conflicts = installed_conflicts(plugin_id, manifest)
+    conflicts = installed_conflicts(PLUGIN_ROOT, plugin_id, manifest)
     if conflicts:
         shutil.rmtree(plugin_dir, ignore_errors=True)
         raise ConflictError(plugin_id, conflicts)
@@ -218,129 +226,6 @@ def _clear_failure_markers(plugin_dir: Path) -> None:
     (plugin_dir / _RECOVERY_FAILURE_MARKER).unlink(missing_ok=True)
 
 
-def _dep_capability(dep_str: str) -> str:
-    return dep_str.split("@")[0]
-
-
-def _provided_services(manifest: dict) -> list[str]:
-    """Service names a manifest provides, in either the service-model or legacy flat form."""
-    provides = manifest.get("provides", [])
-    return [item["service"] if isinstance(item, dict) else item for item in provides]
-
-
-def _required_services(manifest: dict) -> list[str]:
-    """Service names a manifest requires, from `require: [{service}]` or legacy `depends`."""
-    requires = manifest.get("require")
-    if requires is not None:
-        return [requirement["service"] for requirement in requires]
-    legacy = [_dep_capability(dep) for dep in manifest.get("depends", [])]
-    return [service for service in legacy if service != "base"]
-
-
-def _installed_manifest_dirs() -> list[Path]:
-    if not PLUGIN_ROOT.exists():
-        return []
-    return [
-        plugin_dir for plugin_dir in sorted(PLUGIN_ROOT.iterdir())
-        if plugin_dir.is_dir() and (plugin_dir / "manifest.json").exists()
-    ]
-
-
-def _manifest_at(plugin_dir: Path) -> dict:
-    return cast(dict, json.loads((plugin_dir / "manifest.json").read_text()))
-
-
-def _depends_on_any(plugin_dir: Path, services: set[str]) -> bool:
-    declared = set(_required_services(_manifest_at(plugin_dir)))
-    return bool(declared & services)
-
-
-def installed_dependents(plugin_id: str) -> list[str]:
-    """Installed plugins that depend on a service the target plugin provides."""
-    target_dir = PLUGIN_ROOT / plugin_id
-    if not (target_dir / "manifest.json").exists():
-        return []
-    provided = set(_provided_services(_manifest_at(target_dir)))
-    if not provided:
-        return []
-    others = [plugin_dir for plugin_dir in _installed_manifest_dirs() if plugin_dir != target_dir]
-    return [plugin_dir.name for plugin_dir in others if _depends_on_any(plugin_dir, provided)]
-
-
-def installed_conflicts(plugin_id: str, manifest: dict) -> list[str]:
-    """Installed plugins that this package excludes, or that exclude this package."""
-    declared = set(manifest.get("conflicts", []))
-    others = [
-        plugin_dir for plugin_dir in _installed_manifest_dirs()
-        if plugin_dir.name != plugin_id
-    ]
-    clashing = {
-        plugin_dir.name for plugin_dir in others
-        if plugin_dir.name in declared or plugin_id in _manifest_at(plugin_dir).get("conflicts", [])
-    }
-    return sorted(clashing)
-
-
-def _record_dep_edge(
-    dependent: Path,
-    dep_str: str,
-    provides_map: dict[str, Path],
-    in_degree: dict[Path, int],
-    reverse_deps: dict[Path, list[Path]],
-) -> None:
-    cap = _dep_capability(dep_str)
-    if cap not in provides_map or provides_map[cap] == dependent:
-        return
-    provider = provides_map[cap]
-    in_degree[dependent] += 1
-    reverse_deps[provider].append(dependent)
-
-
-def _build_dep_graph(
-    plugin_dirs: list[Path],
-    manifests: dict[Path, dict[str, Any]],
-    provides_map: dict[str, Path],
-) -> tuple[dict[Path, int], dict[Path, list[Path]]]:
-    in_degree: dict[Path, int] = {plugin_dir: 0 for plugin_dir in plugin_dirs}
-    reverse_deps: dict[Path, list[Path]] = {plugin_dir: [] for plugin_dir in plugin_dirs}
-    for plugin_dir in plugin_dirs:
-        for service in _required_services(manifests[plugin_dir]):
-            _record_dep_edge(plugin_dir, service, provides_map, in_degree, reverse_deps)
-    return in_degree, reverse_deps
-
-
-def _decrement_and_enqueue(
-    dependents: list[Path],
-    in_degree: dict[Path, int],
-    queue: list[Path],
-) -> None:
-    for dependent in dependents:
-        in_degree[dependent] -= 1
-        if in_degree[dependent] == 0:
-            queue.append(dependent)
-
-
-def _topo_sort(plugin_dirs: list[Path]) -> list[Path]:
-    manifests: dict[Path, dict[str, Any]] = {}
-    provides_map: dict[str, Path] = {}
-    for plugin_dir in plugin_dirs:
-        manifest = json.loads((plugin_dir / "manifest.json").read_text())
-        manifests[plugin_dir] = manifest
-        for service in _provided_services(manifest):
-            provides_map[service] = plugin_dir
-
-    in_degree, reverse_deps = _build_dep_graph(plugin_dirs, manifests, provides_map)
-    queue = [plugin_dir for plugin_dir in plugin_dirs if in_degree[plugin_dir] == 0]
-    ordered: list[Path] = []
-    while queue:
-        node = queue.pop(0)
-        ordered.append(node)
-        _decrement_and_enqueue(reverse_deps[node], in_degree, queue)
-
-    remaining = [plugin_dir for plugin_dir in plugin_dirs if plugin_dir not in ordered]
-    return ordered + remaining
-
-
 def _neutralize_plugin(plugin_dir: Path, vars: dict[str, str]) -> None:
     """Stop a plugin affecting the system: drop its symlinks, restore patched files, remove its
     linked libs and venv. Files in the plugin dir stay, so recover/reactivate can rebuild it."""
@@ -385,7 +270,7 @@ def _recover_one(
 ) -> tuple[dict, list[str]]:
     plugin_id = plugin_dir.name
     missing_deps = [
-        service for service in _required_services(manifest)
+        service for service in required_services(manifest)
         if service in all_provided and service not in satisfied
     ]
     if missing_deps:
@@ -402,7 +287,7 @@ def _recover_one(
     inst = normalize_install(raw_inst)
     phase_log, deferred = _apply_plugin(plugin_dir, raw_inst, inst, full_vars)
     if all(phase["ok"] for phase in phase_log):
-        satisfied.update(_provided_services(manifest))
+        satisfied.update(provided_services(manifest))
         _clear_failure_markers(plugin_dir)
         ok_result = {"plugin_id": plugin_id, "ok": True, "skipped": False, "reason": "", "log": phase_log}  # noqa: E501
         return ok_result, deferred
@@ -423,7 +308,7 @@ def _recover_one(
 def _plugin_placement(plugin_dir: Path, vars: dict[str, str]) -> Placement:
     """What one installed plugin put on the system, as data for the attribution brain."""
     full_vars = {**vars, **load_user_vars(plugin_dir)}
-    ops = normalize_install(_manifest_at(plugin_dir).get("install", {}))
+    ops = normalize_install(manifest_at(plugin_dir).get("install", {}))
     destinations = [expand(link["to"], full_vars) for link in ops["symlinks"]]
     modules = [import_name(name) for name in baked_top_level_names(plugin_dir)]
     return Placement(plugin_dir.name, destinations, modules)
@@ -431,7 +316,7 @@ def _plugin_placement(plugin_dir: Path, vars: dict[str, str]) -> Placement:
 
 def _build_attribution_index(vars: dict[str, str]) -> AttributionIndex:
     return build_attribution_index(
-        [_plugin_placement(plugin_dir, vars) for plugin_dir in _installed_manifest_dirs()]
+        [_plugin_placement(plugin_dir, vars) for plugin_dir in installed_manifest_dirs(PLUGIN_ROOT)]
     )
 
 
@@ -494,7 +379,7 @@ def _auto_recover(deferred_cmds: list[str], vars: dict[str, str],
     failure = evidence
     deactivated: list[str] = []
     decision = decide(evidence, ctx, deactivated)
-    for _attempt in range(len(_installed_manifest_dirs()) + 1):
+    for _attempt in range(len(installed_manifest_dirs(PLUGIN_ROOT)) + 1):
         decision = decide(evidence, ctx, deactivated)
         if decision.culprit is None:
             break
@@ -564,14 +449,14 @@ def recover(vars: dict[str, str]) -> list[dict]:
     ]
     if not plugin_dirs:
         return []
-    ordered = _topo_sort(plugin_dirs)
+    ordered = topo_sort(plugin_dirs)
     manifests = {
         plugin_dir: json.loads((plugin_dir / "manifest.json").read_text())
         for plugin_dir in ordered
     }
     all_provided: set[str] = set()
     for manifest in manifests.values():
-        all_provided.update(_provided_services(manifest))
+        all_provided.update(provided_services(manifest))
     satisfied: set[str] = set()
     results: list[dict] = []
     deferred_restarts: list[str] = []
@@ -671,7 +556,7 @@ def _remove_one(plugin_dir: Path, vars: dict[str, str]) -> None:
 
 
 def _remove_with_dependents(plugin_id: str, vars: dict[str, str], removed: list[str]) -> None:
-    for dependent in installed_dependents(plugin_id):
+    for dependent in installed_dependents(PLUGIN_ROOT, plugin_id):
         if dependent not in removed:
             _remove_with_dependents(dependent, vars, removed)
     plugin_dir = PLUGIN_ROOT / plugin_id
@@ -708,7 +593,7 @@ def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> li
     plugin_dir = PLUGIN_ROOT / plugin_id
     if not plugin_dir.exists():
         raise FileNotFoundError(plugin_id)
-    dependents = installed_dependents(plugin_id)
+    dependents = installed_dependents(PLUGIN_ROOT, plugin_id)
     if dependents and not cascade:
         raise DependentsError(plugin_id, dependents)
     guard_no_print_for_removal(PLUGIN_ROOT, [plugin_id, *dependents])

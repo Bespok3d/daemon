@@ -146,7 +146,7 @@ def _plugin_log_source(plugin_id: str, pattern: str) -> tuple[Path, re.Pattern[s
     plugin_dir = packages.PLUGIN_ROOT / plugin_id
     if not (plugin_dir / "manifest.json").exists():
         return None
-    manifest = packages._manifest_at(plugin_dir)
+    manifest = packages.manifest_at(plugin_dir)
     log_path = log_capture.service_log_path(_DATA_ROOT, plugin_dir, manifest)
     if log_path is None:
         return None
