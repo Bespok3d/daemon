@@ -15,8 +15,8 @@ Public surface:
 from .attribution import AttributionIndex, Placement, attribute_failure, build_index
 from .context import OperationContext, OperationKind
 from .decision import Decision, FailureEvidence, is_healthy
-from .health import MoonrakerInfo
 from .net import decide
+from .probe.moonraker import MoonrakerInfo
 
 __all__ = [
     "decide",

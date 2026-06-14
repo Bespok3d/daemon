@@ -107,8 +107,14 @@ offenders:
 - **`core/printer_comms/` DONE (was the tentative `core/uds/`).** Groups the clients that talk to the
   printer's own running services: `klippy`, `moonraker`, and the shared `frame` transport.
 - **`core/safety/fixers/` (from `core/safety/fixers.py`).** One fixer per file with a registry, so new
-  failure modes slot in cleanly. `core/safety/health.py` (233 lines) splits the same way: per-service
-  probes plus the retry/verify cycle.
+  failure modes slot in cleanly.
+- **`core/safety/health.py` DONE.** The 233-line file split by concern into the `core/safety/probe/`
+  package plus two siblings. `probe/` holds the per-service health probes, mirroring `printer_comms/`:
+  `reach.py` (the shared low-level reachability primitives `service_get` + `port_listening`, the foundation
+  any new probe builds on), `klipper.py` (`klipper_healthy`, `klippy_socket_path`), `moonraker.py`
+  (`MoonrakerInfo`, `probe_moonraker`, `moonraker_healthy`). Alongside it: `config_links.py` (the
+  dead-symlink self-heal on the bespok3d include dirs: `prune_dead_config_links` + `restart_moonraker`) and
+  `restart_batch.py` (the deferred-restart batch + verify cycle: `run_restart_batch`).
 - **`core/live/` DONE (absorbed `core/log_capture.py`).** The websocket push-on-change sources:
   `install_progress`, `print_state`, and `log_capture`.
 

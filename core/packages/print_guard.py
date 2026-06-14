@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ..intent import normalize_install
 from ..printer_comms.klippy import query_print_state
-from ..safety.health import klippy_socket_path
+from ..safety.probe.klipper import klippy_socket_path
 from ..service_actions import restarts_klipper, restarts_lmd, restarts_moonraker
 
 _PRINTING_STATES = ("printing", "paused")

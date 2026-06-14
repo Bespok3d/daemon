@@ -8,7 +8,7 @@ import pytest
 from core import packages
 from core.packages import print_guard, python_deps, services
 from core.packages.recovery import evidence
-from core.safety import health
+from core.safety.probe import klipper, moonraker
 
 MP = pytest.MonkeyPatch
 
@@ -1034,7 +1034,8 @@ def test_recover_reports_failed_service_restart(tmp_path: Path, monkeypatch: MP)
 
     monkeypatch.setattr(sp, "run", lambda *_a, **_kw: FakeOk())
     monkeypatch.setattr(urlreq, "urlopen", urlopen_fail)
-    monkeypatch.setattr(health.time, "sleep", lambda _: None)
+    monkeypatch.setattr(klipper.time, "sleep", lambda _: None)
+    monkeypatch.setattr(moonraker.time, "sleep", lambda _: None)
     monkeypatch.setattr(evidence, "port_listening", lambda port: True)
 
     results = packages.recover({})

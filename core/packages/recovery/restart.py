@@ -18,8 +18,8 @@ from ...safety import (
     decide,
     is_healthy,
 )
-from ...safety.health import run_restart_batch
 from ...safety.logs import format_tails
+from ...safety.restart_batch import run_restart_batch
 from ...service_actions import restarts_klipper, restarts_moonraker
 from ..deactivation import deactivate_plugin
 from ..manifest import installed_manifest_dirs

@@ -5,7 +5,7 @@ Pure: `is_healthy` and the fixers judge this data; the daemon does the I/O that 
 from dataclasses import dataclass
 
 from .attribution import AttributionIndex
-from .health import MoonrakerInfo
+from .probe.moonraker import MoonrakerInfo
 
 
 @dataclass

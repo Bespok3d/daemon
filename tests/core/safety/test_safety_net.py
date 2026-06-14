@@ -14,7 +14,7 @@ from core.safety import (
     is_healthy,
 )
 from core.safety.decision import Decision
-from core.safety.health import MoonrakerInfo
+from core.safety.probe.moonraker import MoonrakerInfo
 
 
 def _evidence(*, klipper_reachable: bool = True,  # noqa: PLR0913
