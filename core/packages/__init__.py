@@ -17,29 +17,10 @@ from ..intent import (
     RESTART_HOOKS,
     is_service_action,
     normalize_install,
-    restarts_klipper,
-    restarts_moonraker,
 )
-from ..python_env import import_name
 from ..results import item as _item
 from ..results import phase as _phase
-from ..safety import (
-    Decision,
-    FailureEvidence,
-    OperationContext,
-    OperationKind,
-    decide,
-    is_healthy,
-)
-from ..safety.attribution import AttributionIndex, Placement
-from ..safety.attribution import build_index as build_attribution_index
-from ..safety.health import MQTT_PORT as _MQTT_PORT
-from ..safety.health import klipper_healthy as _klipper_healthy
-from ..safety.health import port_listening as _port_listening
-from ..safety.health import probe_moonraker as _probe_moonraker
-from ..safety.health import run_restart_batch as _run_restart_batch
-from ..safety.logs import format_tails as _format_tails
-from ..safety.logs import read_log_tail as _read_log_tail
+from ..safety import OperationContext, OperationKind
 from ..shell import run_one_command as _run_one_start_command
 from ..shell import start_env as _start_env
 from .archive import fix_ownership, read_manifest, unpack_package
@@ -59,7 +40,7 @@ from .dependencies import (
     topo_sort,
 )
 from .errors import ConflictError, DependentsError
-from .manifest import installed_manifest_dirs, manifest_at
+from .manifest import manifest_at  # noqa: F401  re-export for api.routes
 from .patches import apply_patches, restore_original_files
 from .placement import (
     apply_modes,
@@ -74,11 +55,11 @@ from .print_guard import (
     guard_no_print_for_removal,
 )
 from .python_deps import (
-    baked_top_level_names,
     provision_deps_phases,
     remove_plugin_site_links,
     remove_plugin_venv,
 )
+from .recovery import op_context, restart_phases, restart_services
 from .services import generate_service_scripts
 from .templates import render_templates
 from .user_vars import (
@@ -156,7 +137,7 @@ def _install_apply_phases(plugin_dir: Path, manifest: dict, full_vars: dict[str,
     phases.extend(_emit(phase, notify) for phase in provision_deps_phases(PLUGIN_ROOT, plugin_dir, full_vars))  # noqa: E501
     start_phase, deferred = _run_plugin_start_commands(inst["start"], full_vars)
     phases.append(_emit(start_phase, notify))
-    phases.extend(_emit(phase, notify) for phase in _restart_phases(deferred, full_vars, _op_context(OperationKind.INSTALL, manifest)))  # noqa: E501
+    phases.extend(_emit(phase, notify) for phase in restart_phases(PLUGIN_ROOT, deferred, full_vars, op_context(OperationKind.INSTALL, manifest)))  # noqa: E501
     return phases
 
 
@@ -213,7 +194,7 @@ def reconfigure(
         fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")),
         start_phase,
     ]
-    phases.extend(_restart_phases(deferred, full_vars, _op_context(OperationKind.RECONFIGURE, manifest)))  # noqa: E501
+    phases.extend(restart_phases(PLUGIN_ROOT, deferred, full_vars, op_context(OperationKind.RECONFIGURE, manifest)))  # noqa: E501
     return plugin_id, phases
 
 
@@ -271,143 +252,6 @@ def _recover_one(
     return failed, []
 
 
-# Auto-deactivate safety net (ADR-0036): when a deferred restart fails, read the service logs,
-# attribute the failure to the plugin that placed the offending file/section/lib, deactivate it, and
-# restart again. This is what keeps a printer usable after an OTA firmware update: a plugin that
-# breaks against the new firmware peels itself off until a fixed version is published.
-
-
-def _plugin_placement(plugin_dir: Path, vars: dict[str, str]) -> Placement:
-    """What one installed plugin put on the system, as data for the attribution brain."""
-    full_vars = {**vars, **load_user_vars(plugin_dir)}
-    ops = normalize_install(manifest_at(plugin_dir).get("install", {}))
-    destinations = [expand(link["to"], full_vars) for link in ops["symlinks"]]
-    modules = [import_name(name) for name in baked_top_level_names(plugin_dir)]
-    return Placement(plugin_dir.name, destinations, modules)
-
-
-def _build_attribution_index(vars: dict[str, str]) -> AttributionIndex:
-    return build_attribution_index(
-        [_plugin_placement(plugin_dir, vars) for plugin_dir in installed_manifest_dirs(PLUGIN_ROOT)]
-    )
-
-
-def _op_context(kind: OperationKind, manifest: dict, plugin_id: str | None = None) -> OperationContext:  # noqa: E501
-    """The operation the daemon is performing, for the safety net's report + last-resort blame."""
-    return OperationContext(
-        kind=kind,
-        plugin_id=plugin_id if plugin_id is not None else manifest.get("name"),
-        plugin_version=manifest.get("version"),
-        publisher=manifest.get("publisher"),
-    )
-
-
-def _log_tail(vars: dict[str, str], key: str) -> str:
-    path = vars.get(key)
-    return _read_log_tail(Path(path)) if path else ""
-
-
-def _gather_evidence(vars: dict[str, str]) -> FailureEvidence:
-    """Probe the printer after a restart and build the attribution index: the data the brain judges.
-    The Moonraker probe reads failed_components, so a reachable-but-broken component is caught."""
-    klipper_reachable, _raw = _klipper_healthy()
-    return FailureEvidence(
-        klipper_reachable=klipper_reachable,
-        klipper_log=_log_tail(vars, "KLIPPER_LOG"),
-        moonraker=_probe_moonraker(),
-        moonraker_log=_log_tail(vars, "MOONRAKER_LOG"),
-        mqtt_up=_port_listening(_MQTT_PORT),
-        index=_build_attribution_index(vars),
-    )
-
-
-def _recovery_result(deactivated: list[str], decision: Decision,
-                     evidence: FailureEvidence, failure: FailureEvidence) -> dict:
-    """Build the outcome. Health is judged on the FINAL evidence (did recovery work), but the
-    reported log comes from the FIRST-failure evidence so the real traceback survives the recovery
-    restarts that overwrite the live log."""
-    ok = is_healthy(evidence)
-    if deactivated:
-        joined = ", ".join(deactivated)
-        reason = (f"Auto-recovered: deactivated {joined} to keep the printer working" if ok
-                  else f"Deactivated {joined} but the printer still did not recover")
-    else:
-        reason = decision.signal
-    failure_log = _format_tails(failure.klipper_log, failure.moonraker_log)
-    log_item = _item("captured service log for diagnosis", ok=ok, output=failure_log)
-    result = {"plugin_id": "(services)", "ok": ok, "skipped": False, "reason": reason,
-              "failure_log": failure_log,
-              "log": [_phase("restart", "Restart services", [log_item])]}
-    if deactivated:
-        result["auto_deactivated"] = ", ".join(deactivated)
-        result["fix_detail"] = decision.signal
-    return result
-
-
-def _auto_recover(deferred_cmds: list[str], vars: dict[str, str],
-                  ctx: OperationContext, evidence: FailureEvidence) -> dict:
-    """Walk the fixer chain: deactivate the named culprit, restart, re-probe, repeat until the
-    printer is healthy or no plugin is left to blame."""
-    failure = evidence
-    deactivated: list[str] = []
-    decision = decide(evidence, ctx, deactivated)
-    for _attempt in range(len(installed_manifest_dirs(PLUGIN_ROOT)) + 1):
-        decision = decide(evidence, ctx, deactivated)
-        if decision.culprit is None:
-            break
-        deactivate_plugin(PLUGIN_ROOT / decision.culprit, vars,
-                           f"auto-deactivated: {decision.signal}")
-        deactivated.append(decision.culprit)
-        _run_restart_batch(deferred_cmds, vars)
-        evidence = _gather_evidence(vars)
-        if is_healthy(evidence):
-            break
-    return _recovery_result(deactivated, decision, evidence, failure)
-
-
-def _touches_core_service(deferred_cmds: list[str]) -> bool:
-    """Only a Klipper/Moonraker restart needs the safety net; a plugin-service or nginx bounce does
-    not put the printer's base functions at risk, so we skip the probe + recovery for those."""
-    return any(restarts_klipper(cmd) or restarts_moonraker(cmd) for cmd in deferred_cmds)
-
-
-def _restart_services(deferred_cmds: list[str], vars: dict[str, str], ctx: OperationContext) -> dict:  # noqa: E501
-    """Do the restart, then ask the safety net to verify and recover. The daemon does the thing; the
-    net watches (incl. failed components), acts (deactivate), and reports."""
-    result = _run_restart_batch(deferred_cmds, vars)
-    if not _touches_core_service(deferred_cmds):
-        return result
-    evidence = _gather_evidence(vars)
-    if is_healthy(evidence):
-        return result
-    return _auto_recover(deferred_cmds, vars, ctx, evidence)
-
-
-def _restart_phases(deferred_cmds: list[str], vars: dict[str, str], ctx: OperationContext) -> list[dict]:  # noqa: E501
-    """Restart the deferred core services THROUGH the safety net and return the outcome as
-    install/reconfigure phases. A plugin that breaks Klipper/Moonraker is deactivated so the printer
-    keeps working; the captured service log and what was disabled are surfaced as phases."""
-    if not deferred_cmds:
-        return []
-    result = _restart_services(deferred_cmds, vars, ctx)
-    phases = list(result.get("log", []))
-    deactivated = result.get("auto_deactivated")
-    if not deactivated:
-        return phases
-    target_disabled = ctx.plugin_id in [name.strip() for name in deactivated.split(",")]
-    detail = result.get("fix_detail", "")
-    # State the FACT only; the app phrases user-facing advice per user tier and offers the report.
-    if target_disabled:
-        label = f"{ctx.plugin_id} was disabled to keep the printer working ({detail})."
-    else:
-        label = f"Disabled {deactivated} to keep the printer working ({detail})."
-    phases.append(_phase(
-        "auto-recovery", "Safety auto-recovery",
-        [_item(label, ok=not target_disabled, output=result.get("failure_log", ""))],
-    ))
-    return phases
-
-
 def recover(vars: dict[str, str]) -> list[dict]:
     """Re-apply all installed, non-deactivated plugins after OTA. Returns per-plugin results."""
     guard_no_print("recover plugins")
@@ -439,7 +283,7 @@ def recover(vars: dict[str, str]) -> list[dict]:
             deferred_restarts.extend(deferred)
     unique_restarts = list(dict.fromkeys(deferred_restarts))
     if unique_restarts:
-        results.append(_restart_services(unique_restarts, vars, OperationContext(OperationKind.RECOVER)))  # noqa: E501
+        results.append(restart_services(PLUGIN_ROOT, unique_restarts, vars, OperationContext(OperationKind.RECOVER)))  # noqa: E501
     return results
 
 
@@ -505,7 +349,7 @@ def update_batch(
     if unique_restarts:
         only = specs[0][1]["name"] if len(specs) == 1 else None
         ctx = OperationContext(OperationKind.UPDATE, plugin_id=only)
-        results.append(_restart_services(unique_restarts, base_vars, ctx))
+        results.append(restart_services(PLUGIN_ROOT, unique_restarts, base_vars, ctx))
     return results
 
 
@@ -573,7 +417,7 @@ def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> li
     removed: list[str] = []
     _remove_with_dependents(plugin_id, vars, removed)
     if restart_commands:
-        _restart_services(restart_commands, vars, OperationContext(OperationKind.UNINSTALL, plugin_id))  # noqa: E501
+        restart_services(PLUGIN_ROOT, restart_commands, vars, OperationContext(OperationKind.UNINSTALL, plugin_id))  # noqa: E501
     return removed
 
 

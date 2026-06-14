@@ -5,9 +5,8 @@ from core import packages
 from core.packages import manifest
 
 
-def test_orchestrator_reexports_the_manifest_readers() -> None:
+def test_orchestrator_reexports_manifest_at_for_api_routes() -> None:
     assert packages.manifest_at is manifest.manifest_at
-    assert packages.installed_manifest_dirs is manifest.installed_manifest_dirs
 
 
 def test_manifest_at_reads_the_plugin_manifest(tmp_path: Path) -> None:

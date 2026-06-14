@@ -7,6 +7,7 @@ import pytest
 
 from core import packages
 from core.packages import print_guard, python_deps, services
+from core.packages.recovery import evidence
 from core.safety import health
 
 MP = pytest.MonkeyPatch
@@ -919,36 +920,6 @@ def test_install_persists_user_vars(tmp_path: Path, monkeypatch: MP) -> None:
     assert persisted == {"FOO": "bar"}
 
 
-def test_restarts_moonraker_detection() -> None:
-    assert packages.restarts_moonraker("/etc/init.d/S61moonraker restart")
-    assert packages.restarts_moonraker("/etc/init.d/S61moonraker start")
-    assert packages.restarts_moonraker("systemctl reload moonraker")
-    assert not packages.restarts_moonraker("/etc/init.d/S60klipper restart")
-    assert not packages.restarts_moonraker("echo moonraker is great")
-
-
-def test_lmd_restart_is_deferred_but_not_a_core_service() -> None:
-    cmd = "/userdata/bespok3d/etc/init.d/lmdctl restart"
-    assert packages.is_service_action(cmd)
-    assert not packages.restarts_klipper(cmd)
-    assert not packages.restarts_moonraker(cmd)
-
-
-def test_service_action_detection() -> None:
-    assert packages.restarts_klipper("/etc/init.d/S60klipper restart")
-    assert packages.restarts_moonraker("/etc/init.d/S61moonraker restart")
-    # every init-script restart / start and nginx reload is deferred to the end
-    assert packages.is_service_action("/etc/init.d/S61moonraker restart")
-    assert packages.is_service_action("/etc/init.d/S60klipper restart")
-    assert packages.is_service_action("/b/etc/init.d/autostart/s65camera-hw restart")
-    assert packages.is_service_action("sh /b/files/etc/init.d/s90mainsail start 8080")
-    assert packages.is_service_action("/usr/sbin/nginx -s reload")
-    # config-generation commands run inline, never deferred
-    assert not packages.is_service_action("sed 's/X/Y/g' > /b/moonraker/spoolman.cfg")
-    assert not packages.is_service_action("chown lava:lava /b/moonraker/spoolman.cfg")
-    assert not packages.is_service_action("sed -i '/^\\[rfid\\]/d' /b/printer.cfg")
-
-
 def test_recover_defers_plugin_service_restarts(tmp_path: Path, monkeypatch: MP) -> None:
     import subprocess as sp
 
@@ -1064,7 +1035,7 @@ def test_recover_reports_failed_service_restart(tmp_path: Path, monkeypatch: MP)
     monkeypatch.setattr(sp, "run", lambda *_a, **_kw: FakeOk())
     monkeypatch.setattr(urlreq, "urlopen", urlopen_fail)
     monkeypatch.setattr(health.time, "sleep", lambda _: None)
-    monkeypatch.setattr(packages, "_port_listening", lambda port: True)
+    monkeypatch.setattr(evidence, "port_listening", lambda port: True)
 
     results = packages.recover({})
 
@@ -1123,7 +1094,7 @@ def test_start_phase_skips_moonraker_wait_when_not_restarted(
         probe_calls.append(True)
         return None
 
-    monkeypatch.setattr(packages, "_probe_moonraker", fake_probe)
+    monkeypatch.setattr(evidence, "probe_moonraker", fake_probe)
     manifest = minimal_manifest(
         extra={
             "install": {"dirs": [], "symlinks": [], "patches": [], "start": ["echo hello"]}
@@ -1780,17 +1751,3 @@ def test_klipper_extra_with_deps_lifecycle(tmp_path: Path, monkeypatch: MP) -> N
 
     packages.uninstall("print-time-human", setup["vars"])
     assert not setup["plugin_dir"].exists()
-
-
-def test_build_attribution_index_indexes_an_extra_module(tmp_path: Path, monkeypatch: MP) -> None:
-    plugin_root = tmp_path / "plugins"
-    (plugin_root / "foo-plugin").mkdir(parents=True)
-    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
-    (plugin_root / "foo-plugin" / "manifest.json").write_text(minimal_manifest("foo-plugin", extra={
-        "install": {"place": [{"class": "klipper-extra", "src": "files/foo.py"}]},
-    }))
-
-    index = packages._build_attribution_index({"KLIPPER_EXTRAS": "/home/lava/klipper/klippy/extras"})  # noqa: E501
-
-    assert index.by_module["foo"] == "foo-plugin"
-    assert index.by_path["/home/lava/klipper/klippy/extras/foo.py"] == "foo-plugin"

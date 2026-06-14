@@ -12,7 +12,6 @@ def test_orchestrator_reexports_the_public_dep_helpers() -> None:
     assert packages.provision_deps_phases is python_deps.provision_deps_phases
     assert packages.remove_plugin_site_links is python_deps.remove_plugin_site_links
     assert packages.remove_plugin_venv is python_deps.remove_plugin_venv
-    assert packages.baked_top_level_names is python_deps.baked_top_level_names
 
 
 def test_reject_conflicting_dep_files_raises_when_both_present(tmp_path: Path) -> None:
