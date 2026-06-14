@@ -52,7 +52,7 @@ from .python_deps import (
 )
 from .recovery import op_context, recover_one, restart_phases, restart_services
 from .services import generate_service_scripts
-from .start import run_plugin_start_commands
+from .start_commands import run_plugin_start_commands
 from .templates import render_templates
 from .user_vars import (
     USER_VARS_FILE,  # noqa: F401  re-export for tests

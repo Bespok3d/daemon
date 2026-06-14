@@ -1,14 +1,14 @@
-"""Units for the install start-phase runner (core/packages/start.py)."""
+"""Units for the install start-phase runner (core/packages/start_commands.py)."""
 from core import packages
-from core.packages import start
+from core.packages import start_commands
 
 
 def test_orchestrator_reexports_run_plugin_start_commands() -> None:
-    assert packages.run_plugin_start_commands is start.run_plugin_start_commands
+    assert packages.run_plugin_start_commands is start_commands.run_plugin_start_commands
 
 
 def test_run_plugin_start_commands_defers_core_service_restarts() -> None:
-    phase, deferred = start.run_plugin_start_commands(
+    phase, deferred = start_commands.run_plugin_start_commands(
         ["echo hello", "/etc/init.d/S60klipper restart"], {}
     )
 

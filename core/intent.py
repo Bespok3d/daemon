@@ -11,7 +11,6 @@ dirs}` operations the current executor already knows how to run, merging in any 
 not-yet-migrated manifest still carries. The path templates and restart commands here are the
 U1 defaults; moving them behind the adapter contract is the follow-on.
 """
-import re
 from pathlib import PurePosixPath
 
 # A destination class resolves to a path template using adapter variables the daemon expands
@@ -147,38 +146,3 @@ def normalize_install(install: dict) -> dict:
         "start": [*install.get("start", []), *service_starts, *restart_commands],
         "stops": stops,
     }
-
-
-# A restart/start/reload verb classifies a shell command as a service action. These pure predicates
-# live here (the module that owns RESTART_HOOKS / service vocabulary) so both the executor and the
-# safety net classify commands identically without importing each other.
-_SERVICE_ACTION_RE = re.compile(r"\b(?:restart|start|reload)\b")
-
-
-def restarts_moonraker(expanded_cmd: str) -> bool:
-    if "moonraker" not in expanded_cmd:
-        return False
-    return bool(_SERVICE_ACTION_RE.search(expanded_cmd))
-
-
-def restarts_klipper(expanded_cmd: str) -> bool:
-    if "klipper" not in expanded_cmd:
-        return False
-    return bool(_SERVICE_ACTION_RE.search(expanded_cmd))
-
-
-def restarts_lmd(expanded_cmd: str) -> bool:
-    if "lmdctl" not in expanded_cmd:
-        return False
-    return bool(_SERVICE_ACTION_RE.search(expanded_cmd))
-
-
-def is_service_action(expanded_cmd: str) -> bool:
-    """True for init-script / nginx service commands, which recover defers to one batch.
-
-    Config-generation commands (sed, chown, cp) carry no service-action verb, so they keep
-    running inline and the config exists before anything restarts.
-    """
-    if not _SERVICE_ACTION_RE.search(expanded_cmd):
-        return False
-    return "init.d" in expanded_cmd or "nginx" in expanded_cmd

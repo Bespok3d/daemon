@@ -6,8 +6,8 @@ of bouncing Klipper/Moonraker per plugin. Shared by every install-like path: ins
 update, and OTA recover.
 """
 
-from ..intent import is_service_action
 from ..results import phase
+from ..service_actions import is_service_action
 from ..shell import run_one_command, start_env
 from .user_vars import expand
 

@@ -99,9 +99,11 @@ offenders:
   flow). `paths` holds the shared data-root constant. Handlers stay thin.
 - **`core/auth/` (from `core/auth.py`, 149 lines).** One security concern per file: keys, roles, labels,
   tokens, identity, and the request/grant/revoke cycle.
-- **`core/intent/` (from `core/intent.py`, 184 lines).** Keep the generic destination classes and a generic
-  restart interface; move the concrete device paths and restart commands behind the jinni (see the central
-  boundary above).
+- **`core/intent.py` (184 lines).** The service-action classifier (`restarts_klipper`/`restarts_moonraker`/
+  `restarts_lmd`/`is_service_action`) has been split out to `core/service_actions.py` (shared by the executor
+  and the safety net), leaving `intent.py` as the intent-to-mechanism translation (148 lines). The remaining
+  target is the deeper one: move the concrete device paths and restart commands (and the same U1 service-name
+  coupling now in `service_actions.py`) behind the jinni (see the central boundary above).
 - **`core/printer_comms/` DONE (was the tentative `core/uds/`).** Groups the clients that talk to the
   printer's own running services: `klippy`, `moonraker`, and the shared `frame` transport.
 - **`core/safety/fixers/` (from `core/safety/fixers.py`).** One fixer per file with a registry, so new

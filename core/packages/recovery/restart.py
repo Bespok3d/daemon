@@ -9,7 +9,6 @@ published. It runs on every operation that restarts a core service, not only rec
 
 from pathlib import Path
 
-from ...intent import restarts_klipper, restarts_moonraker
 from ...results import item, phase
 from ...safety import (
     Decision,
@@ -21,6 +20,7 @@ from ...safety import (
 )
 from ...safety.health import run_restart_batch
 from ...safety.logs import format_tails
+from ...service_actions import restarts_klipper, restarts_moonraker
 from ..deactivation import deactivate_plugin
 from ..manifest import installed_manifest_dirs
 from .evidence import gather_evidence

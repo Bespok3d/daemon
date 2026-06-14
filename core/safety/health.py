@@ -16,9 +16,10 @@ from pathlib import Path
 
 from jinni.loader import get_jinni
 
-from ..intent import RESTART_HOOKS, restarts_klipper, restarts_moonraker
+from ..intent import RESTART_HOOKS
 from ..printer_comms import klippy, moonraker
 from ..results import MAX_OUTPUT_BYTES, item, phase
+from ..service_actions import restarts_klipper, restarts_moonraker
 from ..shell import run_one_command, start_env
 from .logs import service_log_tails
 

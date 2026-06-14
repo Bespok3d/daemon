@@ -18,7 +18,7 @@ from ..patches import apply_patches
 from ..placement import create_symlinks
 from ..python_deps import provision_deps_phases
 from ..services import generate_service_scripts
-from ..start import run_plugin_start_commands
+from ..start_commands import run_plugin_start_commands
 from ..templates import render_templates
 from ..user_vars import load_user_vars, missing_required_vars, with_plugin_venv
 
