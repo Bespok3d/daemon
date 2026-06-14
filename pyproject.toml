@@ -44,5 +44,5 @@ timeout_method = "thread"
 # error). With a 3.11 .venv:
 #   .venv/bin/mutmut run \
 #     --paths-to-mutate "core/intent.py,core/print_events.py,core/auth.py" --tests-dir tests/ \
-#     --runner ".venv/bin/pytest -x -q tests/test_intent_props.py tests/test_print_events_props.py tests/test_auth_props.py"
+#     --runner ".venv/bin/pytest -x -q tests/core/test_intent_props.py tests/core/test_print_events_props.py tests/core/test_auth_props.py"
 #   .venv/bin/mutmut results

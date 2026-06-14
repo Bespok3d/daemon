@@ -69,6 +69,15 @@ from ..safety.logs import read_log_tail as _read_log_tail
 from ..shell import run_one_command as _run_one_start_command
 from ..shell import start_env as _start_env
 from .errors import ConflictError, DependentsError
+from .user_vars import (
+    _USER_VARS_FILE,  # noqa: F401  re-export for tests
+    _expand,
+    _load_user_vars,
+    _missing_required_vars,
+    _persist_user_vars,
+    _with_plugin_venv,
+    validate_user_vars,  # noqa: F401  re-export for api.routes
+)
 
 _DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
 PLUGIN_ROOT = _DATA_ROOT / "usr/local/plugins"
@@ -82,26 +91,6 @@ _KLIPPER_REQUIREMENTS_FILE = "klipper_requirements.txt"
 _BAKED_SITE_PACKAGES = "files/site-packages"
 _BAKED_WHEELS = "files/wheels"
 _SITE_PACKAGES_VAR = "PYTHON_SITE_PACKAGES"
-
-# The comma is allowed for list-valued config (e.g. NOTIFY_EVENTS="complete,error,cancelled"). It is
-# safe in the shell-interpolated `install.start` commands: a bare comma is not a metacharacter, and
-# brace expansion (its only special use) needs `{`/`}`, which this allowlist already blocks.
-_SAFE_VAR_RE = re.compile(r'^[A-Za-z0-9 .,\-:/_@]+$')
-_SAFE_VAR_ALLOWED = "letters, numbers, spaces, and . , - : / _ @"
-
-
-def validate_user_vars(user_vars: dict[str, str]) -> None:
-    for key, value in user_vars.items():
-        if not _SAFE_VAR_RE.match(value):
-            raise ValueError(f"Variable {key!r} allows only {_SAFE_VAR_ALLOWED}. Got: {value!r}")
-
-
-def _expand(template: str, vars: dict[str, str]) -> str:
-    expanded = template
-    for key in sorted(vars, key=len, reverse=True):
-        expanded = expanded.replace(f"${key}", vars[key])
-    return expanded
-
 
 def _apply_modes(plugin_dir: Path, files: list[dict]) -> dict:
     items: list[dict] = []
@@ -347,22 +336,6 @@ def _apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) 
     return _phase("patches", "Patches", items)
 
 
-_USER_VARS_FILE = "user_vars.json"
-
-
-def _persist_user_vars(plugin_dir: Path, user_vars: dict[str, str]) -> None:
-    if not user_vars:
-        return
-    (plugin_dir / _USER_VARS_FILE).write_text(json.dumps(user_vars))
-
-
-def _load_user_vars(plugin_dir: Path) -> dict[str, str]:
-    path = plugin_dir / _USER_VARS_FILE
-    if not path.exists():
-        return {}
-    return cast(dict[str, str], json.loads(path.read_text()))
-
-
 def _render_one_template(template_def: dict, plugin_dir: Path, vars: dict[str, str]) -> dict:
     template_rel = template_def["from"]
     template_to = template_def["to"]
@@ -591,12 +564,6 @@ def _remove_plugin_site_links(plugin_dir: Path, vars: dict[str, str]) -> list[st
             entry.unlink()
             removed.append(entry.name)
     return removed
-
-
-def _with_plugin_venv(vars: dict[str, str], plugin_id: str) -> dict[str, str]:
-    """Expose the deterministic per-plugin venv path as $PLUGIN_VENV for service commands."""
-    venv_path = python_env.plugin_venv_path(vars.get("BESPOK3D", ""), plugin_id)
-    return {**vars, python_env.PLUGIN_VENV_VAR: str(venv_path)}
 
 
 def ensure_lmd_control_script(jinni: Any, paths: dict[str, str]) -> None:
@@ -939,11 +906,6 @@ def _deactivate_plugin(plugin_dir: Path, vars: dict[str, str], reason: str) -> N
     if (plugin_dir / "manifest.json").exists():
         _neutralize_plugin(plugin_dir, vars)
     (plugin_dir / _DEACTIVATED_MARKER).write_text(json.dumps({"reason": reason}))
-
-
-def _missing_required_vars(manifest: dict, available: dict[str, str]) -> list[str]:
-    specs = manifest.get("requires", {}).get("variables", [])
-    return [spec["name"] for spec in specs if spec.get("required") and not available.get(spec["name"])]  # noqa: E501
 
 
 def _apply_plugin(plugin_dir: Path, raw_inst: dict, inst: dict, full_vars: dict[str, str]) -> tuple[list[dict], list[str]]:  # noqa: E501

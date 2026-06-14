@@ -11,7 +11,10 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
 
 - [doc/engineering-rules.md](doc/engineering-rules.md): the rules every change follows. These are
   software-engineering rules, not Python rules; they apply identically across the wider Bespok3d codebase.
-  Read it fully before writing code.
+  Read it fully before writing code. Its opening section is the WHY: code has two bounded-context readers
+  (a human and an LLM), every rule exists to lower the context needed to make a safe local change, and the
+  objective is human cognitive load (a lean machine context is the correlated side effect, never the
+  target). Apply the rules in that spirit, not just to the letter.
 - [doc/architecture.md](doc/architecture.md): what the daemon is, the generic-versus-device boundary, the
   HTTP-versus-websocket boundary, the invariants, and where each concern lives (and is moving to).
 - [README.md](README.md) for build/version/release mechanics; [CONTRIBUTING.md](CONTRIBUTING.md) for the
@@ -32,7 +35,10 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
    bug. "No premature abstraction" forbids generalizing for one caller; it does not excuse copy-paste.
 6. **The printer is never left broken.** Every error path leaves the printer usable; the auto-deactivate
    safety net runs on every op that restarts a core service. No silent excepts: act or report.
-7. **RULE ZERO: no em-dash or en-dash, anywhere.** Use a comma, colon, semicolon, parentheses, or two
+7. **Write less first.** The cheapest code is the code you do not write: question whether it needs to
+   exist, prefer stdlib / native / an existing helper, then write the smallest clear solution. A means to
+   readability, never code-golf; it never overrides 1 and 2 and never adds "upgrade path" comments.
+8. **RULE ZERO: no em-dash or en-dash, anywhere.** Use a comma, colon, semicolon, parentheses, or two
    sentences. A hyphen in a compound word is fine. Enforced by `scripts/em_dash_guard.py` in the gate.
 
 ## How to work a change
@@ -62,7 +68,7 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
 - **Never pip the system, Klipper, or Moonraker interpreters.** The daemon's deps live in its venv; plugin
   deps are baked into the package. (See the venv-isolation invariant in architecture.md.)
 - **Versioning.** Bump `version.py` and `manifest.json` together (the pack refuses a mismatch); keep the
-  app-side `EXPECTED_DAEMON_VERSION` and `tests/test_api.py` in sync.
+  app-side `EXPECTED_DAEMON_VERSION` and `tests/api/test_api.py` in sync.
 - **Gate must stay green** before any change is considered done.
 
 ## When you are unsure

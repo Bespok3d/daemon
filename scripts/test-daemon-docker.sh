@@ -6,7 +6,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PURE_CORES="core/intent.py,core/print_events.py,core/auth.py"
-PROP_TESTS="tests/test_intent_props.py tests/test_print_events_props.py tests/test_auth_props.py"
+PROP_TESTS="tests/core/test_intent_props.py tests/core/test_print_events_props.py tests/core/test_auth_props.py"
 
 if ! docker info > /dev/null 2>&1; then
     echo "Docker is not running. Start Docker and retry." >&2

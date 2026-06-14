@@ -33,7 +33,7 @@ push; CI runs the same gate and blocks a release on failure.
 - Ships a regression test at the layer that would catch the bug, in the same change.
 - Keeps the docs current when it changes a boundary, an invariant, or where a concern lives.
 - Bumps `version.py` and `manifest.json` together when it changes the daemon's behavior, and keeps the
-  app-side `EXPECTED_DAEMON_VERSION` and `tests/test_api.py` in sync.
+  app-side `EXPECTED_DAEMON_VERSION` and `tests/api/test_api.py` in sync.
 
 ## Constraints
 

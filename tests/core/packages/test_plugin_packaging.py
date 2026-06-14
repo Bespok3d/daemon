@@ -20,7 +20,17 @@ import pytest
 
 from core import packages
 
-_WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
+
+def _find_workspace_root() -> Path:
+    """Walk up to the sibling-repo workspace root (the dir holding `plugins/`), so a test move
+    never silently disables the packaging guard the way a hardcoded parent index did."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "plugins").is_dir():
+            return parent
+    return Path(__file__).resolve().parents[4]
+
+
+_WORKSPACE_ROOT = _find_workspace_root()
 MP = pytest.MonkeyPatch
 
 

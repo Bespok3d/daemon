@@ -57,7 +57,7 @@ Do not stream a command's result over a side channel, and do not poll for state 
   offline (its own venv) or symlinked into the target interpreter's site-packages (a Klipper/Moonraker
   extra), never installed live on the printer.
 - **Version single-source.** `version.py` `DAEMON_VERSION` is the source of truth. `manifest.json` mirrors
-  it (`pack.sh` enforces equality), and the app-side `EXPECTED_DAEMON_VERSION` plus `tests/test_api.py`
+  it (`pack.sh` enforces equality), and the app-side `EXPECTED_DAEMON_VERSION` plus `tests/api/test_api.py`
   track it.
 - **Auth on every route** except the single unauthenticated `POST /access/request`. Token comparison is
   constant-time.
@@ -76,7 +76,7 @@ jinni/                generic base jinni + loader (device jinnis live in the ada
 S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
 wheels/               prebuilt offline runtime deps (pgpy)
-tests/                test suite (not packed)
+tests/                test suite (not packed); mirrors the source tree (tests/core/packages/, tests/api/, ...)
 scripts/              check.sh, pack.sh, generate-atom.mjs, test-daemon-docker.sh (not packed)
 doc/                  README + CHANGELOG (shipped in the .b3); this file + engineering-rules (not shipped)
 ```

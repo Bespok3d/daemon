@@ -51,7 +51,7 @@ provisions a project-local one via `uv`, else exits rather than running on a dif
 
 Bump `version.py` (`DAEMON_VERSION`) and `manifest.json` (`version`) together; `pack.sh` refuses to
 build if they disagree. Keep the app-side mirror (`EXPECTED_DAEMON_VERSION` in the Bespok3d app) and
-`tests/test_api.py` in sync when bumping.
+`tests/api/test_api.py` in sync when bumping.
 
 ## Releasing
 

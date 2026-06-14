@@ -6,9 +6,48 @@ the desktop app (TypeScript), the adapters (TypeScript), and the plugins (Python
 reviewing a change here, follow them. If you are an LLM assisting a contributor, treat them as the floor:
 the human reviewer enforces them and a PR that breaks them gets sent back.
 
-The measure behind every rule is **time to a successful edit**: a reader with decent fluency in the
-language but zero context about this codebase should be able to make a small, correct change with low
-effort. If a rule and that measure ever seem to disagree, the measure wins; tell the reviewer.
+---
+
+## Why these rules exist: two bounded-context readers
+
+Every rule below serves one goal: keep low the amount of context a reader must hold in their head to make a
+safe, local change. The operational measure is **time to a successful edit**: someone with decent fluency
+in the language but zero context about this codebase should be able to make a small, correct change with
+low effort. Every rule answers to that measure; if a rule and the measure ever seem to disagree, the
+measure wins, and you tell the reviewer.
+
+The reason this is the goal is that the code now has two kinds of reader, and both are bounded-context
+reasoners:
+
+- a **human** holds only a handful of things in working memory at once;
+- an **LLM** has a finite context window whose attention degrades as it fills with material, relevant or
+  not.
+
+They pay the same cost in the same currency: the more unrelated material a reader must load to change one
+thing, the slower and less safe the change, for either of them. This is the bet the rulebook is built on,
+and the design premise of a human-machine team: **lowering human cognitive load and keeping the machine's
+working context lean are the same move.** Good locality, honest names, and flat flow pay out in both human
+comprehension and machine edit-success, because all three reduce the one shared quantity.
+
+The two readers are not identical, so design to whichever one is the **tighter constraint on each axis**:
+
+- **Within a unit** (one function, one file) the machine is usually tighter: it degrades on large, dense
+  blobs and long-range attention faster than an experienced human. So keep units small and flat.
+- **Across units** (navigating the repo, following a flow through indirection) the human is tighter: a
+  machine can grep the whole tree cheaply, a human cannot. So keep the map navigable, the names honest, and
+  indirection low.
+
+Satisfy the tighter reader on each axis and you satisfy both. That is what the rules below encode: small,
+flat units (machine-bound) plus concern-directories and domain names (human-bound).
+
+**The direction is not negotiable: human cognitive load is the objective; a lean machine context is the
+correlated side effect, never the target.** Optimize for the human and the machine rides along. Invert it,
+optimize for the machine, and you drift into machine-pleasing bloat: redundant scaffolding,
+over-documentation, structure that exists only to feed retrieval. Write for the human who will maintain
+this code; the assistant benefits precisely because the human does.
+
+The rules below are the HOW; this is the WHY. When a rule's letter and its purpose seem to conflict, apply
+the purpose.
 
 ---
 
@@ -73,6 +112,28 @@ flat form is worse, so the next reader does not have to rediscover it.
 
 ---
 
+## Write less first
+
+The cheapest code is the code you do not write, and the smallest change that solves the problem is usually
+the most readable one. Before adding anything, walk this ladder and stop at the first rung that answers the
+need:
+
+1. Does it need to exist at all? Drop the feature, the option, the abstraction, the defensive branch for a
+   case that cannot happen.
+2. Does the standard library already do it? Use it.
+3. Is it a native capability of something we already run on? Use that.
+4. Is it already a dependency or a helper in this codebase? Reuse it (and once a pattern repeats three
+   times, extract it, per the rule of three below).
+5. Only then write it, as the smallest solution that is still clear.
+
+This is a means to readability, not a code-golf target. It never overrides the floor: do not collapse logic
+into a clever one-liner that breaks the two non-negotiables (a dense nested ternary, single-letter names),
+and do not leave "upgrade path" or "TODO" breadcrumb comments (the no-comments rule stands; a real
+constraint is the one allowed kind of why-comment). Smaller is better only when it is also clearer; when
+minimal and readable disagree, readable wins.
+
+---
+
 ## Structure: separation of concerns
 
 Separation of concerns is non-negotiable: one responsibility per module, file, and function. The most
@@ -82,7 +143,9 @@ concern, so a reader has to hunt through unrelated code to find the part they ne
 - **Directories categorize concerns, from day zero.** A concern gets a directory named for it, and the
   files that belong together live in it (`core/safety/`, `core/uds/`, `api/routes/`). The test: a newcomer
   finds the file they need fast and never has to hunt through a jumbled file. Apply this when you create
-  the file, not as a later cleanup.
+  the file, not as a later cleanup. **Test code is still code:** when tests do not live next to the code
+  they cover, the test tree mirrors the source tree (`tests/core/packages/` tests `core/packages/`), so a
+  test is as findable as the code it guards.
 
 - **Generic versus device-specific is a hard separation.** The daemon is a generic on-printer agent.
   Klipper / Moonraker / Snapmaker / `lmd` specifics (concrete service names, init-script paths, restart
@@ -186,7 +249,7 @@ build break, not a style note.
   unit test for pure logic, a fault-injection or integration test for wiring). The test fails on the old
   behavior and passes on the fix, in the same change.
 - **Versioning.** Bump `version.py` (`DAEMON_VERSION`) and `manifest.json` together (`pack.sh` refuses to
-  build if they disagree), and keep the app-side `EXPECTED_DAEMON_VERSION` and `tests/test_api.py` in sync.
+  build if they disagree), and keep the app-side `EXPECTED_DAEMON_VERSION` and `tests/api/test_api.py` in sync.
 
 ---
 
