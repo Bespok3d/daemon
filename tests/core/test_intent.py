@@ -140,3 +140,10 @@ def test_unsupported_class_is_refused() -> None:
 def test_unsupported_restart_hook_is_refused() -> None:
     with pytest.raises(ValueError, match="unsupported restart hook"):
         intent.normalize_install({"restart": ["database"]})
+
+
+def test_restarts_lmd_detection() -> None:
+    assert intent.restarts_lmd("/userdata/bespok3d/etc/init.d/lmdctl restart")
+    assert intent.restarts_lmd("/userdata/bespok3d/etc/init.d/lmdctl start")
+    assert not intent.restarts_lmd("/etc/init.d/S60klipper restart")
+    assert not intent.restarts_lmd("echo lmdctl is great")

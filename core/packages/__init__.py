@@ -10,7 +10,6 @@ import json
 import os
 import shutil
 import subprocess
-import urllib.request
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -22,10 +21,8 @@ from ..intent import (
     is_service_action,
     normalize_install,
     restarts_klipper,
-    restarts_lmd,
     restarts_moonraker,
 )
-from ..klippy_uds import query_print_state as _query_print_state
 from ..results import MAX_OUTPUT_BYTES as _MAX_OUTPUT_BYTES
 from ..results import item as _item
 from ..results import phase as _phase
@@ -41,7 +38,6 @@ from ..safety.attribution import AttributionIndex, Placement
 from ..safety.attribution import build_index as build_attribution_index
 from ..safety.health import MQTT_PORT as _MQTT_PORT
 from ..safety.health import klipper_healthy as _klipper_healthy
-from ..safety.health import klippy_socket_path as _klippy_socket_path
 from ..safety.health import port_listening as _port_listening
 from ..safety.health import probe_moonraker as _probe_moonraker
 from ..safety.health import run_restart_batch as _run_restart_batch
@@ -57,6 +53,12 @@ from .placement import (
     create_symlinks,
     remove_plugin_symlinks,
     replace_with_symlink,
+)
+from .print_guard import (
+    guard_batch_no_print,
+    guard_no_print,
+    guard_no_print_during_restart,
+    guard_no_print_for_removal,
 )
 from .services import generate_service_scripts
 from .templates import render_templates
@@ -82,73 +84,6 @@ _KLIPPER_REQUIREMENTS_FILE = "klipper_requirements.txt"
 _BAKED_SITE_PACKAGES = "files/site-packages"
 _BAKED_WHEELS = "files/wheels"
 _SITE_PACKAGES_VAR = "PYTHON_SITE_PACKAGES"
-
-
-_PRINTING_STATES = ("printing", "paused")
-
-
-def _print_state_via_moonraker() -> str:
-    """Fallback when Klipper's API socket is unavailable. Returns "" on any failure (including a 401
-    under force_logins), which reads as idle: the auth-immune Klipper socket is the main source."""
-    try:
-        url = "http://localhost:7125/printer/objects/query?print_stats"
-        with urllib.request.urlopen(url, timeout=3) as resp:
-            payload = json.loads(resp.read().decode(errors="replace"))
-    except Exception:
-        return ""
-    return str(payload.get("result", {}).get("status", {}).get("print_stats", {}).get("state", ""))
-
-
-def _print_active() -> tuple[bool, str]:
-    """Return (is_active, state). Reads Klipper's print_stats over its API socket (no auth, so it
-    works even when the moonraker-auth plugin forces logins); falls back to Moonraker HTTP when the
-    socket is unavailable. An idle / unreadable result is treated as not-printing."""
-    socket_path = _klippy_socket_path()
-    state = _query_print_state(socket_path) if socket_path else None
-    if state is None:
-        state = _print_state_via_moonraker()
-    return state in _PRINTING_STATES, state
-
-
-def _manifest_restarts_services(manifest: dict) -> bool:
-    ops = normalize_install(manifest.get("install", {}))
-    start_cmds = ops["start"]
-    if any(restarts_klipper(cmd) or restarts_moonraker(cmd) for cmd in start_cmds):
-        return True
-    # A plugin that bounces the display service (lmd) is detectable two ways: the generic
-    # `restart: ["lmd"]` hook lands an `lmdctl` command in `start`, and a display-owning plugin
-    # like camera-hw-accel (whose start runs its own init script with no literal "lmd") declares
-    # `lmdctl restart` in its teardown `stop`. Either marks it as display-touching.
-    display_cmds = [*start_cmds, *ops["stops"], *manifest.get("stop", [])]
-    return any(restarts_lmd(cmd) for cmd in display_cmds)
-
-
-def _guard_no_print(action: str) -> None:
-    """Refuse a system-wide plugin op (deactivate/teardown/recover) while printing or paused.
-
-    These bounce services across all plugins, so the check is unconditional: a LIVE Moonraker
-    query at the moment of the op, never a cached/periodic value.
-    """
-    active, state = _print_active()
-    if active:
-        raise ValueError(
-            f"Cannot {action} while a print is {state}: it restarts printer services, which "
-            "would interrupt the print. Try again when the printer is idle."
-        )
-
-
-def _guard_no_print_during_restart(manifest: dict, action: str = "install") -> None:
-    """Refuse an op that would bounce Klipper, Moonraker, or the display while printing/paused."""
-    if not _manifest_restarts_services(manifest):
-        return
-    active, state = _print_active()
-    if not active:
-        return
-    raise ValueError(
-        f"Cannot {action} {manifest.get('name', 'this plugin')} while a print is {state}: "
-        "it restarts Klipper, Moonraker, or the display service, which would interrupt the "
-        "print. Try again when the printer is idle."
-    )
 
 
 def _run_plugin_start_commands(cmds: list[str], vars: dict[str, str]) -> tuple[dict, list[str]]:
@@ -399,7 +334,7 @@ def _unpack_package(package_path: Path) -> tuple[dict, Path, int]:
         if "manifest.json" not in zf.namelist():
             raise ValueError("missing manifest.json")
         manifest = json.loads(zf.read("manifest.json"))
-        _guard_no_print_during_restart(manifest)
+        guard_no_print_during_restart(manifest)
         plugin_dir = PLUGIN_ROOT / manifest["name"]
         plugin_dir.mkdir(parents=True, exist_ok=True)
         # doc/ is catalog documentation, never deployed: printer space is at a premium.
@@ -491,7 +426,7 @@ def reconfigure(
     if not manifest_path.exists():
         raise ValueError(f"plugin {plugin_id!r} is not installed")
     manifest = json.loads(manifest_path.read_text())
-    _guard_no_print_during_restart(manifest)
+    guard_no_print_during_restart(manifest)
 
     full_vars = with_plugin_venv(vars, plugin_id)
     inst = normalize_install(manifest.get("install", {}))
@@ -857,7 +792,7 @@ def _restart_phases(deferred_cmds: list[str], vars: dict[str, str], ctx: Operati
 
 def recover(vars: dict[str, str]) -> list[dict]:
     """Re-apply all installed, non-deactivated plugins after OTA. Returns per-plugin results."""
-    _guard_no_print("recover plugins")
+    guard_no_print("recover plugins")
     if not PLUGIN_ROOT.exists():
         return []
     plugin_dirs = [
@@ -893,19 +828,6 @@ def recover(vars: dict[str, str]) -> list[dict]:
 def _read_manifest(package_path: Path) -> dict:
     with zipfile.ZipFile(package_path) as archive:
         return cast(dict, json.loads(archive.read("manifest.json")))
-
-
-def _guard_batch_no_print(manifests: list[dict]) -> None:
-    """Refuse the whole batch up front if any update restarts Klipper/Moonraker mid-print."""
-    if not any(_manifest_restarts_services(manifest) for manifest in manifests):
-        return
-    active, state = _print_active()
-    if not active:
-        return
-    raise ValueError(
-        f"Cannot update plugins while a print is {state}: some updates restart Klipper or "
-        "Moonraker, which would interrupt the print. Try again when the printer is idle."
-    )
 
 
 def _apply_install_deferred(plugin_dir: Path, manifest: dict, vars: dict[str, str]) -> tuple[list[dict], list[str]]:  # noqa: E501
@@ -958,7 +880,7 @@ def update_batch(
     if not package_paths:
         return []
     specs = [(package_path, _read_manifest(package_path)) for package_path in package_paths]
-    _guard_batch_no_print([manifest for _, manifest in specs])
+    guard_batch_no_print([manifest for _, manifest in specs])
     results: list[dict] = []
     deferred_restarts: list[str] = []
     for package_path, manifest in specs:
@@ -1039,21 +961,13 @@ def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> li
     dependents = installed_dependents(plugin_id)
     if dependents and not cascade:
         raise DependentsError(plugin_id, dependents)
-    _guard_no_print_for_removal([plugin_id, *dependents])
+    guard_no_print_for_removal(PLUGIN_ROOT, [plugin_id, *dependents])
     restart_commands = _removal_restart_commands([*dependents, plugin_id], vars)
     removed: list[str] = []
     _remove_with_dependents(plugin_id, vars, removed)
     if restart_commands:
         _restart_services(restart_commands, vars, OperationContext(OperationKind.UNINSTALL, plugin_id))  # noqa: E501
     return removed
-
-
-def _guard_no_print_for_removal(plugin_ids: list[str]) -> None:
-    """Refuse removing any plugin that would bounce a core/display service while printing/paused."""
-    for plugin_id in plugin_ids:
-        manifest_path = PLUGIN_ROOT / plugin_id / "manifest.json"
-        if manifest_path.exists():
-            _guard_no_print_during_restart(json.loads(manifest_path.read_text()), action="remove")
 
 
 _GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"
@@ -1089,7 +1003,7 @@ def _write_deactivated_marker(data_root: Path) -> None:
 
 def deactivate_all(vars: dict[str, str]) -> None:
     """Stop all plugins and remove config hooks; leave plugin files intact."""
-    _guard_no_print("deactivate plugins")
+    guard_no_print("deactivate plugins")
     data_root = Path(vars["BESPOK3D"])
     _deactivate_plugins_in(data_root / "usr/local/plugins", vars)
     _remove_include_line(Path(vars["PRINTER_CFG"]), "[include bespok3d/klipper")
@@ -1134,7 +1048,7 @@ def _remove_bespok3d_config_dir(vars: dict[str, str]) -> None:
 def teardown(vars: dict[str, str]) -> None:
     """Uninstall all plugins and remove config hooks; SSH caller removes the workspace."""
     # Guard at the top: the per-plugin uninstall guard is swallowed by _uninstall_plugins_in.
-    _guard_no_print("remove all plugins")
+    guard_no_print("remove all plugins")
     data_root = Path(vars["BESPOK3D"])
     _uninstall_plugins_in(data_root / "usr/local/plugins", vars)
     _remove_include_line(Path(vars["PRINTER_CFG"]), "[include bespok3d/klipper")

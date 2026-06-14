@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from core import packages
-from core.packages import services
+from core.packages import print_guard, services
 from core.safety import health
 
 MP = pytest.MonkeyPatch
@@ -943,13 +943,6 @@ def test_restarts_moonraker_detection() -> None:
     assert not packages.restarts_moonraker("echo moonraker is great")
 
 
-def test_restarts_lmd_detection() -> None:
-    assert packages.restarts_lmd("/userdata/bespok3d/etc/init.d/lmdctl restart")
-    assert packages.restarts_lmd("/userdata/bespok3d/etc/init.d/lmdctl start")
-    assert not packages.restarts_lmd("/etc/init.d/S60klipper restart")
-    assert not packages.restarts_lmd("echo lmdctl is great")
-
-
 def test_lmd_restart_is_deferred_but_not_a_core_service() -> None:
     cmd = "/userdata/bespok3d/etc/init.d/lmdctl restart"
     assert packages.is_service_action(cmd)
@@ -1260,112 +1253,20 @@ def test_remove_config_dir_removes_dir_when_only_our_links(tmp_path: Path) -> No
     assert not (tmp_path / "config" / "bespok3d").exists()
 
 
-def test_print_active_reads_klipper_api_socket(monkeypatch: MP) -> None:
-    # The guard must see a print in progress even under force_logins, via Klipper's own socket.
-    monkeypatch.setattr(packages, "_klippy_socket_path", lambda: "/tmp/klippy.sock")
-    monkeypatch.setattr(packages, "_query_print_state", lambda _path: "printing")
-    assert packages._print_active() == (True, "printing")
-
-
-def test_print_active_falls_back_to_moonraker_without_a_socket(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_klippy_socket_path", lambda: "")
-    monkeypatch.setattr(packages, "_print_state_via_moonraker", lambda: "paused")
-    assert packages._print_active() == (True, "paused")
-
-
-def test_print_active_idle_when_socket_unreachable_and_moonraker_silent(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_klippy_socket_path", lambda: "/tmp/klippy.sock")
-    monkeypatch.setattr(packages, "_query_print_state", lambda _path: None)
-    monkeypatch.setattr(packages, "_print_state_via_moonraker", lambda: "")
-    assert packages._print_active() == (False, "")
-
-
-def test_guard_blocks_install_that_restarts_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "printing"))
-    manifest = {"name": "tmc-low-current", "install": {"start": ["/etc/init.d/S60klipper restart"]}}
-    with pytest.raises(ValueError, match="print is printing"):
-        packages._guard_no_print_during_restart(manifest)
-
-
-def test_guard_allows_install_when_printer_idle(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_print_active", lambda: (False, "standby"))
-    manifest = {"name": "tmc-low-current", "install": {"start": ["/etc/init.d/S60klipper restart"]}}
-    packages._guard_no_print_during_restart(manifest)
-
-
-def test_guard_ignores_install_that_does_not_restart_services(monkeypatch: MP) -> None:
-    def fail_if_called() -> tuple[bool, str]:
-        raise AssertionError("print state must not be checked when no restart happens")
-
-    monkeypatch.setattr(packages, "_print_active", fail_if_called)
-    packages._guard_no_print_during_restart({"name": "x", "install": {"start": []}})
-
-
-def test_guard_blocks_lmd_restart_hook_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "printing"))
-    manifest = {"name": "x", "install": {"restart": ["lmd"]}}
-    with pytest.raises(ValueError, match="print is printing"):
-        packages._guard_no_print_during_restart(manifest)
-
-
-def test_guard_blocks_display_plugin_via_teardown_stop_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "printing"))
-    # camera-hw-accel restarts lmd inside its own init script (no literal "lmd" in start); its
-    # teardown `stop` declaring lmdctl marks it as display-touching.
-    manifest = {
-        "name": "camera-hw-accel",
-        "install": {"start": ["$BESPOK3D/etc/init.d/autostart/s65camera-hw restart"]},
-        "stop": [
-            "$BESPOK3D/etc/init.d/autostart/s65camera-hw stop",
-            "$BESPOK3D/etc/init.d/lmdctl restart",
-        ],
-    }
-    with pytest.raises(ValueError, match="print is printing"):
-        packages._guard_no_print_during_restart(manifest)
-
-
-def test_guard_blocks_camera_install_when_paused(monkeypatch: MP) -> None:
-    # a paused print counts as active: bouncing the camera/display would still disrupt the user.
-    assert "paused" in packages._PRINTING_STATES
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "paused"))
-    manifest = {
-        "name": "camera-hw-accel",
-        "install": {"start": ["$BESPOK3D/etc/init.d/autostart/s65camera-hw restart"]},
-        "stop": ["$BESPOK3D/etc/init.d/lmdctl restart"],
-    }
-    with pytest.raises(ValueError, match="print is paused"):
-        packages._guard_no_print_during_restart(manifest)
-
-
-def test_uninstall_blocked_during_print(tmp_path: Path, monkeypatch: MP) -> None:
-    # removing the camera bounces lmd via its teardown stop, so it is locked while printing too.
-    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "printing"))
-    cam = tmp_path / "camera-hw-accel"
-    cam.mkdir()
-    (cam / "manifest.json").write_text(json.dumps({
-        "name": "camera-hw-accel",
-        "install": {"start": []},
-        "stop": ["$BESPOK3D/etc/init.d/lmdctl restart"],
-    }))
-    with pytest.raises(ValueError, match="Cannot remove camera-hw-accel while a print is printing"):
-        packages._guard_no_print_for_removal(["camera-hw-accel"])
-
-
 def test_deactivate_blocked_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "printing"))
+    monkeypatch.setattr(print_guard, "_print_active", lambda: (True, "printing"))
     with pytest.raises(ValueError, match="Cannot deactivate plugins while a print is printing"):
         packages.deactivate_all({"BESPOK3D": "/x"})
 
 
 def test_teardown_blocked_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "paused"))
+    monkeypatch.setattr(print_guard, "_print_active", lambda: (True, "paused"))
     with pytest.raises(ValueError, match="Cannot remove all plugins while a print is paused"):
         packages.teardown({"BESPOK3D": "/x"})
 
 
 def test_recover_blocked_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "printing"))
+    monkeypatch.setattr(print_guard, "_print_active", lambda: (True, "printing"))
     with pytest.raises(ValueError, match="Cannot recover plugins while a print is printing"):
         packages.recover({"BESPOK3D": "/x"})
 
@@ -1580,7 +1481,7 @@ def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: 
 
 def test_update_batch_refused_during_print(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path / "plugins")
-    monkeypatch.setattr(packages, "_print_active", lambda: (True, "printing"))
+    monkeypatch.setattr(print_guard, "_print_active", lambda: (True, "printing"))
     package = make_package_file(tmp_path, "alpha", start=["/etc/init.d/S60klipper restart"])
 
     with pytest.raises(ValueError, match="while a print is printing"):
