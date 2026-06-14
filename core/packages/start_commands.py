@@ -6,6 +6,8 @@ of bouncing Klipper/Moonraker per plugin. Shared by every install-like path: ins
 update, and OTA recover.
 """
 
+from jinni.loader import get_jinni
+
 from ..results import phase
 from ..service_actions import is_service_action
 from ..shell import run_one_command, start_env
@@ -14,8 +16,9 @@ from .user_vars import expand
 
 def run_plugin_start_commands(cmds: list[str], vars: dict[str, str]) -> tuple[dict, list[str]]:
     env = start_env()
+    vocabulary = get_jinni().service_action_vocabulary()
     expanded_cmds = [expand(cmd, vars) for cmd in cmds]
-    immediate = [cmd for cmd in expanded_cmds if not is_service_action(cmd)]
-    deferred = [cmd for cmd in expanded_cmds if is_service_action(cmd)]
+    immediate = [cmd for cmd in expanded_cmds if not is_service_action(cmd, vocabulary)]
+    deferred = [cmd for cmd in expanded_cmds if is_service_action(cmd, vocabulary)]
     items = [run_one_command(cmd, env) for cmd in immediate]
     return phase("start", "Start commands", items), deferred

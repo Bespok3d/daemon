@@ -24,16 +24,25 @@ The single most important design rule here is the separation between generic and
 - The **daemon is generic.** It knows about plugins, packages, install phases, services, health, and
   recovery in the abstract. It must not name a concrete device fact: not `lmd`, not a `S60klipper` init
   path, not a Moonraker restart command.
-- The **jinni is the device's half**, and it is delegated to. The generic base jinni (`jinni/`,
-  `Jinni` then `KlipperPrinterJinni`) defines the interface and the path contract; the device jinni (for
-  example `bespok3d_jinni` for the Snapmaker U1) ships **with the adapter**, not in this repo, and supplies
-  the concrete paths, restart hooks, and service wiring. `jinni/loader.py` is the gate that loads a device
-  jinni and refuses one that does not satisfy the contract.
+- The **jinni is the device's half**, and it is delegated to. The generic base jinni (`jinni/`, split
+  by concern into `base.py` `Jinni`, `klipper.py` `KlipperPrinterJinni`, `inspection.py` the device
+  probes, `contracts.py` the typed shapes the interface returns) defines the interface and the path
+  contract; the device jinni (for example `bespok3d_jinni` for the Snapmaker U1) ships **with the
+  adapter**, not in this repo, and supplies the concrete paths, restart commands, service tokens, and
+  control scripts. `jinni/loader.py` is the gate that loads a device jinni and refuses one that does not
+  satisfy the contract (a klipper jinni must resolve its path keys AND its klipper/moonraker restart
+  commands, failing at load, not first install).
 
 When you need a device-specific value or action, the daemon does not hardcode it; it asks the jinni. If
 you find yourself typing a Snapmaker or Klipper specific into a `core/` file, stop: that fact belongs
-behind the jinni interface. (`core/intent.py` still holds some of this coupling and admits it in its own
-header; removing it is part of the decomposition below.)
+behind the jinni interface. As of ADR-0029 Part 1 the static coupling is gone: `core/intent.py` and
+`core/service_actions.py` name no device path, restart command, or service token. Placement and
+instrument classes resolve via `jinni.placement_destination`/`instrument_destination`, restart hooks via
+`jinni.restart_command`, the service-action tokens via `jinni.service_action_vocabulary`, and the
+display control script via `jinni.startup_control_scripts`. Only the bespok3d-layout conventions stay in
+core (the `etc/init.d` autostart wiring and the `var/lib` data dir in `intent.py`) because they name the
+daemon's own `$BESPOK3D` tree, not a device. Part 2 (moving every printer-service read and the
+permission-to-act judgment behind the jinni) is still pending.
 
 ## The transport boundary: HTTP for commands, websockets for live state
 
@@ -72,7 +81,7 @@ daemon.py             entrypoint
 api/                  FastAPI app, routes, middleware, schemas
 core/                 install / recover / safety / intent / auth / transport / capabilities ...
   safety/             attribution, health, fixers, decision: the self-heal family
-jinni/                generic base jinni + loader (device jinnis live in the adapter repo)
+jinni/                generic base jinni (base/klipper/inspection/contracts) + loader; device jinnis live in the adapter repo
 S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
 wheels/               prebuilt offline runtime deps (pgpy)
@@ -103,11 +112,16 @@ offenders:
   flow). `paths` holds the shared data-root constant. Handlers stay thin.
 - **`core/auth/` (from `core/auth.py`, 149 lines).** One security concern per file: keys, roles, labels,
   tokens, identity, and the request/grant/revoke cycle.
-- **`core/intent.py` (184 lines).** The service-action classifier (`restarts_klipper`/`restarts_moonraker`/
-  `restarts_lmd`/`is_service_action`) has been split out to `core/service_actions.py` (shared by the executor
-  and the safety net), leaving `intent.py` as the intent-to-mechanism translation (148 lines). The remaining
-  target is the deeper one: move the concrete device paths and restart commands (and the same U1 service-name
-  coupling now in `service_actions.py`) behind the jinni (see the central boundary above).
+- **`core/intent.py` DONE (ADR-0029 Part 1).** The service-action classifier was split out earlier to
+  `core/service_actions.py`. Part 1 then moved the device coupling behind the jinni: the placement and
+  instrument class maps to `jinni.placement_destination`/`instrument_destination` (bespok3d-layout classes
+  on the base `Jinni`, klipper classes on `KlipperPrinterJinni`), the `RESTART_HOOKS` commands to
+  `jinni.restart_command` (the four U1 commands now live in the adapter), the classifier's device tokens
+  (`lmdctl`/`init.d`/`nginx`) to `jinni.service_action_vocabulary` (the verb regex and klipper/moonraker
+  names stay generic in `service_actions.py`), and `ensure_lmd_control_script` to
+  `jinni.startup_control_scripts` + a generic `write_startup_control_scripts` writer. `intent.py` keeps
+  only the bespok3d-layout service wiring and data-dir convention (its own `$BESPOK3D` tree, no device
+  value). Part 2 (printer-service reads + the permission gate) is the remaining ADR-0029 work.
 - **`core/printer_comms/` DONE (was the tentative `core/uds/`).** Groups the clients that talk to the
   printer's own running services: `klippy`, `moonraker`, and the shared `frame` transport.
 - **`core/safety/fixers/` (from `core/safety/fixers.py`).** One fixer per file with a registry, so new

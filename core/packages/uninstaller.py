@@ -13,7 +13,9 @@ The orchestrator (`core/packages/__init__.py`) owns the plugin root and passes i
 import shutil
 from pathlib import Path
 
-from ..intent import RESTART_HOOKS, normalize_install
+from jinni.loader import get_jinni
+
+from ..intent import normalize_install
 from ..safety import OperationContext, OperationKind
 from .deactivation import run_stop_commands
 from .dependencies import installed_dependents
@@ -55,9 +57,12 @@ def _remove_with_dependents(plugin_root: Path, plugin_id: str, vars: dict[str, s
 
 
 def _manifest_restart_commands(manifest: dict, vars: dict[str, str]) -> list[str]:
-    """The restart hooks one manifest declares, resolved to expanded shell commands."""
+    """The restart hooks one manifest declares, resolved to expanded shell commands. A hook the
+    device does not recognize is skipped: removal is lenient, never refused over an unknown hook."""
+    jinni = get_jinni()
     hooks = manifest.get("install", {}).get("restart", [])
-    return [expand(RESTART_HOOKS[hook], vars) for hook in hooks if hook in RESTART_HOOKS]
+    commands = [jinni.restart_command(hook) for hook in hooks]
+    return [expand(command, vars) for command in commands if command is not None]
 
 
 def _removal_restart_commands(plugin_root: Path, plugin_ids: list[str], vars: dict[str, str]) -> list[str]:  # noqa: E501

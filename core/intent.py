@@ -5,56 +5,30 @@ path or a mechanism: `place` (a payload file of a destination class), `instrumen
 diff against a pre-existing file), `service` (a managed long-running process), and `restart`
 (core-service hooks). The adapter owns the class-to-(path, mechanism) mapping.
 
-Until the daemon dispatches each verb to a per-printer adapter (ADR-0029), this module is the
-thin U1 seam: it maps each new section to the legacy `{symlinks, templates, patches, start,
-dirs}` operations the current executor already knows how to run, merging in any legacy keys a
-not-yet-migrated manifest still carries. The path templates and restart commands here are the
-U1 defaults; moving them behind the adapter contract is the follow-on.
+The daemon owns no device path or restart command: a placement or instrument names a CLASS and a
+restart names a HOOK, and the jinni resolves each (`jinni/base.py` for the bespok3d layout,
+`jinni/klipper.py` for klipper conventions, the adapter for genuine device restart commands). This
+module maps the new sections to the legacy `{symlinks, templates, patches, start, dirs}` operations
+the current executor runs, merging in any legacy keys a not-yet-migrated manifest still carries.
 """
 from pathlib import PurePosixPath
 
-# A destination class resolves to a path template using adapter variables the daemon expands
-# at install time. Grows empirically as plugins of new classes are repacked.
-PLACEMENT_DESTINATIONS = {
-    "klipper-config": "$BESPOK3D_KLIPPER/{name}",
-    "moonraker-config": "$BESPOK3D_MOONRAKER/{name}",
-    "klipper-extra": "$KLIPPER_EXTRAS/{name}",
-    "moonraker-component": "$MOONRAKER_COMPONENTS/{name}",
-    "web-location": "$BESPOK3D/etc/nginx/locations/{name}",
-    "system-bin": "$BESPOK3D/bin/{name}",
-}
+from jinni.loader import get_jinni
 
 # A managed service (ADR-0026/0029) is realized by the adapter generating an init script the
 # daemon writes under this dir inside the plugin and wires into the autostart dir. The script
-# CONTENT is the adapter's HOW (start_script.py); the wiring here is the core vocabulary.
+# CONTENT is the adapter's HOW (start_script.py); the wiring here is the core vocabulary over the
+# daemon's own $BESPOK3D tree, so it names no device value and stays in core.
 SERVICE_SCRIPT_DIR = "etc/init.d"
 SERVICE_AUTOSTART_DEST = "$BESPOK3D/etc/init.d/autostart/{script}"
-
-# An instrumentation target (ADR-0031) resolves to the pre-existing file the carried diff patches.
-# The name is logical (relative to the Klipper tree), never a raw path.
-INSTRUMENT_DESTINATIONS = {
-    "klipper-source": "$KLIPPER_SRC/{name}",
-}
-
-# A core-service hook resolves to the printer's restart command (U1 default until the adapter
-# service hooks of ADR-0029 own this).
-RESTART_HOOKS = {
-    "klipper": "/etc/init.d/S60klipper restart",
-    "moonraker": "/etc/init.d/S61moonraker restart",
-    "web": "/usr/sbin/nginx -s reload",
-    "lmd": "$BESPOK3D/etc/init.d/lmdctl restart",
-}
 
 DATA_DIR_TEMPLATE = "$BESPOK3D/var/lib/{name}"
 
 
 def _placement_target(placement: dict) -> tuple[str, str]:
-    destination_class = placement["class"]
     target_name = placement.get("name") or PurePosixPath(placement["src"]).name
-    template = PLACEMENT_DESTINATIONS.get(destination_class)
-    if template is None:
-        raise ValueError(f"unsupported destination class: {destination_class}")
-    return template.format(name=target_name), target_name
+    destination = get_jinni().placement_destination(placement["class"], target_name)
+    return destination, target_name
 
 
 def _placement_ops(placement: dict) -> tuple[dict | None, dict]:
@@ -72,11 +46,8 @@ def _placement_ops(placement: dict) -> tuple[dict | None, dict]:
 
 
 def _instrument_op(entry: dict) -> dict:
-    instrument_class = entry["class"]
-    template = INSTRUMENT_DESTINATIONS.get(instrument_class)
-    if template is None:
-        raise ValueError(f"unsupported instrument class: {instrument_class}")
-    return {"file": template.format(name=entry["name"]), "patch": entry["diff"]}
+    destination = get_jinni().instrument_destination(entry["class"], entry["name"])
+    return {"file": destination, "patch": entry["diff"]}
 
 
 def service_script_name(service: dict) -> str:
@@ -122,9 +93,10 @@ def _service_additions(services: list[dict]) -> tuple[list[dict], list[str], lis
 
 
 def _restart_commands(hooks: list[str]) -> list[str]:
+    jinni = get_jinni()
     commands = []
     for hook in hooks:
-        command = RESTART_HOOKS.get(hook)
+        command = jinni.restart_command(hook)
         if command is None:
             raise ValueError(f"unsupported restart hook: {hook}")
         commands.append(command)

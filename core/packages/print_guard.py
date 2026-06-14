@@ -8,6 +8,8 @@ import json
 import urllib.request
 from pathlib import Path
 
+from jinni.loader import get_jinni
+
 from ..intent import normalize_install
 from ..printer_comms.klippy import query_print_state
 from ..safety.probe.klipper import klippy_socket_path
@@ -44,12 +46,13 @@ def _manifest_restarts_services(manifest: dict) -> bool:
     start_cmds = ops["start"]
     if any(restarts_klipper(cmd) or restarts_moonraker(cmd) for cmd in start_cmds):
         return True
-    # A plugin that bounces the display service (lmd) is detectable two ways: the generic
-    # `restart: ["lmd"]` hook lands an `lmdctl` command in `start`, and a display-owning plugin
-    # like camera-hw-accel (whose start runs its own init script with no literal "lmd") declares
-    # `lmdctl restart` in its teardown `stop`. Either marks it as display-touching.
+    # A plugin that bounces the display service is detectable two ways: the generic `restart`
+    # display hook lands the device's display command in `start`, and a display-owning plugin like
+    # camera-hw-accel (whose start runs its own init script) declares the display command in its
+    # teardown `stop`. Either marks it as display-touching, judged against the device's vocabulary.
+    vocabulary = get_jinni().service_action_vocabulary()
     display_cmds = [*start_cmds, *ops["stops"], *manifest.get("stop", [])]
-    return any(restarts_lmd(cmd) for cmd in display_cmds)
+    return any(restarts_lmd(cmd, vocabulary) for cmd in display_cmds)
 
 
 def guard_no_print(action: str) -> None:

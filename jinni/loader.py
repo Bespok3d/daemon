@@ -20,15 +20,24 @@ def _missing_keys(paths: dict[str, str], required: frozenset[str]) -> list[str]:
     return sorted(key for key in required if not paths.get(key))
 
 
+_REQUIRED_KLIPPER_RESTARTS = ("klipper", "moonraker")
+
+
 def _verify_contract(jinni: Jinni) -> None:
     paths = jinni.paths()
     missing_core = _missing_keys(paths, CORE_PATH_KEYS)
     if missing_core:
         raise ValueError(f"jinni is missing core path variables: {missing_core}")
-    if isinstance(jinni, KlipperPrinterJinni):
-        missing_klipper = _missing_keys(paths, KLIPPER_PATH_KEYS)
-        if missing_klipper:
-            raise ValueError(f"klipper jinni is missing klipper path variables: {missing_klipper}")
+    if not isinstance(jinni, KlipperPrinterJinni):
+        return
+    missing_klipper = _missing_keys(paths, KLIPPER_PATH_KEYS)
+    if missing_klipper:
+        raise ValueError(f"klipper jinni is missing klipper path variables: {missing_klipper}")
+    missing_restarts = [
+        hook for hook in _REQUIRED_KLIPPER_RESTARTS if not jinni.restart_command(hook)
+    ]
+    if missing_restarts:
+        raise ValueError(f"klipper jinni is missing restart commands for: {missing_restarts}")
 
 
 def get_jinni() -> Jinni:

@@ -11,7 +11,8 @@ deferred until packages are signed.
 
 import os
 from pathlib import Path
-from typing import Any
+
+from jinni.base import Jinni
 
 from ..safety import OperationContext, OperationKind
 from .deactivation import DEACTIVATED_MARKER
@@ -42,19 +43,18 @@ from .user_vars import (
 _DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
 PLUGIN_ROOT = _DATA_ROOT / "usr/local/plugins"
 
-def ensure_lmd_control_script(jinni: Any, paths: dict[str, str]) -> None:
-    """Place the jinni's hardened lmd control script at $BESPOK3D/etc/init.d/lmdctl (0755).
+def write_startup_control_scripts(jinni: Jinni, paths: dict[str, str]) -> None:
+    """Write the control scripts the jinni declares for startup into the persistent bespok3d tree.
 
-    Rendered into the persistent bespok3d tree (not symlinked into the redeployed daemon dir) so it
-    survives a full daemon redeploy. Gated on the adapter advertising `lmd-control`, so a generic
-    daemon and non-display adapters write nothing.
+    Each lands at its absolute path in the persistent tree (not the redeployed daemon dir) so it
+    survives a full daemon redeploy. A generic daemon and non-display adapters declare none and so
+    write nothing; the jinni owns which scripts a device needs.
     """
-    if "lmd-control" not in jinni.capability_flags():
-        return
-    target = Path(paths["BESPOK3D"]) / "etc/init.d/lmdctl"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(jinni.render_lmd_control_script(paths))
-    target.chmod(0o755)
+    for script in jinni.startup_control_scripts(paths):
+        target = Path(script.path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(script.content)
+        target.chmod(script.mode)
 
 
 def install(

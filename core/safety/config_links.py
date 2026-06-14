@@ -9,7 +9,6 @@ from pathlib import Path
 
 from jinni.loader import get_jinni
 
-from ..intent import RESTART_HOOKS
 from ..shell import start_env
 
 
@@ -43,6 +42,7 @@ def prune_dead_config_links(dirs: list[Path] | None = None) -> list[str]:
 
 
 def restart_moonraker() -> None:
-    subprocess.run(
-        RESTART_HOOKS["moonraker"], shell=True, capture_output=True, check=False, env=start_env()
-    )
+    command = get_jinni().restart_command("moonraker")
+    if command is None:
+        return
+    subprocess.run(command, shell=True, capture_output=True, check=False, env=start_env())

@@ -9,6 +9,8 @@ from core import packages
 from core.packages import dependencies, print_guard, python_deps, services
 from core.packages.recovery import evidence
 from core.safety.probe import klipper, moonraker
+from jinni.base import Jinni
+from jinni.contracts import ControlScript
 
 MP = pytest.MonkeyPatch
 
@@ -1193,28 +1195,22 @@ def test_recover_blocked_during_print(monkeypatch: MP) -> None:
         packages.recover({"BESPOK3D": "/x"})
 
 
-class _LmdControlAdapter:
-    def capability_flags(self) -> set[str]:
-        return {"lmd-control"}
-
-    def render_lmd_control_script(self, paths: dict[str, str]) -> str:
-        return "#!/bin/sh\n# lmdctl\n"
+class _ControlScriptJinni(Jinni):
+    def startup_control_scripts(self, paths: dict[str, str]) -> list[ControlScript]:
+        target = f"{paths['BESPOK3D']}/etc/init.d/lmdctl"
+        return [ControlScript(path=target, content="#!/bin/sh\n# lmdctl\n", mode=0o755)]
 
 
-def test_ensure_lmd_control_script_written_when_capability_present(tmp_path: Path) -> None:
-    packages.ensure_lmd_control_script(_LmdControlAdapter(), {"BESPOK3D": str(tmp_path)})
+def test_startup_control_scripts_are_written(tmp_path: Path) -> None:
+    packages.write_startup_control_scripts(_ControlScriptJinni(), {"BESPOK3D": str(tmp_path)})
     target = tmp_path / "etc" / "init.d" / "lmdctl"
     assert target.read_text() == "#!/bin/sh\n# lmdctl\n"
     assert target.stat().st_mode & 0o755 == 0o755
 
 
-def test_ensure_lmd_control_script_skipped_without_capability(tmp_path: Path) -> None:
-    class _NoLmdAdapter:
-        def capability_flags(self) -> set[str]:
-            return set()
-
-    packages.ensure_lmd_control_script(_NoLmdAdapter(), {"BESPOK3D": str(tmp_path)})
-    assert not (tmp_path / "etc" / "init.d" / "lmdctl").exists()
+def test_a_jinni_with_no_startup_control_scripts_writes_nothing(tmp_path: Path) -> None:
+    packages.write_startup_control_scripts(Jinni(), {"BESPOK3D": str(tmp_path)})
+    assert not (tmp_path / "etc" / "init.d").exists()
 
 
 def write_plugin(
