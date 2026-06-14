@@ -1152,9 +1152,7 @@ def test_deactivate_all_writes_marker_and_removes_include_lines(tmp_path: Path) 
     assert "[printer]" in printer_cfg.read_text()
 
 
-def test_teardown_removes_plugin_dirs_and_include_lines(
-    tmp_path: Path, monkeypatch: MP,
-) -> None:
+def test_teardown_removes_plugin_dirs_and_include_lines(tmp_path: Path) -> None:
     plugin_root = tmp_path / "usr" / "local" / "plugins"
     plugin_dir = plugin_root / "widget"
     plugin_dir.mkdir(parents=True)
@@ -1165,7 +1163,6 @@ def test_teardown_removes_plugin_dirs_and_include_lines(
     moonraker_cfg = tmp_path / "moonraker.cfg"
     printer_cfg.write_text("[include bespok3d/klipper/main.cfg]\n[printer]\n")
     moonraker_cfg.write_text("[include bespok3d/moonraker/main.cfg]\n[server]\n")
-    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
 
     packages.teardown({
         "BESPOK3D": str(tmp_path),
@@ -1176,37 +1173,6 @@ def test_teardown_removes_plugin_dirs_and_include_lines(
     assert not plugin_dir.exists()
     assert "bespok3d/klipper" not in printer_cfg.read_text()
     assert "bespok3d/moonraker" not in moonraker_cfg.read_text()
-
-
-def test_remove_config_dir_preserves_user_files_but_takes_back_links(tmp_path: Path) -> None:
-    klipper = tmp_path / "config" / "bespok3d" / "klipper"
-    klipper.mkdir(parents=True)
-    target = tmp_path / "userdata" / "spoolman.cfg"
-    target.parent.mkdir(parents=True)
-    target.write_text("generated")
-    our_link = klipper / "spoolman.cfg"
-    our_link.symlink_to(target)
-    user_file = klipper / "my-overrides.cfg"
-    user_file.write_text("user stuff")
-
-    packages._remove_bespok3d_config_dir({"BESPOK3D_KLIPPER": str(klipper)})
-
-    assert not our_link.is_symlink()
-    assert user_file.read_text() == "user stuff"
-    assert (tmp_path / "config" / "bespok3d").is_dir()
-
-
-def test_remove_config_dir_removes_dir_when_only_our_links(tmp_path: Path) -> None:
-    klipper = tmp_path / "config" / "bespok3d" / "klipper"
-    klipper.mkdir(parents=True)
-    target = tmp_path / "userdata" / "rfid.cfg"
-    target.parent.mkdir(parents=True)
-    target.write_text("x")
-    (klipper / "rfid.cfg").symlink_to(target)
-
-    packages._remove_bespok3d_config_dir({"BESPOK3D_KLIPPER": str(klipper)})
-
-    assert not (tmp_path / "config" / "bespok3d").exists()
 
 
 def test_deactivate_blocked_during_print(monkeypatch: MP) -> None:

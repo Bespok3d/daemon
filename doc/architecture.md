@@ -91,10 +91,11 @@ offenders:
   (the API the routes import) and owns the plugin root, injecting it into the worker modules; the rest
   splits by concern: `errors`, `user_vars`, `placement` (the symlink/dir/mode family), `patches`,
   `templates`, `services`, `installer` (the install/reconfigure/update-batch family + its shared phase
-  runner), `uninstaller` (the uninstall family), `print_guard`, `python_deps`, `archive`, `manifest`,
-  `dependencies` (the dep graph and topo sort), `deactivation`, and `recovery` (pairs with `core/safety/`).
-  Still in `__init__` pending their own packets: recover and the deactivate/teardown lifecycle. Consolidate
-  the duplicated deactivate/uninstall/guard helpers while extracting.
+  runner), `uninstaller` (the uninstall family), `lifecycle` (deactivate/teardown), `print_guard`,
+  `python_deps`, `archive`, `manifest`, `dependencies` (the dep graph and topo sort), `deactivation`, and
+  `recovery` (pairs with `core/safety/`). The `__init__` is now essentially the facade: the four op
+  wrappers plus `recover` (kept as facade wiring) and `ensure_lmd_control_script` (a jinni-boundary
+  outlier). Consolidate the duplicated deactivate/uninstall/guard helpers while extracting.
 - **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
   core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck),
   `feeds` (the three live websocket handlers and the `install_hub`), `packages` (install/reconfigure/

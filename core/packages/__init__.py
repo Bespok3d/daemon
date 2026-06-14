@@ -1,9 +1,9 @@
 """Package-operations facade.
 
 Re-exports the public package API the routes import and owns the plugin root, injecting it into the
-worker modules. The install-shaped operations live in `installer.py` and the uninstall family in
-`uninstaller.py`; recover and the deactivate/teardown lifecycle still live here pending their own
-extraction.
+worker modules. The install-shaped operations live in `installer.py`, the uninstall family in
+`uninstaller.py`, and the deactivate/teardown lifecycle in `lifecycle.py`; recover still lives here
+pending its own decision (it currently stays as facade wiring, like the recover() precedent).
 
 A .b3 package is a zip of manifest.json plus the plugin file tree. Signature verification is
 deferred until packages are signed.
@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..safety import OperationContext, OperationKind
-from .deactivation import DEACTIVATED_MARKER, neutralize_plugin
+from .deactivation import DEACTIVATED_MARKER
 from .dependencies import provided_services, topo_sort
 from .errors import (
     ConflictError,  # noqa: F401  re-export for api.routes
@@ -25,6 +25,10 @@ from .installer import (
     run_install,
     run_reconfigure,
     run_update_batch,
+)
+from .lifecycle import (  # noqa: F401  re-export for api.routes
+    deactivate_all,
+    teardown,
 )
 from .manifest import manifest_at
 from .print_guard import guard_no_print
@@ -110,87 +114,3 @@ def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> li
     return run_uninstall(PLUGIN_ROOT, plugin_id, vars, cascade)
 
 
-_GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"
-
-
-def _remove_include_line(cfg_path: Path, pattern: str) -> None:
-    if not cfg_path.exists():
-        return
-    text = cfg_path.read_text()
-    cfg_path.write_text(
-        "".join(line for line in text.splitlines(keepends=True) if pattern not in line)
-    )
-
-
-def _deactivate_plugin_dir(plugin_dir: Path, vars: dict[str, str]) -> None:
-    if not plugin_dir.is_dir() or not (plugin_dir / "manifest.json").exists():
-        return
-    neutralize_plugin(plugin_dir, vars)
-
-
-def _deactivate_plugins_in(plugin_root: Path, vars: dict[str, str]) -> None:
-    if not plugin_root.exists():
-        return
-    for plugin_dir in plugin_root.iterdir():
-        _deactivate_plugin_dir(plugin_dir, vars)
-
-
-def _write_deactivated_marker(data_root: Path) -> None:
-    marker = data_root / _GLOBAL_DEACTIVATED_MARKER
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
-
-
-def deactivate_all(vars: dict[str, str]) -> None:
-    """Stop all plugins and remove config hooks; leave plugin files intact."""
-    guard_no_print("deactivate plugins")
-    data_root = Path(vars["BESPOK3D"])
-    _deactivate_plugins_in(data_root / "usr/local/plugins", vars)
-    _remove_include_line(Path(vars["PRINTER_CFG"]), "[include bespok3d/klipper")
-    _remove_include_line(Path(vars["MOONRAKER_CFG"]), "[include bespok3d/moonraker")
-    _write_deactivated_marker(data_root)
-
-
-def _uninstall_plugins_in(plugin_root: Path, vars: dict[str, str]) -> None:
-    if not plugin_root.exists():
-        return
-    plugin_ids = [plugin_dir.name for plugin_dir in plugin_root.iterdir() if plugin_dir.is_dir()]
-    for plugin_id in plugin_ids:
-        try:
-            uninstall(plugin_id, vars)
-        except Exception:  # noqa: BLE001
-            pass
-
-
-def _prune_links_and_empty_dirs(root: Path) -> None:
-    """Remove our symlinks and any directories left empty, but keep real files.
-
-    The `config/bespok3d` directory is intentionally preserved: a user may have dropped
-    their own .cfg files in it. We only take back what Bespok3d put there (symlinks).
-    """
-    if not root.is_dir():
-        return
-    for child in sorted(root.iterdir()):
-        if child.is_symlink():
-            child.unlink()
-        elif child.is_dir():
-            _prune_links_and_empty_dirs(child)
-    if not any(root.iterdir()):
-        root.rmdir()
-
-
-def _remove_bespok3d_config_dir(vars: dict[str, str]) -> None:
-    config_dir = Path(vars.get("BESPOK3D_KLIPPER", "")).parent
-    if config_dir.name == "bespok3d":
-        _prune_links_and_empty_dirs(config_dir)
-
-
-def teardown(vars: dict[str, str]) -> None:
-    """Uninstall all plugins and remove config hooks; SSH caller removes the workspace."""
-    # Guard at the top: the per-plugin uninstall guard is swallowed by _uninstall_plugins_in.
-    guard_no_print("remove all plugins")
-    data_root = Path(vars["BESPOK3D"])
-    _uninstall_plugins_in(data_root / "usr/local/plugins", vars)
-    _remove_include_line(Path(vars["PRINTER_CFG"]), "[include bespok3d/klipper")
-    _remove_include_line(Path(vars["MOONRAKER_CFG"]), "[include bespok3d/moonraker")
-    _remove_bespok3d_config_dir(vars)
