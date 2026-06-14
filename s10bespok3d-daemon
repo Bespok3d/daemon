@@ -1,0 +1,45 @@
+#!/bin/sh
+DAEMON_DIR=/userdata/bespok3d/var/lib/daemon
+PID_FILE=/userdata/bespok3d/run/bespok3d-daemon.pid
+LOG_FILE=/userdata/bespok3d/var/log/daemon.log
+PYTHON=/userdata/bespok3d/venv/bin/python3
+PORT=4269
+
+free_port() {
+  pids=$(ps w 2>/dev/null | grep '[d]aemon\.py' | awk '{print $1}')
+  [ -n "$pids" ] && kill $pids 2>/dev/null
+  occupant=$(netstat -ltnp 2>/dev/null | grep ":$PORT " | awk '{print $NF}' | cut -d/ -f1)
+  [ -n "$occupant" ] && kill "$occupant" 2>/dev/null
+  fuser -k "$PORT/tcp" 2>/dev/null
+  return 0
+}
+
+rotate_log() {
+  [ -f "$LOG_FILE" ] || return 0
+  mv "$LOG_FILE" "$LOG_FILE.prev" 2>/dev/null
+  return 0
+}
+
+case "$1" in
+  start)
+    pid=$(cat "$PID_FILE" 2>/dev/null)
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    free_port
+    rotate_log
+    sleep 1
+    BESPOK3D_ADAPTER=snapmaker-u1 \
+    nohup "$PYTHON" "$DAEMON_DIR/daemon.py" \
+      >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    ;;
+  stop)
+    pid=$(cat "$PID_FILE" 2>/dev/null)
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    free_port
+    rm -f "$PID_FILE"
+    ;;
+  status)
+    pid=$(cat "$PID_FILE" 2>/dev/null)
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && echo running || echo stopped
+    ;;
+esac

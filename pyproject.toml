@@ -1,0 +1,48 @@
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# E/W: pycodestyle  F: pyflakes  I: import order  N: naming
+# UP: modern syntax  C9: complexity  PLR/PLW/PLE: pylint rules
+select = ["E", "W", "F", "I", "N", "UP", "C901", "PLR", "PLW", "PLE"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.pylint]
+max-statements = 20       # ~40-line equivalent
+max-nested-blocks = 3     # same as ESLint max-depth: 3
+max-branches = 8
+max-returns = 4
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004"]
+"**/tests/**" = ["PLR2004"]
+
+[tool.mypy]
+python_version = "3.11"
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+# Reachability guard (mypy's equivalent of Pyright reportUnreachable): flags code a human can never
+# reach - a branch killed by type narrowing, a statement after an unconditional return/raise, a handler
+# that can never fire. Surfaces "we orphaned a core path" early instead of in production.
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# Guardrail: a single hung test (e.g. a websocket receive that never arrives) must fail fast with a
+# stack dump, never stall the whole gate. thread method works off the main thread and dumps every
+# frame at the deadlock. Raise per-test with @pytest.mark.timeout(N) for a genuinely slow case.
+timeout = 60
+timeout_method = "thread"
+
+# Mutation testing (periodic quality probe, NOT part of check.sh). Scoped to the pure cores the
+# hypothesis property tests target (fs-coupled funcs mutate poorly). REQUIRES the project's target
+# Python 3.11: mutmut does not run on a newer interpreter (3.14 raises an itertools.count pickling
+# error). With a 3.11 .venv:
+#   .venv/bin/mutmut run \
+#     --paths-to-mutate "core/intent.py,core/print_events.py,core/auth.py" --tests-dir tests/ \
+#     --runner ".venv/bin/pytest -x -q tests/test_intent_props.py tests/test_print_events_props.py tests/test_auth_props.py"
+#   .venv/bin/mutmut results

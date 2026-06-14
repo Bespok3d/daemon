@@ -1,0 +1,95 @@
+#!/bin/sh
+
+BESPOK3D=/userdata/bespok3d
+INIT_D=$BESPOK3D/etc/init.d
+AUTOSTART=$INIT_D/autostart
+RUN=$BESPOK3D/run
+
+clean_stale_pids() {
+    for pidfile in "$RUN"/*.pid; do
+        [ -f "$pidfile" ] || continue
+        pid=$(cat "$pidfile" 2>/dev/null)
+        [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || rm -f "$pidfile"
+    done
+}
+
+run_scripts() {
+    local dir="$1" action="$2" reverse="$3"
+    local scripts
+    scripts=$(ls "$dir"/s??* 2>/dev/null) || return 0
+    if [ "$reverse" = "1" ]; then
+        scripts=$(echo "$scripts" | sort -r)
+    else
+        scripts=$(echo "$scripts" | sort)
+    fi
+    for script in $scripts; do
+        [ -x "$script" ] || continue
+        "$script" "$action"
+    done
+}
+
+is_autostart() {
+    local script="$1"
+    local name
+    name=$(basename "$script")
+    [ -e "$AUTOSTART/$name" ]
+}
+
+ensure_lmd_running() {
+    pgrep -x lmd >/dev/null 2>&1 && return
+    ulimit -c 102400
+    start-stop-daemon -S -b -x /usr/bin/lmd
+}
+
+stop_lmd() {
+    start-stop-daemon -K -x /usr/bin/lmd -o 2>/dev/null || true
+}
+
+do_start() {
+    clean_stale_pids
+    run_scripts "$AUTOSTART" start 0
+    ensure_lmd_running
+}
+
+do_stop() {
+    run_scripts "$AUTOSTART" stop 1
+    stop_lmd
+}
+
+do_startall() {
+    clean_stale_pids
+    run_scripts "$INIT_D" start 0
+    ensure_lmd_running
+}
+
+do_stopall() {
+    run_scripts "$INIT_D" stop 1
+    stop_lmd
+}
+
+do_status() {
+    for script in $(ls "$AUTOSTART"/s??* 2>/dev/null | sort); do
+        [ -x "$script" ] || continue
+        echo "[autostart] $(basename "$script"):"
+        "$script" status 2>&1 | sed 's/^/  /'
+    done
+    for script in $(ls "$INIT_D"/s??* 2>/dev/null | sort); do
+        [ -x "$script" ] || continue
+        echo "            $(basename "$script"):"
+        "$script" status 2>&1 | sed 's/^/  /'
+    done
+}
+
+case "$1" in
+    start)      do_start ;;
+    stop)       do_stop ;;
+    startall)   do_startall ;;
+    stopall)    do_stopall ;;
+    restart)    do_stop; sleep 1; do_start ;;
+    restartall) do_stopall; sleep 1; do_startall ;;
+    status)     do_status ;;
+    *)
+        echo "Usage: $0 {start|stop|startall|stopall|restart|restartall|status}"
+        exit 1
+        ;;
+esac

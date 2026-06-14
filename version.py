@@ -1,0 +1,1 @@
+DAEMON_VERSION = "0.11.8-dev"
