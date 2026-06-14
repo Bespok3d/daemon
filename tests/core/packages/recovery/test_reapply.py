@@ -1,0 +1,74 @@
+"""White-box units for OTA per-plugin re-apply (core/packages/recovery/reapply.py)."""
+import json
+from pathlib import Path
+
+import pytest
+
+from core import packages
+from core.packages.recovery import reapply
+
+MP = pytest.MonkeyPatch
+
+
+def _installed_plugin(plugin_root: Path, plugin_id: str, install: dict | None = None,
+                      provides: list | None = None, require: list | None = None) -> dict:
+    plugin_dir = plugin_root / plugin_id
+    plugin_dir.mkdir(parents=True)
+    manifest: dict = {
+        "name": plugin_id,
+        "version": "0.1.0",
+        "install": install or {"dirs": [], "symlinks": [], "patches": [], "start": []},
+    }
+    if provides is not None:
+        manifest["provides"] = provides
+    if require is not None:
+        manifest["require"] = require
+    (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+    return manifest
+
+
+def test_orchestrator_reexports_recover_one() -> None:
+    assert packages.recover_one is reapply.recover_one
+
+
+def test_recover_one_skips_when_a_dependency_is_unsatisfied(tmp_path: Path) -> None:
+    manifest = _installed_plugin(tmp_path, "spoolman", require=[{"service": "rfid"}])
+
+    result, deferred = reapply.recover_one(
+        tmp_path / "spoolman", manifest, set(), {"rfid"}, {}
+    )
+
+    assert result["skipped"] is True
+    assert result["ok"] is False
+    assert "rfid" in result["reason"]
+    assert deferred == []
+
+
+def test_recover_one_succeeds_and_clears_a_stale_marker(tmp_path: Path) -> None:
+    klipper_restart = "/etc/init.d/S60klipper restart"
+    manifest = _installed_plugin(
+        tmp_path, "cpu-temp", provides=[{"service": "cpu-temp"}],
+        install={"dirs": [], "symlinks": [], "patches": [], "start": [klipper_restart]},
+    )
+    plugin_dir = tmp_path / "cpu-temp"
+    (plugin_dir / reapply.RECOVERY_FAILURE_MARKER).write_text("{}")
+
+    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+
+    assert result["ok"] is True
+    assert deferred == [klipper_restart]
+    assert not (plugin_dir / reapply.RECOVERY_FAILURE_MARKER).exists()
+
+
+def test_recover_one_deactivates_when_a_phase_fails(tmp_path: Path, monkeypatch: MP) -> None:
+    manifest = _installed_plugin(tmp_path, "broken")
+    plugin_dir = tmp_path / "broken"
+    monkeypatch.setattr(reapply, "render_templates",
+                        lambda *_a, **_kw: {"id": "templates", "ok": False, "items": []})
+
+    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+
+    assert result["ok"] is False
+    assert "install phase failed" in result["reason"]
+    assert deferred == []
+    assert (plugin_dir / reapply.RECOVERY_FAILURE_MARKER).exists()

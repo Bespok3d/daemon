@@ -30,7 +30,6 @@ def test_orchestrator_reexports_the_dependency_helpers() -> None:
     assert packages.installed_conflicts is dependencies.installed_conflicts
     assert packages.topo_sort is dependencies.topo_sort
     assert packages.provided_services is dependencies.provided_services
-    assert packages.required_services is dependencies.required_services
 
 
 def test_provided_services_reads_both_forms() -> None:

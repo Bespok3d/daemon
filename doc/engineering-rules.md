@@ -147,6 +147,17 @@ concern, so a reader has to hunt through unrelated code to find the part they ne
   they cover, the test tree mirrors the source tree (`tests/core/packages/` tests `core/packages/`), so a
   test is as findable as the code it guards.
 
+- **A specific concern gets a room of its own.** A cluster that is *specific*, not general to the layer it
+  sits in, does not lie flat among the general siblings: it gets its own directory. The general layer then
+  stays uniform (a reader scanning `core/packages/` meets only the shared package-ops vocabulary), and the
+  specific cluster is isolated where it belongs (the auto-deactivate recovery flow lives in
+  `core/packages/recovery/`, not as three loose files next to `archive.py` and `manifest.py`). The trigger
+  is either signal: a concern grows to two or three cohesive files, or one file is enough of an outlier in
+  specificity that it reads as out of place among its siblings. Give it the room as soon as the signal
+  appears, not in a later cleanup. Name the room for the concern, never for a layer that already exists
+  elsewhere (a `safety_net.py` inside a package while `core/safety/` is "the safety net" is the kind of
+  name clash that makes a reader guess which layer they are in; rename so each name points at one thing).
+
 - **Generic versus device-specific is a hard separation.** The daemon is a generic on-printer agent.
   Klipper / Moonraker / Snapmaker / `lmd` specifics (concrete service names, init-script paths, restart
   commands) do **not** belong in generic daemon modules; they belong to the adapter and its jinni, which

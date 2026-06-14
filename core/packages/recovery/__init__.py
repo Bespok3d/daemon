@@ -4,10 +4,12 @@ The cluster the orchestrator wires when a deferred core-service restart runs: `e
 post-restart state, `restart` drives the core.safety brain to verify it and auto-deactivate the
 culprit, and `reapply` re-applies every installed plugin after an OTA wipe.
 """
+from .reapply import recover_one
 from .restart import op_context, restart_phases, restart_services
 
 __all__ = [
     "op_context",
+    "recover_one",
     "restart_phases",
     "restart_services",
 ]

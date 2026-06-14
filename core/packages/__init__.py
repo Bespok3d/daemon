@@ -13,22 +13,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from ..intent import (
-    RESTART_HOOKS,
-    is_service_action,
-    normalize_install,
-)
+from ..intent import RESTART_HOOKS, normalize_install
 from ..results import item as _item
 from ..results import phase as _phase
 from ..safety import OperationContext, OperationKind
-from ..shell import run_one_command as _run_one_start_command
-from ..shell import start_env as _start_env
 from .archive import fix_ownership, read_manifest, unpack_package
 from .deactivation import (
     DEACTIVATED_MARKER,
-    RECOVERY_FAILURE_MARKER,
     clear_failure_markers,
-    deactivate_plugin,
     neutralize_plugin,
     run_stop_commands,
 )
@@ -36,11 +28,10 @@ from .dependencies import (
     installed_conflicts,
     installed_dependents,
     provided_services,
-    required_services,
     topo_sort,
 )
 from .errors import ConflictError, DependentsError
-from .manifest import manifest_at  # noqa: F401  re-export for api.routes
+from .manifest import manifest_at
 from .patches import apply_patches, restore_original_files
 from .placement import (
     apply_modes,
@@ -59,14 +50,14 @@ from .python_deps import (
     remove_plugin_site_links,
     remove_plugin_venv,
 )
-from .recovery import op_context, restart_phases, restart_services
+from .recovery import op_context, recover_one, restart_phases, restart_services
 from .services import generate_service_scripts
+from .start import run_plugin_start_commands
 from .templates import render_templates
 from .user_vars import (
     USER_VARS_FILE,  # noqa: F401  re-export for tests
     expand,
     load_user_vars,
-    missing_required_vars,
     persist_user_vars,
     validate_user_vars,  # noqa: F401  re-export for api.routes
     with_plugin_venv,
@@ -74,20 +65,6 @@ from .user_vars import (
 
 _DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
 PLUGIN_ROOT = _DATA_ROOT / "usr/local/plugins"
-
-def _run_plugin_start_commands(cmds: list[str], vars: dict[str, str]) -> tuple[dict, list[str]]:
-    """Run a plugin's plugin-specific start commands; defer Klipper/Moonraker restarts.
-
-    Returns the start phase plus the deferred service-restart commands so the caller can
-    run them once at the end of a batch instead of bouncing Klipper/Moonraker per plugin.
-    """
-    env = _start_env()
-    expanded_cmds = [expand(cmd, vars) for cmd in cmds]
-    immediate = [cmd for cmd in expanded_cmds if not is_service_action(cmd)]
-    deferred = [cmd for cmd in expanded_cmds if is_service_action(cmd)]
-    items = [_run_one_start_command(cmd, env) for cmd in immediate]
-    return _phase("start", "Start commands", items), deferred
-
 
 def ensure_lmd_control_script(jinni: Any, paths: dict[str, str]) -> None:
     """Place the jinni's hardened lmd control script at $BESPOK3D/etc/init.d/lmdctl (0755).
@@ -135,7 +112,7 @@ def _install_apply_phases(plugin_dir: Path, manifest: dict, full_vars: dict[str,
         _emit(fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")), notify),
     ]
     phases.extend(_emit(phase, notify) for phase in provision_deps_phases(PLUGIN_ROOT, plugin_dir, full_vars))  # noqa: E501
-    start_phase, deferred = _run_plugin_start_commands(inst["start"], full_vars)
+    start_phase, deferred = run_plugin_start_commands(inst["start"], full_vars)
     phases.append(_emit(start_phase, notify))
     phases.extend(_emit(phase, notify) for phase in restart_phases(PLUGIN_ROOT, deferred, full_vars, op_context(OperationKind.INSTALL, manifest)))  # noqa: E501
     return phases
@@ -188,7 +165,7 @@ def reconfigure(
     full_vars = with_plugin_venv(vars, plugin_id)
     inst = normalize_install(manifest.get("install", {}))
     persist_user_vars(plugin_dir, user_vars)
-    start_phase, deferred = _run_plugin_start_commands(inst.get("start", []), full_vars)
+    start_phase, deferred = run_plugin_start_commands(inst.get("start", []), full_vars)
     phases = [
         render_templates(inst.get("templates", []), plugin_dir, full_vars),
         fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")),
@@ -196,60 +173,6 @@ def reconfigure(
     ]
     phases.extend(restart_phases(PLUGIN_ROOT, deferred, full_vars, op_context(OperationKind.RECONFIGURE, manifest)))  # noqa: E501
     return plugin_id, phases
-
-
-def _apply_plugin(plugin_dir: Path, raw_inst: dict, inst: dict, full_vars: dict[str, str]) -> tuple[list[dict], list[str]]:  # noqa: E501
-    patches_orig = plugin_dir / "patches_orig"
-    if patches_orig.exists():
-        shutil.rmtree(patches_orig)
-    phase_log: list[dict] = [
-        render_templates(inst["templates"], plugin_dir, full_vars),
-        generate_service_scripts(raw_inst.get("service", []), plugin_dir, full_vars),
-        create_symlinks(inst["symlinks"], plugin_dir, full_vars),
-        apply_patches(inst["patches"], plugin_dir, full_vars),
-    ]
-    phase_log.extend(provision_deps_phases(PLUGIN_ROOT, plugin_dir, full_vars))
-    start_phase, deferred = _run_plugin_start_commands(inst["start"], full_vars)
-    phase_log.append(start_phase)
-    return phase_log, deferred
-
-
-def _recover_one(
-    plugin_dir: Path,
-    manifest: dict,
-    satisfied: set[str],
-    all_provided: set[str],
-    vars: dict[str, str],
-) -> tuple[dict, list[str]]:
-    plugin_id = plugin_dir.name
-    missing_deps = [
-        service for service in required_services(manifest)
-        if service in all_provided and service not in satisfied
-    ]
-    if missing_deps:
-        reason = f"dependency not satisfied: {', '.join(missing_deps)}"
-        return {"plugin_id": plugin_id, "ok": False, "skipped": True, "reason": reason, "log": []}, []  # noqa: E501
-
-    full_vars = with_plugin_venv({**vars, **load_user_vars(plugin_dir)}, plugin_id)
-    missing_vars = missing_required_vars(manifest, full_vars)
-    if missing_vars:
-        reason = f"missing required variable(s): {', '.join(missing_vars)}; reinstall the plugin"
-        return {"plugin_id": plugin_id, "ok": False, "skipped": False, "reason": reason, "log": []}, []  # noqa: E501
-
-    raw_inst = manifest.get("install", {})
-    inst = normalize_install(raw_inst)
-    phase_log, deferred = _apply_plugin(plugin_dir, raw_inst, inst, full_vars)
-    if all(phase["ok"] for phase in phase_log):
-        satisfied.update(provided_services(manifest))
-        clear_failure_markers(plugin_dir)
-        ok_result = {"plugin_id": plugin_id, "ok": True, "skipped": False, "reason": "", "log": phase_log}  # noqa: E501
-        return ok_result, deferred
-
-    reason = "install phase failed"
-    (plugin_dir / RECOVERY_FAILURE_MARKER).write_text(json.dumps({"phases": phase_log}))
-    deactivate_plugin(plugin_dir, vars, reason)
-    failed = {"plugin_id": plugin_id, "ok": False, "skipped": False, "reason": reason, "log": phase_log}  # noqa: E501
-    return failed, []
 
 
 def recover(vars: dict[str, str]) -> list[dict]:
@@ -266,10 +189,7 @@ def recover(vars: dict[str, str]) -> list[dict]:
     if not plugin_dirs:
         return []
     ordered = topo_sort(plugin_dirs)
-    manifests = {
-        plugin_dir: json.loads((plugin_dir / "manifest.json").read_text())
-        for plugin_dir in ordered
-    }
+    manifests = {plugin_dir: manifest_at(plugin_dir) for plugin_dir in ordered}
     all_provided: set[str] = set()
     for manifest in manifests.values():
         all_provided.update(provided_services(manifest))
@@ -277,7 +197,7 @@ def recover(vars: dict[str, str]) -> list[dict]:
     results: list[dict] = []
     deferred_restarts: list[str] = []
     for plugin_dir in ordered:
-        result, deferred = _recover_one(plugin_dir, manifests[plugin_dir], satisfied, all_provided, vars)  # noqa: E501
+        result, deferred = recover_one(plugin_dir, manifests[plugin_dir], satisfied, all_provided, vars)  # noqa: E501
         results.append(result)
         if result["ok"]:
             deferred_restarts.extend(deferred)
@@ -301,7 +221,7 @@ def _apply_install_deferred(plugin_dir: Path, manifest: dict, vars: dict[str, st
         fix_ownership(plugin_dir, vars.get("RUNTIME_USER", "")),
     ]
     log.extend(provision_deps_phases(PLUGIN_ROOT, plugin_dir, vars))
-    start_phase, deferred = _run_plugin_start_commands(inst["start"], vars)
+    start_phase, deferred = run_plugin_start_commands(inst["start"], vars)
     log.append(start_phase)
     return log, deferred
 

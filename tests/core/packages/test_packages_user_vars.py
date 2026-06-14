@@ -16,7 +16,6 @@ def test_symbols_reexported_from_package_namespace() -> None:
     assert packages.persist_user_vars is user_vars.persist_user_vars
     assert packages.load_user_vars is user_vars.load_user_vars
     assert packages.with_plugin_venv is user_vars.with_plugin_venv
-    assert packages.missing_required_vars is user_vars.missing_required_vars
 
 
 def test_validate_user_vars_accepts_valid_and_rejects_metacharacters() -> None:
