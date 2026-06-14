@@ -6,18 +6,23 @@ never by monkeypatching our own functions.
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from email.message import Message
 from pathlib import Path
+from typing import NoReturn
+
+import pytest
 
 from core.safety import health
 
 
-def _raise_http(code: int):
-    def _fake(_url, timeout=3):  # noqa: ANN001, ANN202 - test seam matching urlopen
-        raise urllib.error.HTTPError(_url, code, "Unauthorized", {}, None)  # type: ignore[arg-type]
+def _raise_http(code: int) -> Callable[..., NoReturn]:
+    def _fake(_url: str, timeout: float = 3) -> NoReturn:
+        raise urllib.error.HTTPError(_url, code, "Unauthorized", Message(), None)
     return _fake
 
 
-def test_probe_moonraker_reads_force_logins_401_as_up(monkeypatch) -> None:
+def test_probe_moonraker_reads_force_logins_401_as_up(monkeypatch: pytest.MonkeyPatch) -> None:
     # moonraker-auth turns on force_logins, so /server/info answers 401. That is the server up and
     # demanding a login, not a failure: probing it must NOT report it down (which made the safety
     # net auto-deactivate the very plugin that enabled auth).
@@ -27,14 +32,16 @@ def test_probe_moonraker_reads_force_logins_401_as_up(monkeypatch) -> None:
     assert info.failed_components == []
 
 
-def test_klipper_healthy_reads_force_logins_401_as_up(monkeypatch) -> None:
+def test_klipper_healthy_reads_force_logins_401_as_up(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(urllib.request, "urlopen", _raise_http(401))
     healthy, _out = health.klipper_healthy()
     assert healthy is True
 
 
-def test_probe_moonraker_unreachable_when_connection_refused(monkeypatch) -> None:
-    def _refused(_url, timeout=3):  # noqa: ANN001, ANN202
+def test_probe_moonraker_unreachable_when_connection_refused(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _refused(_url: str, timeout: float = 3) -> NoReturn:
         raise ConnectionRefusedError("refused")
     monkeypatch.setattr(urllib.request, "urlopen", _refused)
     monkeypatch.setattr(health, "MOONRAKER_RETRIES", 2)
@@ -43,7 +50,7 @@ def test_probe_moonraker_unreachable_when_connection_refused(monkeypatch) -> Non
     assert info.reachable is False
 
 
-def test_klipper_ready_once_prefers_the_api_socket(monkeypatch) -> None:
+def test_klipper_ready_once_prefers_the_api_socket(monkeypatch: pytest.MonkeyPatch) -> None:
     # Klipper's API socket is auth-free, so it is the source of truth even when Moonraker forces
     # logins; the HTTP probe is only the fallback when the socket is unavailable.
     monkeypatch.setattr(health.klippy_uds, "query_klippy_state", lambda _path: "ready")
@@ -52,14 +59,18 @@ def test_klipper_ready_once_prefers_the_api_socket(monkeypatch) -> None:
     assert "api socket" in out
 
 
-def test_klipper_ready_once_falls_back_to_http_without_a_socket(monkeypatch) -> None:
+def test_klipper_ready_once_falls_back_to_http_without_a_socket(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(health, "_service_get", lambda _url, timeout=3: (True, "via http"))
     healthy, out = health._klipper_ready_once("")
     assert healthy is True
     assert out == "via http"
 
 
-def test_probe_moonraker_once_reads_failed_components_over_the_socket(monkeypatch) -> None:
+def test_probe_moonraker_once_reads_failed_components_over_the_socket(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The Moonraker socket is auth-free, so soft fails (a component that failed to load) stay seen
     # even when force_logins blocks the HTTP body. This is what the safety net needs to attribute.
     monkeypatch.setattr(
@@ -71,7 +82,9 @@ def test_probe_moonraker_once_reads_failed_components_over_the_socket(monkeypatc
     assert info.failed_components == ["timelapse"]
 
 
-def test_probe_moonraker_once_falls_back_to_http_when_socket_unreachable(monkeypatch) -> None:
+def test_probe_moonraker_once_falls_back_to_http_when_socket_unreachable(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(health.moonraker_uds, "server_info", lambda _path: None)
     monkeypatch.setattr(health, "_service_get", lambda _url, timeout=3: (True, "auth required 401"))
     info = health._probe_moonraker_once("/tmp/moonraker.sock")

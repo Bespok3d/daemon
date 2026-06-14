@@ -37,8 +37,9 @@ def result_for_id(frames: list[dict], request_id: int = _REQUEST_ID) -> dict:
     """The `result` of the reply carrying our id; {} if absent or an error reply. Moonraker also
     pushes id-less status notifications over the socket, which this skips."""
     for frame in frames:
-        if frame.get("id") == request_id and isinstance(frame.get("result"), dict):
-            return frame["result"]
+        result = frame.get("result")
+        if frame.get("id") == request_id and isinstance(result, dict):
+            return result
     return {}
 
 

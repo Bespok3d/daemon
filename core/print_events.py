@@ -24,8 +24,9 @@ def subscribe_message(request_id: int = 1) -> str:
 def _status_block(payload: dict) -> dict:
     """The status block ({print_stats: ...}) from a subscribe result or a status notification."""
     result = payload.get("result")
-    if isinstance(result, dict) and isinstance(result.get("status"), dict):
-        return result["status"]
+    status = result.get("status") if isinstance(result, dict) else None
+    if isinstance(status, dict):
+        return status
     params = payload.get("params")
     if payload.get("method") == STATUS_NOTIFY_METHOD and isinstance(params, list) \
             and params and isinstance(params[0], dict):

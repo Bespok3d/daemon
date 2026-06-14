@@ -15,7 +15,7 @@ import urllib.request
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from jinni.loader import get_jinni
 
@@ -377,7 +377,7 @@ def _load_user_vars(plugin_dir: Path) -> dict[str, str]:
     path = plugin_dir / _USER_VARS_FILE
     if not path.exists():
         return {}
-    return json.loads(path.read_text())
+    return cast(dict[str, str], json.loads(path.read_text()))
 
 
 def _render_one_template(template_def: dict, plugin_dir: Path, vars: dict[str, str]) -> dict:
@@ -822,7 +822,7 @@ def _installed_manifest_dirs() -> list[Path]:
 
 
 def _manifest_at(plugin_dir: Path) -> dict:
-    return json.loads((plugin_dir / "manifest.json").read_text())
+    return cast(dict, json.loads((plugin_dir / "manifest.json").read_text()))
 
 
 def _depends_on_any(plugin_dir: Path, services: set[str]) -> bool:
@@ -1191,7 +1191,7 @@ def recover(vars: dict[str, str]) -> list[dict]:
 
 def _read_manifest(package_path: Path) -> dict:
     with zipfile.ZipFile(package_path) as archive:
-        return json.loads(archive.read("manifest.json"))
+        return cast(dict, json.loads(archive.read("manifest.json")))
 
 
 def _guard_batch_no_print(manifests: list[dict]) -> None:

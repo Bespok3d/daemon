@@ -1,0 +1,67 @@
+name: build-and-release
+
+# On a push to main that changes the daemon source, manifest, version, or build scripts: run the
+# daemon gate, pack the .b3 ("b3 zero", ADR-0030), publish a GitHub release, and attach the .b3 plus
+# its index atom. The app reads the atom to know when a newer daemon is available.
+#
+# D3 (deferred to 1b): whether to ALSO push the atom into Bespok3d/main-index/atoms/ so the daemon
+# appears in the catalog. Kept release-only for now: the daemon is bootstrapped by the adapter, not
+# store-installable, so we do NOT want to create a browsable store card for it yet. When D3 is settled,
+# add a main-index clone + commit step here (mirror the solo-plugin release.yml, harden the push with
+# fetch+rebase+retry per the project_ci_secrets_centralization note).
+on:
+  push:
+    branches: [main]
+    paths:
+      - manifest.json
+      - version.py
+      - daemon.py
+      - 'api/**'
+      - 'core/**'
+      - 'jinni/**'
+      - S99bespok3d
+      - s10bespok3d-daemon
+      - 'wheels/**'
+      - requirements.txt
+      - scripts/**
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Daemon gate (ruff + mypy + pytest on 3.11)
+        run: bash scripts/check.sh
+
+      - name: Pack the daemon .b3
+        run: sh scripts/pack.sh
+
+      - name: Release and attach the .b3 + atom
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=$(jq -r '.name' manifest.json)
+          version=$(jq -r '.version' manifest.json)
+          tag="${name}-v${version}"
+          asset="${name}-${version}.b3"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "$tag" --notes "Automated release of ${asset}"
+          fi
+          gh release upload "$tag" "dist/${asset}" --clobber
+          download_url=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
+            --jq ".assets[] | select(.name==\"${asset}\") | .url")
+          node scripts/generate-atom.mjs --download-url "$download_url" --repo "$GITHUB_REPOSITORY"
+          gh release upload "$tag" "dist/${name}.atom.json" --clobber

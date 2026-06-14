@@ -550,7 +550,7 @@ def test_uninstall_runs_stop_commands(tmp_path: Path, monkeypatch: MP) -> None:
         stderr = b""
 
     def fake_run(cmd: object, **kw: object) -> FakeResult:
-        ran.append(cmd)  # type: ignore[arg-type]
+        ran.append(cmd)
         return FakeResult()
 
     monkeypatch.setattr(sp, "run", fake_run)

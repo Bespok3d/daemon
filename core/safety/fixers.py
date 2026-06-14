@@ -8,9 +8,12 @@ specific fixer.
 """
 
 import re
+from collections.abc import Callable
 
 from .context import OperationContext
 from .decision import Decision, FailureEvidence
+
+Fixer = Callable[[FailureEvidence, OperationContext, list[str]], Decision | None]
 
 _BRACKET_SECTION_RE = re.compile(r"\[([^\]]+)\]")
 
@@ -127,7 +130,7 @@ def catch_all(
     )
 
 
-def default_chain() -> list:
+def default_chain() -> list[Fixer]:
     return [
         moonraker_component_failure,
         klipper_import_failure,
