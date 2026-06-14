@@ -13,8 +13,7 @@ import zipfile
 from pathlib import Path
 from typing import cast
 
-from ..results import item as _item
-from ..results import phase as _phase
+from ..results import item, phase
 from .print_guard import guard_no_print_during_restart
 from .python_deps import reject_conflicting_dep_files, reject_unbaked_deps
 
@@ -61,15 +60,15 @@ def fix_ownership(plugin_dir: Path, runtime_user: str) -> dict:
     chmod_result = subprocess.run(
         ["chmod", "-R", "755", str(plugin_dir)], capture_output=True, check=False,
     )
-    items.append(_item(f"chmod -R 755 {plugin_dir.name}", ok=chmod_result.returncode == 0))
+    items.append(item(f"chmod -R 755 {plugin_dir.name}", ok=chmod_result.returncode == 0))
     if runtime_user:
         chown_result = subprocess.run(
             ["chown", "-R", f"{runtime_user}:{runtime_user}", str(plugin_dir)],
             capture_output=True,
             check=False,
         )
-        items.append(_item(
+        items.append(item(
             f"chown -R {runtime_user} {plugin_dir.name}",
             ok=chown_result.returncode == 0,
         ))
-    return _phase("ownership", "Permissions", items)
+    return phase("ownership", "Permissions", items)

@@ -10,9 +10,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..results import MAX_OUTPUT_BYTES as _MAX_OUTPUT_BYTES
-from ..results import item as _item
-from ..results import phase as _phase
+from ..results import MAX_OUTPUT_BYTES, item, phase
 from .user_vars import expand
 
 
@@ -85,12 +83,12 @@ def apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) -
         patch_file = plugin_dir / patch_def["patch"]
         label = f"patch {target.name}"
         if not target.exists():
-            items.append(_item(label, ok=False, output="target file not found"))
+            items.append(item(label, ok=False, output="target file not found"))
             continue
         ok, raw = _apply_one_patch(target, patch_file, orig_dir)
-        output = raw[:_MAX_OUTPUT_BYTES] + ("…" if len(raw) > _MAX_OUTPUT_BYTES else "")
-        items.append(_item(label, ok=ok, output=output.strip()))
-    return _phase("patches", "Patches", items)
+        output = raw[:MAX_OUTPUT_BYTES] + ("…" if len(raw) > MAX_OUTPUT_BYTES else "")
+        items.append(item(label, ok=ok, output=output.strip()))
+    return phase("patches", "Patches", items)
 
 
 def restore_original_files(patches: list[dict], orig_dir: Path, vars: dict[str, str]) -> None:

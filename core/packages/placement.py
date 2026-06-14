@@ -9,8 +9,7 @@ is just cleared, never saved.
 import shutil
 from pathlib import Path
 
-from ..results import item as _item
-from ..results import phase as _phase
+from ..results import item, phase
 from .user_vars import expand
 
 _SYMLINK_ORIG_DIR = "symlink_orig"
@@ -23,10 +22,10 @@ def apply_modes(plugin_dir: Path, files: list[dict]) -> dict:
         if path.exists():
             try:
                 path.chmod(int(entry["mode"], 8))
-                items.append(_item(f"{entry['path']} → {entry['mode']}", ok=True))
+                items.append(item(f"{entry['path']} → {entry['mode']}", ok=True))
             except Exception as exc:
-                items.append(_item(f"{entry['path']}: {exc}", ok=False))
-    return _phase("modes", "File modes", items)
+                items.append(item(f"{entry['path']}: {exc}", ok=False))
+    return phase("modes", "File modes", items)
 
 
 def create_dirs(dirs: list[str], vars: dict[str, str]) -> dict:
@@ -35,10 +34,10 @@ def create_dirs(dirs: list[str], vars: dict[str, str]) -> dict:
         expanded = expand(directory, vars)
         try:
             Path(expanded).mkdir(parents=True, exist_ok=True)
-            items.append(_item(expanded, ok=True))
+            items.append(item(expanded, ok=True))
         except Exception as exc:
-            items.append(_item(f"{expanded}: {exc}", ok=False))
-    return _phase("dirs", "Directories", items)
+            items.append(item(f"{expanded}: {exc}", ok=False))
+    return phase("dirs", "Directories", items)
 
 
 def _symlink_backup_path(plugin_dir: Path, destination: Path) -> Path:
@@ -90,13 +89,13 @@ def _create_one_symlink(link: dict, plugin_dir: Path, vars: dict[str, str]) -> d
     try:
         replace_with_symlink(source, destination, backup)
     except Exception as exc:
-        return _item(f"{label}: {exc}", ok=False)
-    return _item(label, ok=True)
+        return item(f"{label}: {exc}", ok=False)
+    return item(label, ok=True)
 
 
 def create_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
     items = [_create_one_symlink(link, plugin_dir, vars) for link in symlinks]
-    return _phase("symlinks", "Symlinks", items)
+    return phase("symlinks", "Symlinks", items)
 
 
 def _restore_one_symlink(link: dict, plugin_dir: Path, vars: dict[str, str]) -> None:

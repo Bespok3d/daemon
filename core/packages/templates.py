@@ -5,8 +5,7 @@ A template 'to' must stay relative and within the plugin dir (no absolute path, 
 
 from pathlib import Path
 
-from ..results import item as _item
-from ..results import phase as _phase
+from ..results import item, phase
 from .user_vars import expand
 
 
@@ -15,7 +14,7 @@ def _render_one_template(template_def: dict, plugin_dir: Path, vars: dict[str, s
     template_to = template_def["to"]
     label = f"{template_rel} → {template_to}"
     if template_to.startswith("/") or ".." in Path(template_to).parts:
-        return _item(f"{label}: template 'to' must be relative and within the plugin dir", ok=False)
+        return item(f"{label}: template 'to' must be relative and within the plugin dir", ok=False)
     template_path = plugin_dir / template_rel
     target_path = plugin_dir / template_to
     try:
@@ -23,10 +22,10 @@ def _render_one_template(template_def: dict, plugin_dir: Path, vars: dict[str, s
         body = template_path.read_text()
         target_path.write_text(expand(body, vars))
     except Exception as exc:
-        return _item(f"{label}: {exc}", ok=False)
-    return _item(label, ok=True)
+        return item(f"{label}: {exc}", ok=False)
+    return item(label, ok=True)
 
 
 def render_templates(templates: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
     items = [_render_one_template(template_def, plugin_dir, vars) for template_def in templates]
-    return _phase("templates", "Templates", items)
+    return phase("templates", "Templates", items)

@@ -18,9 +18,7 @@ import subprocess
 from pathlib import Path
 
 from .. import python_env
-from ..results import MAX_OUTPUT_BYTES as _MAX_OUTPUT_BYTES
-from ..results import item as _item
-from ..results import phase as _phase
+from ..results import MAX_OUTPUT_BYTES, item, phase
 from .placement import points_into, replace_with_symlink, symlink_owner
 
 _REQUIREMENTS_FILE = "requirements.txt"
@@ -30,8 +28,8 @@ _KLIPPER_REQUIREMENTS_FILE = "klipper_requirements.txt"
 def _run_python_command(command: list[str], label: str) -> dict:
     result = subprocess.run(command, capture_output=True, check=False)
     raw = (result.stdout + result.stderr).decode(errors="replace")
-    output = raw[:_MAX_OUTPUT_BYTES] + ("…" if len(raw) > _MAX_OUTPUT_BYTES else "")
-    return _item(label, ok=result.returncode == 0, output=output.strip())
+    output = raw[:MAX_OUTPUT_BYTES] + ("…" if len(raw) > MAX_OUTPUT_BYTES else "")
+    return item(label, ok=result.returncode == 0, output=output.strip())
 
 
 def reject_conflicting_dep_files(plugin_dir: Path) -> None:
@@ -69,7 +67,7 @@ def _provision_venv(plugin_dir: Path, vars: dict[str, str]) -> dict | None:
     wheels = sorted(python_env.plugin_wheels_dir(plugin_dir).glob("*.whl"))
     install = python_env.requirements_install_command(venv_path, wheels)
     items.append(_run_python_command(install, "install requirements (offline)"))
-    return _phase("python", "Python environment", items)
+    return phase("python", "Python environment", items)
 
 
 def _is_importable_entry(entry: Path) -> bool:
@@ -106,8 +104,8 @@ def _link_conflict(plugin_root: Path, label: str, owner: str, plugin_dir: Path, 
     ours = _baked_version(python_env.baked_site_packages_dir(plugin_dir), name)
     theirs = _baked_version(python_env.baked_site_packages_dir(plugin_root / owner), name)
     if ours and theirs and ours == theirs:
-        return _item(f"{label}: already provided by {owner} at {ours}", ok=True)
-    return _item(
+        return item(f"{label}: already provided by {owner} at {ours}", ok=True)
+    return item(
         f"{label}: refused, {owner} already provides {name} at a different version "
         f"({theirs or 'unknown'} vs {ours or 'unknown'}); one interpreter holds one version",
         ok=False,
@@ -118,13 +116,13 @@ def _site_link_precheck(plugin_root: Path, plugin_dir: Path, site_pkgs: Path, na
     """A terminal item (refusal, or a same-version no-op) if we must not link, else None to link."""
     module = python_env.import_name(name)
     if _already_importable(module):
-        return _item(f"link {name}: refused, the base Python already provides {module!r}", ok=False)
+        return item(f"link {name}: refused, the base Python already provides {module!r}", ok=False)
     owner = symlink_owner(site_pkgs / name, plugin_root)
     if owner is not None and owner != plugin_dir.name:
         return _link_conflict(plugin_root, f"link {name}", owner, plugin_dir, name)
     destination = site_pkgs / name
     if destination.exists() and not destination.is_symlink():
-        return _item(f"link {name}: refused, a real file already occupies {destination}", ok=False)
+        return item(f"link {name}: refused, a real file already occupies {destination}", ok=False)
     return None
 
 
@@ -135,8 +133,8 @@ def _link_one_site_package(plugin_root: Path, plugin_dir: Path, site_pkgs: Path,
     try:
         replace_with_symlink(python_env.baked_site_packages_dir(plugin_dir) / name, site_pkgs / name)  # noqa: E501
     except Exception as exc:
-        return _item(f"link {name}: {exc}", ok=False)
-    return _item(f"link {name}", ok=True)
+        return item(f"link {name}: {exc}", ok=False)
+    return item(f"link {name}", ok=True)
 
 
 def _link_site_packages(plugin_root: Path, plugin_dir: Path, vars: dict[str, str]) -> dict | None:
@@ -145,15 +143,15 @@ def _link_site_packages(plugin_root: Path, plugin_dir: Path, vars: dict[str, str
         return None
     site_pkgs = python_env.system_site_packages(vars)
     if site_pkgs is None:
-        return _phase("site_packages", "System Python links", [_item("no system site-packages on this host; skipped", ok=True)])  # noqa: E501
+        return phase("site_packages", "System Python links", [item("no system site-packages on this host; skipped", ok=True)])  # noqa: E501
     site_pkgs.mkdir(parents=True, exist_ok=True)
     items = [_link_one_site_package(plugin_root, plugin_dir, site_pkgs, name) for name in baked_top_level_names(plugin_dir)]  # noqa: E501
-    return _phase("site_packages", "System Python links", items)
+    return phase("site_packages", "System Python links", items)
 
 
 def provision_deps_phases(plugin_root: Path, plugin_dir: Path, vars: dict[str, str]) -> list[dict]:
     """The venv phase and the site-packages-link phase, whichever applies (mutually exclusive)."""
-    return [phase for phase in (_provision_venv(plugin_dir, vars), _link_site_packages(plugin_root, plugin_dir, vars)) if phase is not None]  # noqa: E501
+    return [dep_phase for dep_phase in (_provision_venv(plugin_dir, vars), _link_site_packages(plugin_root, plugin_dir, vars)) if dep_phase is not None]  # noqa: E501
 
 
 def remove_plugin_site_links(plugin_dir: Path, vars: dict[str, str]) -> list[str]:
