@@ -1,7 +1,7 @@
 """User-variable handling has a canonical home in core.packages.user_vars (validation, the $VAR
 expander, persistence to user_vars.json, the per-plugin venv var, and required-variable checks) and
-stays reachable from the core.packages namespace, where api.routes, core.selfcheck, and the rest of
-the suite reference these as packages.validate_user_vars / packages.expand / load_user_vars."""
+stays reachable from the core.packages namespace as packages.validate_user_vars (the api consumes
+it through the facade)."""
 from pathlib import Path
 
 import pytest
@@ -12,8 +12,6 @@ from core.packages import user_vars
 
 def test_symbols_reexported_from_package_namespace() -> None:
     assert packages.validate_user_vars is user_vars.validate_user_vars
-    assert packages.expand is user_vars.expand
-    assert packages.load_user_vars is user_vars.load_user_vars
 
 
 def test_validate_user_vars_accepts_valid_and_rejects_metacharacters() -> None:

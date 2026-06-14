@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from core import packages
-from core.packages import print_guard, python_deps, services
+from core.packages import dependencies, print_guard, python_deps, services
 from core.packages.recovery import evidence
 from core.safety.probe import klipper, moonraker
 
@@ -1277,8 +1277,8 @@ def test_installed_dependents_reports_consumer(tmp_path: Path) -> None:
     write_plugin(tmp_path, "provider", provides=["svc"])
     write_plugin(tmp_path, "consumer", depends=["svc@>=1.0"])
 
-    assert packages.installed_dependents(tmp_path, "provider") == ["consumer"]
-    assert packages.installed_dependents(tmp_path, "consumer") == []
+    assert dependencies.installed_dependents(tmp_path, "provider") == ["consumer"]
+    assert dependencies.installed_dependents(tmp_path, "consumer") == []
 
 
 def test_installed_dependents_reads_service_model(tmp_path: Path) -> None:
@@ -1292,7 +1292,7 @@ def test_installed_dependents_reads_service_model(tmp_path: Path) -> None:
         manifest = {"name": name, "version": "0.1.0", "install": {}, **fields}
         (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
 
-    assert packages.installed_dependents(tmp_path, "provider") == ["consumer"]
+    assert dependencies.installed_dependents(tmp_path, "provider") == ["consumer"]
 
 
 def test_uninstall_refuses_when_a_dependent_is_installed(tmp_path: Path, monkeypatch: MP) -> None:

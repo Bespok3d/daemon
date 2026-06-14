@@ -26,7 +26,6 @@ def write_plugin(
 
 
 def test_orchestrator_reexports_the_dependency_helpers() -> None:
-    assert packages.installed_dependents is dependencies.installed_dependents
     assert packages.topo_sort is dependencies.topo_sort
     assert packages.provided_services is dependencies.provided_services
 

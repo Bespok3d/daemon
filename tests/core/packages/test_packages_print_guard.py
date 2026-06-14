@@ -11,7 +11,6 @@ MP = pytest.MonkeyPatch
 
 def test_orchestrator_reexports_the_guards() -> None:
     assert packages.guard_no_print is print_guard.guard_no_print
-    assert packages.guard_no_print_for_removal is print_guard.guard_no_print_for_removal
 
 
 def test_print_active_reads_klipper_api_socket(monkeypatch: MP) -> None:

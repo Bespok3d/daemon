@@ -2,15 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from core import packages
 from core.packages import python_deps
 
 MP = pytest.MonkeyPatch
-
-
-def test_orchestrator_reexports_the_public_dep_helpers() -> None:
-    assert packages.remove_plugin_site_links is python_deps.remove_plugin_site_links
-    assert packages.remove_plugin_venv is python_deps.remove_plugin_venv
 
 
 def test_reject_conflicting_dep_files_raises_when_both_present(tmp_path: Path) -> None:

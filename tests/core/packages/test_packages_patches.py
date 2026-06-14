@@ -1,14 +1,9 @@
 """Patches (the unified-diff apply + CRLF handling + original-file backup/restore) have a canonical
-home in core.packages.patches and stay reachable from the core.packages namespace. These guard the
-diagnostics that make a failed patch legible and the restore that teardown relies on."""
+home in core.packages.patches. These guard the diagnostics that make a failed patch legible and the
+restore that teardown relies on."""
 from pathlib import Path
 
-from core import packages
 from core.packages import patches
-
-
-def test_symbols_reexported_from_package_namespace() -> None:
-    assert packages.restore_original_files is patches.restore_original_files
 
 
 def test_normalize_line_endings_strips_crlf(tmp_path: Path) -> None:

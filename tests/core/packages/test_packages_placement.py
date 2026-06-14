@@ -1,14 +1,8 @@
-"""Placement (the symlink/dir/mode family) has a canonical home in core.packages.placement and stays
-reachable from the core.packages namespace, where the orchestrator drives it. These guard the
-stock-original backup/restore contract that lets teardown put the firmware back."""
+"""Placement (the symlink/dir/mode family) has a canonical home in core.packages.placement. These
+guard the stock-original backup/restore contract that lets teardown put the firmware back."""
 from pathlib import Path
 
-from core import packages
 from core.packages import placement
-
-
-def test_symbols_reexported_from_package_namespace() -> None:
-    assert packages.remove_plugin_symlinks is placement.remove_plugin_symlinks
 
 
 def test_create_dirs_expands_vars(tmp_path: Path) -> None:

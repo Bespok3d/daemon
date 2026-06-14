@@ -1,27 +1,24 @@
 """Package-operations facade.
 
 Re-exports the public package API the routes import and owns the plugin root, injecting it into the
-worker modules. The install-shaped operations (install, reconfigure, update-batch) live in
-`installer.py`; recover, uninstall, and the deactivate/teardown lifecycle still live here pending
-their own extraction.
+worker modules. The install-shaped operations live in `installer.py` and the uninstall family in
+`uninstaller.py`; recover and the deactivate/teardown lifecycle still live here pending their own
+extraction.
 
 A .b3 package is a zip of manifest.json plus the plugin file tree. Signature verification is
 deferred until packages are signed.
 """
 
-import json
 import os
-import shutil
 from pathlib import Path
 from typing import Any
 
-from ..intent import RESTART_HOOKS, normalize_install
 from ..safety import OperationContext, OperationKind
-from .deactivation import DEACTIVATED_MARKER, neutralize_plugin, run_stop_commands
-from .dependencies import installed_dependents, provided_services, topo_sort
+from .deactivation import DEACTIVATED_MARKER, neutralize_plugin
+from .dependencies import provided_services, topo_sort
 from .errors import (
     ConflictError,  # noqa: F401  re-export for api.routes
-    DependentsError,
+    DependentsError,  # noqa: F401  re-export for api.routes
 )
 from .installer import (
     PhaseListener,  # noqa: F401  re-export for api.routes
@@ -30,15 +27,11 @@ from .installer import (
     run_update_batch,
 )
 from .manifest import manifest_at
-from .patches import restore_original_files
-from .placement import remove_plugin_symlinks
-from .print_guard import guard_no_print, guard_no_print_for_removal
-from .python_deps import remove_plugin_site_links, remove_plugin_venv
+from .print_guard import guard_no_print
 from .recovery import recover_one, restart_services
+from .uninstaller import run_uninstall
 from .user_vars import (
     USER_VARS_FILE,  # noqa: F401  re-export for tests
-    expand,
-    load_user_vars,
     validate_user_vars,  # noqa: F401  re-export for api.routes
 )
 
@@ -113,72 +106,8 @@ def recover(vars: dict[str, str]) -> list[dict]:
     return results
 
 
-def _uninstall_from_manifest(manifest_path: Path, plugin_dir: Path, vars: dict[str, str]) -> None:
-    manifest = json.loads(manifest_path.read_text())
-    install_spec = normalize_install(manifest.get("install", {}))
-    full_vars = {**vars, **load_user_vars(plugin_dir)}
-    run_stop_commands(install_spec["stops"] + manifest.get("stop", []), full_vars)
-    remove_plugin_symlinks(install_spec["symlinks"], plugin_dir, full_vars)
-    restore_original_files(install_spec["patches"], plugin_dir / "patches_orig", full_vars)
-
-
-def _remove_one(plugin_dir: Path, vars: dict[str, str]) -> None:
-    manifest_path = plugin_dir / "manifest.json"
-    if manifest_path.exists():
-        _uninstall_from_manifest(manifest_path, plugin_dir, vars)
-    remove_plugin_site_links(plugin_dir, vars)
-    remove_plugin_venv(plugin_dir.name, vars)
-    shutil.rmtree(plugin_dir)
-
-
-def _remove_with_dependents(plugin_id: str, vars: dict[str, str], removed: list[str]) -> None:
-    for dependent in installed_dependents(PLUGIN_ROOT, plugin_id):
-        if dependent not in removed:
-            _remove_with_dependents(dependent, vars, removed)
-    plugin_dir = PLUGIN_ROOT / plugin_id
-    if plugin_dir.exists() and plugin_id not in removed:
-        _remove_one(plugin_dir, vars)
-        removed.append(plugin_id)
-
-
-def _removal_restart_commands(plugin_ids: list[str], vars: dict[str, str]) -> list[str]:
-    """Core-service restart hooks declared by the plugins being removed, expanded and deduped.
-
-    Install runs a plugin's `restart` hooks so its config/extra takes effect; uninstall must run the
-    same hooks so the REMOVAL takes effect (Klipper keeps a now-deleted [section] loaded, and nginx
-    keeps a removed web location, until the service restarts).
-    """
-    commands: list[str] = []
-    for plugin_id in plugin_ids:
-        manifest_path = PLUGIN_ROOT / plugin_id / "manifest.json"
-        if not manifest_path.exists():
-            continue
-        manifest = json.loads(manifest_path.read_text())
-        for hook in manifest.get("install", {}).get("restart", []):
-            command = RESTART_HOOKS.get(hook)
-            if command:
-                commands.append(expand(command, vars))
-    return list(dict.fromkeys(commands))
-
-
 def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> list[str]:
-    """Remove a plugin. Refuses if installed dependents need it, unless cascade removes them too.
-
-    Returns the ids removed, dependents first, target last.
-    """
-    plugin_dir = PLUGIN_ROOT / plugin_id
-    if not plugin_dir.exists():
-        raise FileNotFoundError(plugin_id)
-    dependents = installed_dependents(PLUGIN_ROOT, plugin_id)
-    if dependents and not cascade:
-        raise DependentsError(plugin_id, dependents)
-    guard_no_print_for_removal(PLUGIN_ROOT, [plugin_id, *dependents])
-    restart_commands = _removal_restart_commands([*dependents, plugin_id], vars)
-    removed: list[str] = []
-    _remove_with_dependents(plugin_id, vars, removed)
-    if restart_commands:
-        restart_services(PLUGIN_ROOT, restart_commands, vars, OperationContext(OperationKind.UNINSTALL, plugin_id))  # noqa: E501
-    return removed
+    return run_uninstall(PLUGIN_ROOT, plugin_id, vars, cascade)
 
 
 _GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"

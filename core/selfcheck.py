@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import packages
-from .packages import expand, load_user_vars
+from .packages.user_vars import expand, load_user_vars
 
 _DEACTIVATED_MARKER = "deactivated.json"
 
