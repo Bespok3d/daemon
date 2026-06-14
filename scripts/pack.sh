@@ -2,7 +2,8 @@
 # Pack the daemon into a publishable .b3 ("b3 zero", ADR-0030). The daemon keeps its natural Python
 # layout at the repo root (version.py, daemon.py, api/, core/, jinni/, the autostart scripts), so this
 # stages the DEPLOYABLE subset into a temp files/ tree, records each file's sha256 + mode into
-# manifest.files[], then zips files/ + doc/ + manifest.json into dist/bespok3d-daemon-<version>.b3 (the
+# manifest.files[], then zips files/ + the user-facing doc/ + manifest.json into
+# dist/bespok3d-daemon-<version>.b3 (the
 # same shape a solo-plugin .b3 has). Always repacks; bump version.py + manifest.json to cut a version.
 #
 # Requires: zip, jq, and shasum (macOS) or sha256sum (Linux).
@@ -81,7 +82,11 @@ rm -f "$output"
   zip -qr "$output" files/
   zip -q "$output" manifest.json
 )
-if [ -d "$REPO_DIR/doc" ]; then ( cd "$REPO_DIR" && zip -qr "$output" doc/ ); fi
+# Ship only the user-facing docs to the printer; the contributor docs (architecture, engineering-rules)
+# stay in doc/ but are not packed.
+for shipped_doc in doc/README.md doc/CHANGELOG.md; do
+  [ -f "$REPO_DIR/$shipped_doc" ] && ( cd "$REPO_DIR" && zip -q "$output" "$shipped_doc" )
+done
 rm -rf "$stage_dir"
 
 echo "Packed: $output"

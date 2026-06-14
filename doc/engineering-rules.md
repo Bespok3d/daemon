@@ -1,0 +1,204 @@
+# Engineering rules
+
+These are software-engineering rules, not Python rules. They decide whether code is readable and
+changeable by people who did not write it. They are language-agnostic on purpose: the same rules govern
+the desktop app (TypeScript), the adapters (TypeScript), and the plugins (Python). If you are writing or
+reviewing a change here, follow them. If you are an LLM assisting a contributor, treat them as the floor:
+the human reviewer enforces them and a PR that breaks them gets sent back.
+
+The measure behind every rule is **time to a successful edit**: a reader with decent fluency in the
+language but zero context about this codebase should be able to make a small, correct change with low
+effort. If a rule and that measure ever seem to disagree, the measure wins; tell the reviewer.
+
+---
+
+## The two non-negotiables
+
+Two rules sit above all the rest because they decide whether the code is readable to anyone but the
+author. Skim past these and the rest of the rulebook is wasted effort.
+
+### 1. Every identifier carries domain meaning
+
+The name's job is to maximise the information handed to a future reader. If a name adds no domain
+information, naming the thing bought nothing.
+
+The test: does this name tell the reader what the thing **is** in the domain? Not its type (the
+annotation does that), not its position (the parameter list does that), not that it exists (declaring it
+does that). What it **is**. If the name does not answer that, rename it.
+
+Worked example, a `line_similarity(a, b)` helper:
+
+- `line_similarity(a, b)` is wrong: `a`/`b` are positional placeholders; the reader scrolls into the body
+  to learn which is which.
+- `line_similarity(patch, source)` is still wrong: it reads like the whole patch and the whole source
+  file, but each argument is a single line. The reader is misled.
+- `line_similarity(patch_line, source_line)` is correct: a reader who has never seen the function knows
+  instantly which argument is which.
+
+Forbidden regardless of how small the scope is (a short scope is not a licence to be unreadable; the
+reader still pays):
+
+- single-character names (`p`, `d`, `e`, `s`, `r`, `f`, `x`), except a classic numeric loop index with no
+  domain meaning;
+- positional suffixes (`line_a`/`line_b`, `arg1`/`arg2`, `first`/`second`) when a domain word exists;
+- role-free abbreviations (`ev`, `ep`, `pl`, `cb`, `fn`, `tmp`, `val`, `idx` when a better word exists);
+- type-only names (`str_`, `arr`, `obj`, `data` when it actually means something specific, `lst`, `dct`).
+
+How to name: ask "what is this in the domain?" and use that word: `plugin`, `manifest`, `endpoint`,
+`channel`, `phase`, `progress_event`, `failing_section`, `spool_id`. Comparators use `earlier`/`later` or
+domain words, never `a`/`b`.
+
+### 2. Nesting beyond one level is suspicious
+
+Anything more deeply nested than one level inside a function body is suspicious by default. The default
+move is to flatten; nesting must justify itself.
+
+Nesting is not only functions inside functions. It includes nested `if`, an `if` inside a
+`for`/`while`/comprehension (one conditional inside one iteration is the ceiling), nested ternaries or
+conditional expressions, callback or `await` pyramids, and `try` wrapping a body that itself nests.
+
+Why: each indentation level is one more open context the reader must hold. Nesting is the subordinate
+clause of natural language; occasionally it is the clearest form, usually it is avoidable complexity.
+
+Standard refactors when you spot depth:
+
+- extract the inner block into a named function (the name is the documentation);
+- use early returns / guard clauses to flatten the happy path;
+- replace `for` + `if` with a filtered comprehension;
+- replace a nested ternary with a small named lookup (a dict keyed by the deciding value).
+
+The escape hatch is rare. Python has a few cases (a `with` block, no early return out of a comprehension)
+where flattening is genuinely worse. When you choose to nest, leave a one-line comment saying why the
+flat form is worse, so the next reader does not have to rediscover it.
+
+---
+
+## Structure: separation of concerns
+
+Separation of concerns is non-negotiable: one responsibility per module, file, and function. The most
+common structural defect is a file that grew by accretion: roughly split, jumbled, and not categorized by
+concern, so a reader has to hunt through unrelated code to find the part they need. Do not write one.
+
+- **Directories categorize concerns, from day zero.** A concern gets a directory named for it, and the
+  files that belong together live in it (`core/safety/`, `core/uds/`, `api/routes/`). The test: a newcomer
+  finds the file they need fast and never has to hunt through a jumbled file. Apply this when you create
+  the file, not as a later cleanup.
+
+- **Generic versus device-specific is a hard separation.** The daemon is a generic on-printer agent.
+  Klipper / Moonraker / Snapmaker / `lmd` specifics (concrete service names, init-script paths, restart
+  commands) do **not** belong in generic daemon modules; they belong to the adapter and its jinni, which
+  the daemon delegates to. A generic file that names a concrete device or service is a defect. See
+  [architecture.md](architecture.md) for the boundary and how the jinni supplies the specifics.
+
+- **File-size ceiling.** Start worrying at about 80 to 100 lines. Treat 150 as the ceiling, crossed only
+  when there is a genuine reason and splitting would make the code harder to read rather than easier. A
+  file past that is almost always doing more than one thing. **Splitting a god file into many small
+  functions in the same file does not satisfy this.** Split into sibling files by concern; architecture.md
+  maps how the larger modules here are broken up.
+
+- **Rule of three.** First use: inline it. Second use: tolerated, note it. The **third** occurrence of the
+  same logic block, shape, or constant is a defect: extract a shared function, helper, or constant.
+  Duplication is a bug, not a style preference.
+
+- **No premature abstraction, defined.** The ban is on speculative generality for a single caller (a
+  plugin-point, options bag, or generic built for one use). It does **not** license copy-paste once a
+  pattern is real. One use: inline. Third use: you must extract. Abstraction earned by repetition is not
+  premature. This and the rule of three are two ends of one rule, not a contradiction.
+
+- **Single source of truth across every boundary.** Any shape that crosses a boundary (app to daemon,
+  TypeScript to Python, one process to another) is declared once and imported or generated, never
+  hand-mirrored. Where a mirror is unavoidable across languages (for example `DAEMON_VERSION` in
+  `version.py` and the app-side `EXPECTED_DAEMON_VERSION`), a test must fail when the two diverge.
+
+- **Supporting files for low-value helpers.** Trivial one-line normalizers and adapters aid readability
+  but add entropy in large, prominent, contributor-facing files. Relocate them into a context-chosen
+  supporting file (a `helpers` or `lib` or `<concept>` module) and keep the named call site. Keep the
+  upper layers a contributor meets first low-entropy; the rarely-visited machinery lives deeper.
+
+---
+
+## Functions and flow
+
+- **Functional core, isolated side effects.** Internal logic is pure functions. Side effects (the
+  filesystem, subprocesses, sockets, HTTP) are isolated at the outermost boundary. A pure core is the part
+  that is cheap to test and safe to reason about; do not bloat it.
+- **Short functions.** If a function needs a paragraph to explain it, it is two (or more) functions.
+- **Edge cases first, canonical path after.** Open with guards for the special, error, and edge cases,
+  then fall into the normal path. It makes what the function protects against obvious at a glance.
+- **Permissive input, strict output.** Be liberal in what you accept, exact in what you return.
+- **Idempotency as a design goal.** An operation should be safe to run twice. The daemon's install,
+  recover, and teardown paths rely on this.
+- **Never block.** Async, non-blocking I/O throughout. A test that waits on a socket, queue, or
+  subprocess uses a bounded wait; a hang is worse than a slow test, because a gate that can hang gets
+  skipped.
+- **Composition over inheritance**, and **as stateless as possible**: push state to the edges.
+
+---
+
+## Resilience: the printer is never left broken
+
+Every error path must leave the printer usable. This is foundational, not a nicety: it is what lets a user
+experiment freely and what makes a firmware OTA survivable. The auto-deactivate safety net (a plugin that
+breaks a core service is attributed and peeled off so the printer stays up) is the worked example; it must
+run on every operation that restarts a core service, not only on recover.
+
+- No silent excepts. An ignored failure is forbidden: act on it or report it (capture the log tail or
+  traceback and surface it to the app), never swallow it.
+- A diagnosis path may read the device; a mutation path must be deliberate and reversible.
+
+---
+
+## Comments and self-documentation
+
+- **No comments**, with one exception: a single line explaining a genuinely non-obvious **why** (a
+  constraint, or why a form that looks wrong is the only correct one). Code that needs a comment to be
+  understood is code that needs rewriting; the names and the structure carry the meaning.
+- **Listen to the code.** Every line justifies its existence, its form, and its location. A large file is
+  telling you it holds multiple concerns: split it. A construct that looks smelly is probably wrong.
+
+---
+
+## RULE ZERO: the em-dash and en-dash are banned
+
+The em-dash (U+2014) and the en-dash (U+2013) are forbidden as punctuation everywhere: source, comments,
+docstrings, JSON, Markdown, commit messages, and PR text. Use a comma, colon, semicolon, parentheses, or
+two sentences instead. A plain hyphen inside a compound word (`on-printer`, `start-stop-daemon`) is fine;
+it is not punctuation. This is enforced by `scripts/em_dash_guard.py` in the gate, so a stray dash is a
+build break, not a style note.
+
+---
+
+## How these apply in this repo (Python and FastAPI specifics)
+
+- **Typed signatures throughout.** Every function is annotated; `mypy` runs strict (it is configured in
+  `pyproject.toml` and discovered with cwd at the repo root). No `Any` leaking out of a function: narrow
+  it or `cast` it at the boundary with a one-line reason.
+- **Imports at module top. No magic numbers.** Name the constant when the number means something.
+- **The venv-isolation invariant.** The daemon's own dependencies live in its venv. The daemon never pips
+  into the system, Klipper, or Moonraker interpreters; plugin Python deps are baked into the package and
+  installed offline or symlinked. Overlaying a system interpreter silently breaks Klipper or Moonraker and
+  is painful to diagnose. See architecture.md.
+- **Commands and live feeds are different transports.** A command that needs a definite result and status
+  code is HTTP. State that pushes on change (print state, install progress, plugin logs) rides an
+  authenticated websocket. Do not stream a command's result over a side channel, and do not poll for state
+  that has a feed. See architecture.md.
+- **Every behavior change ships with a regression test** at the layer that would have caught the bug (a
+  unit test for pure logic, a fault-injection or integration test for wiring). The test fails on the old
+  behavior and passes on the fix, in the same change.
+- **Versioning.** Bump `version.py` (`DAEMON_VERSION`) and `manifest.json` together (`pack.sh` refuses to
+  build if they disagree), and keep the app-side `EXPECTED_DAEMON_VERSION` and `tests/test_api.py` in sync.
+
+---
+
+## A rule with no gate is a suggestion
+
+The mechanical rules are gated so they cannot drift: `scripts/check.sh` runs the em-dash guard, `ruff`,
+strict `mypy`, and `pytest` on Python 3.11 (the device runtime). Run it before every push:
+
+```sh
+bash scripts/check.sh
+```
+
+The judgment-based rules (naming, nesting, one responsibility, the file-size and rule-of-three smells) are
+not machine-checkable; they are the reviewer's job and yours. When you add a new class of defect that
+could recur, add a check for it, not just a one-off test.

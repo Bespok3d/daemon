@@ -19,8 +19,8 @@ from typing import Any, cast
 
 from jinni.loader import get_jinni
 
-from . import python_env
-from .intent import (
+from .. import python_env
+from ..intent import (
     RESTART_HOOKS,
     SERVICE_SCRIPT_DIR,
     _is_service_action,
@@ -30,11 +30,11 @@ from .intent import (
     normalize_install,
     service_script_name,
 )
-from .klippy_uds import query_print_state as _query_print_state
-from .results import MAX_OUTPUT_BYTES as _MAX_OUTPUT_BYTES
-from .results import item as _item
-from .results import phase as _phase
-from .safety import (
+from ..klippy_uds import query_print_state as _query_print_state
+from ..results import MAX_OUTPUT_BYTES as _MAX_OUTPUT_BYTES
+from ..results import item as _item
+from ..results import phase as _phase
+from ..safety import (
     Decision,
     FailureEvidence,
     OperationContext,
@@ -42,32 +42,33 @@ from .safety import (
     decide,
     is_healthy,
 )
-from .safety.attribution import AttributionIndex, Placement
-from .safety.attribution import build_index as build_attribution_index
-from .safety.health import MQTT_PORT as _MQTT_PORT
-from .safety.health import config_link_dirs as _config_link_dirs  # noqa: F401  re-export for tests
-from .safety.health import klipper_healthy as _klipper_healthy  # noqa: F401  re-export for tests
-from .safety.health import klippy_socket_path as _klippy_socket_path
-from .safety.health import (
+from ..safety.attribution import AttributionIndex, Placement
+from ..safety.attribution import build_index as build_attribution_index
+from ..safety.health import MQTT_PORT as _MQTT_PORT
+from ..safety.health import config_link_dirs as _config_link_dirs  # noqa: F401  re-export for tests
+from ..safety.health import klipper_healthy as _klipper_healthy  # noqa: F401  re-export for tests
+from ..safety.health import klippy_socket_path as _klippy_socket_path
+from ..safety.health import (
     moonraker_healthy as _moonraker_healthy,  # noqa: F401  re-export for tests
 )
-from .safety.health import port_listening as _port_listening
-from .safety.health import probe_moonraker as _probe_moonraker
-from .safety.health import (
+from ..safety.health import port_listening as _port_listening
+from ..safety.health import probe_moonraker as _probe_moonraker
+from ..safety.health import (
     prune_dead_config_links as _prune_dead_config_links,  # noqa: F401  re-export
 )
-from .safety.health import (
+from ..safety.health import (
     restart_moonraker as _restart_moonraker,  # noqa: F401  re-export for tests
 )
-from .safety.health import run_restart_batch as _run_restart_batch
-from .safety.health import wait_for_klipper_item as _wait_for_klipper_item  # noqa: F401  re-export
-from .safety.health import (
+from ..safety.health import run_restart_batch as _run_restart_batch
+from ..safety.health import wait_for_klipper_item as _wait_for_klipper_item  # noqa: F401  re-export
+from ..safety.health import (
     wait_for_moonraker_item as _wait_for_moonraker_item,  # noqa: F401  re-export
 )
-from .safety.logs import format_tails as _format_tails
-from .safety.logs import read_log_tail as _read_log_tail
-from .shell import run_one_command as _run_one_start_command
-from .shell import start_env as _start_env
+from ..safety.logs import format_tails as _format_tails
+from ..safety.logs import read_log_tail as _read_log_tail
+from ..shell import run_one_command as _run_one_start_command
+from ..shell import start_env as _start_env
+from .errors import ConflictError, DependentsError
 
 _DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
 PLUGIN_ROOT = _DATA_ROOT / "usr/local/plugins"
@@ -87,24 +88,6 @@ _SITE_PACKAGES_VAR = "PYTHON_SITE_PACKAGES"
 # brace expansion (its only special use) needs `{`/`}`, which this allowlist already blocks.
 _SAFE_VAR_RE = re.compile(r'^[A-Za-z0-9 .,\-:/_@]+$')
 _SAFE_VAR_ALLOWED = "letters, numbers, spaces, and . , - : / _ @"
-
-
-class DependentsError(Exception):
-    """Uninstall was refused because installed plugins still depend on the target."""
-
-    def __init__(self, plugin_id: str, dependents: list[str]) -> None:
-        self.plugin_id = plugin_id
-        self.dependents = dependents
-        super().__init__(f"{plugin_id} is required by: {', '.join(dependents)}")
-
-
-class ConflictError(Exception):
-    """Install was refused because the package conflicts with an installed plugin."""
-
-    def __init__(self, plugin_id: str, conflicts: list[str]) -> None:
-        self.plugin_id = plugin_id
-        self.conflicts = conflicts
-        super().__init__(f"{plugin_id} conflicts with installed: {', '.join(conflicts)}")
 
 
 def validate_user_vars(user_vars: dict[str, str]) -> None:

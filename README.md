@@ -21,8 +21,15 @@ requirements.txt      runtime deps
 tests/                test suite (not packed)
 scripts/              check.sh / pack.sh / generate-atom.mjs (not packed)
 manifest.json         b3-zero manifest (version mirrors version.py)
-doc/                  README + CHANGELOG (shipped in the .b3)
+doc/                  README + CHANGELOG (shipped in the .b3); architecture + engineering-rules (not shipped)
 ```
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) first. The rules every change follows are in
+[doc/engineering-rules.md](doc/engineering-rules.md) (software-engineering rules, enforced in the gate),
+and the design intent and concern map are in [doc/architecture.md](doc/architecture.md). If you use an AI
+assistant, point it at [CLAUDE.md](CLAUDE.md), which encodes the same rules and the working procedure.
 
 ## Develop
 
