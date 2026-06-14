@@ -9,7 +9,6 @@ Signature verification is deferred until packages are signed.
 import json
 import os
 import shutil
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -44,6 +43,14 @@ from ..safety.logs import read_log_tail as _read_log_tail
 from ..shell import run_one_command as _run_one_start_command
 from ..shell import start_env as _start_env
 from .archive import fix_ownership, read_manifest, unpack_package
+from .deactivation import (
+    DEACTIVATED_MARKER,
+    RECOVERY_FAILURE_MARKER,
+    clear_failure_markers,
+    deactivate_plugin,
+    neutralize_plugin,
+    run_stop_commands,
+)
 from .dependencies import (
     installed_conflicts,
     installed_dependents,
@@ -175,7 +182,7 @@ def install(
     full_vars = with_plugin_venv(vars, plugin_id)
     log.extend(_install_apply_phases(plugin_dir, manifest, full_vars, on_phase))
     if all(phase["ok"] for phase in log):
-        _clear_failure_markers(plugin_dir)
+        clear_failure_markers(plugin_dir)
 
     return plugin_id, log
 
@@ -208,41 +215,6 @@ def reconfigure(
     ]
     phases.extend(_restart_phases(deferred, full_vars, _op_context(OperationKind.RECONFIGURE, manifest)))  # noqa: E501
     return plugin_id, phases
-
-
-def _run_stop_commands(cmds: list[str], vars: dict[str, str]) -> None:
-    env = {**os.environ, "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
-    for cmd in cmds:
-        subprocess.run(expand(cmd, vars), shell=True, capture_output=True, check=False, env=env)
-
-
-_DEACTIVATED_MARKER = "deactivated.json"
-_RECOVERY_FAILURE_MARKER = "recovery_failure.json"
-
-
-def _clear_failure_markers(plugin_dir: Path) -> None:
-    """A plugin that re-applies cleanly is no longer failed or deactivated; drop stale markers."""
-    (plugin_dir / _DEACTIVATED_MARKER).unlink(missing_ok=True)
-    (plugin_dir / _RECOVERY_FAILURE_MARKER).unlink(missing_ok=True)
-
-
-def _neutralize_plugin(plugin_dir: Path, vars: dict[str, str]) -> None:
-    """Stop a plugin affecting the system: drop its symlinks, restore patched files, remove its
-    linked libs and venv. Files in the plugin dir stay, so recover/reactivate can rebuild it."""
-    manifest = json.loads((plugin_dir / "manifest.json").read_text())
-    full_vars = {**vars, **load_user_vars(plugin_dir)}
-    ops = normalize_install(manifest.get("install", {}))
-    _run_stop_commands(ops["stops"] + manifest.get("stop", []), full_vars)
-    remove_plugin_symlinks(ops["symlinks"], plugin_dir, full_vars)
-    restore_original_files(ops["patches"], plugin_dir / "patches_orig", full_vars)
-    remove_plugin_site_links(plugin_dir, full_vars)
-    remove_plugin_venv(plugin_dir.name, full_vars)
-
-
-def _deactivate_plugin(plugin_dir: Path, vars: dict[str, str], reason: str) -> None:
-    if (plugin_dir / "manifest.json").exists():
-        _neutralize_plugin(plugin_dir, vars)
-    (plugin_dir / _DEACTIVATED_MARKER).write_text(json.dumps({"reason": reason}))
 
 
 def _apply_plugin(plugin_dir: Path, raw_inst: dict, inst: dict, full_vars: dict[str, str]) -> tuple[list[dict], list[str]]:  # noqa: E501
@@ -288,13 +260,13 @@ def _recover_one(
     phase_log, deferred = _apply_plugin(plugin_dir, raw_inst, inst, full_vars)
     if all(phase["ok"] for phase in phase_log):
         satisfied.update(provided_services(manifest))
-        _clear_failure_markers(plugin_dir)
+        clear_failure_markers(plugin_dir)
         ok_result = {"plugin_id": plugin_id, "ok": True, "skipped": False, "reason": "", "log": phase_log}  # noqa: E501
         return ok_result, deferred
 
     reason = "install phase failed"
-    (plugin_dir / _RECOVERY_FAILURE_MARKER).write_text(json.dumps({"phases": phase_log}))
-    _deactivate_plugin(plugin_dir, vars, reason)
+    (plugin_dir / RECOVERY_FAILURE_MARKER).write_text(json.dumps({"phases": phase_log}))
+    deactivate_plugin(plugin_dir, vars, reason)
     failed = {"plugin_id": plugin_id, "ok": False, "skipped": False, "reason": reason, "log": phase_log}  # noqa: E501
     return failed, []
 
@@ -383,7 +355,7 @@ def _auto_recover(deferred_cmds: list[str], vars: dict[str, str],
         decision = decide(evidence, ctx, deactivated)
         if decision.culprit is None:
             break
-        _deactivate_plugin(PLUGIN_ROOT / decision.culprit, vars,
+        deactivate_plugin(PLUGIN_ROOT / decision.culprit, vars,
                            f"auto-deactivated: {decision.signal}")
         deactivated.append(decision.culprit)
         _run_restart_batch(deferred_cmds, vars)
@@ -445,7 +417,7 @@ def recover(vars: dict[str, str]) -> list[dict]:
         plugin_dir for plugin_dir in PLUGIN_ROOT.iterdir()
         if plugin_dir.is_dir()
         and (plugin_dir / "manifest.json").exists()
-        and not (plugin_dir / _DEACTIVATED_MARKER).exists()
+        and not (plugin_dir / DEACTIVATED_MARKER).exists()
     ]
     if not plugin_dirs:
         return []
@@ -500,7 +472,7 @@ def _update_one(base_vars: dict[str, str], package_path: Path, user_vars: dict[s
     log = [extract, *phases]
     ok = all(phase["ok"] for phase in log)
     if ok:
-        _clear_failure_markers(plugin_dir)
+        clear_failure_markers(plugin_dir)
     reason = "" if ok else "update phase failed"
     result = {"plugin_id": plugin_id, "ok": ok, "skipped": False, "reason": reason, "log": log}
     return result, (deferred if ok else [])
@@ -541,7 +513,7 @@ def _uninstall_from_manifest(manifest_path: Path, plugin_dir: Path, vars: dict[s
     manifest = json.loads(manifest_path.read_text())
     install_spec = normalize_install(manifest.get("install", {}))
     full_vars = {**vars, **load_user_vars(plugin_dir)}
-    _run_stop_commands(install_spec["stops"] + manifest.get("stop", []), full_vars)
+    run_stop_commands(install_spec["stops"] + manifest.get("stop", []), full_vars)
     remove_plugin_symlinks(install_spec["symlinks"], plugin_dir, full_vars)
     restore_original_files(install_spec["patches"], plugin_dir / "patches_orig", full_vars)
 
@@ -620,7 +592,7 @@ def _remove_include_line(cfg_path: Path, pattern: str) -> None:
 def _deactivate_plugin_dir(plugin_dir: Path, vars: dict[str, str]) -> None:
     if not plugin_dir.is_dir() or not (plugin_dir / "manifest.json").exists():
         return
-    _neutralize_plugin(plugin_dir, vars)
+    neutralize_plugin(plugin_dir, vars)
 
 
 def _deactivate_plugins_in(plugin_root: Path, vars: dict[str, str]) -> None:
