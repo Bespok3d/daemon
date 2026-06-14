@@ -9,8 +9,11 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from api import app
-from api import routes as api_routes
-from core import auth, packages, selfcheck
+from api.routes import feeds as routes_feeds
+from api.routes import health as routes_health
+from api.routes import lifecycle as routes_lifecycle
+from api.routes import packages as routes_packages
+from core import auth, packages
 
 
 class _MockAdapter:
@@ -124,7 +127,7 @@ def _minimal_b3() -> bytes:
 async def test_deactivate_returns_ok(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_lifecycle, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "deactivate_all", _noop_vars)
     response = await client.post("/deactivate")
     assert response.status_code == 200
@@ -134,7 +137,7 @@ async def test_deactivate_returns_ok(
 async def test_teardown_returns_ok(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_lifecycle, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "teardown", _noop_vars)
     response = await client.post("/teardown")
     assert response.status_code == 200
@@ -144,9 +147,8 @@ async def test_teardown_returns_ok(
 async def test_selfcheck_returns_ok_true_when_no_drift(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
-    monkeypatch.setattr(selfcheck, "run_selfcheck", lambda _vars: [])
-    monkeypatch.setattr(api_routes, "run_selfcheck", lambda _vars: [])
+    monkeypatch.setattr(routes_health, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_health, "run_selfcheck", lambda _vars: [])
     response = await client.get("/selfcheck")
     assert response.status_code == 200
     body = response.json()
@@ -172,8 +174,8 @@ async def test_selfcheck_returns_ok_false_with_drift_details(
             ],
         }
     ]
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
-    monkeypatch.setattr(api_routes, "run_selfcheck", lambda _vars: sample_drift)
+    monkeypatch.setattr(routes_health, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_health, "run_selfcheck", lambda _vars: sample_drift)
     response = await client.get("/selfcheck")
     assert response.status_code == 200
     body = response.json()
@@ -192,7 +194,7 @@ async def test_install_route_returns_ok(
     ) -> tuple[str, list]:
         return "test-plugin", []
 
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_packages, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "install", fake_install)
     response = await client.post(
         "/packages/install",
@@ -207,7 +209,7 @@ async def test_install_route_returns_ok(
 async def test_install_route_returns_400_on_bad_vars(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_packages, "get_jinni", _MockAdapter)
     response = await client.post(
         "/packages/install",
         files={"file": ("plugin.b3", b"", "application/octet-stream")},
@@ -220,7 +222,7 @@ async def test_install_route_returns_400_on_bad_vars(
 async def test_recover_route_returns_ok(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_packages, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "recover", lambda _vars: [])
     response = await client.post("/packages/recover")
     assert response.status_code == 200
@@ -239,7 +241,7 @@ async def test_update_batch_route_returns_per_plugin_results(
             {"plugin_id": "(services)", "ok": True, "skipped": False, "reason": "", "log": []},
         ]
 
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_packages, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "update_batch", fake_update_batch)
     response = await client.post(
         "/packages/update-batch",
@@ -258,7 +260,7 @@ async def test_update_batch_route_returns_per_plugin_results(
 async def test_update_batch_route_returns_400_on_bad_vars(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_packages, "get_jinni", _MockAdapter)
     response = await client.post(
         "/packages/update-batch",
         files=[("files", ("alpha.b3", _minimal_b3(), "application/octet-stream"))],
@@ -274,7 +276,7 @@ async def test_uninstall_route_returns_ok(
     def fake_uninstall(_plugin_id: str, _vars: dict[str, str], cascade: bool = False) -> list[str]:
         return ["my-plugin"]
 
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_packages, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "uninstall", fake_uninstall)
     response = await client.delete("/packages/my-plugin")
     assert response.status_code == 200
@@ -288,7 +290,7 @@ async def test_uninstall_route_returns_404_when_plugin_missing(
     def raise_not_found(plugin_id: str, _vars: dict[str, str], cascade: bool = False) -> None:
         raise FileNotFoundError(plugin_id)
 
-    monkeypatch.setattr(api_routes, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(routes_packages, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "uninstall", raise_not_found)
     response = await client.delete("/packages/missing-plugin")
     assert response.status_code == 404
@@ -372,12 +374,12 @@ def test_install_progress_ws_replays_active_run_then_streams_done() -> None:
     # finished must replay nothing (the duplicate-steps fix), a contract covered at the hub layer in
     # test_install_progress.py. Asserting replay of a FINISHED run here (the old test) made the
     # server send nothing, so receive_json() blocked forever and hung the whole suite.
-    api_routes._install_hub.begin()
-    api_routes._install_hub._deliver({"type": "phase", "phase": {"id": "extract"}})
+    routes_feeds.install_hub.begin()
+    routes_feeds.install_hub._deliver({"type": "phase", "phase": {"id": "extract"}})
     url = f"/ws/install-progress?token={TEST_TOKEN}"
     with TestClient(app).websocket_connect(url) as ws:
         replayed = ws.receive_json()
-        api_routes._install_hub.publish({"type": "done", "ok": True})
+        routes_feeds.install_hub.publish({"type": "done", "ok": True})
         streamed = ws.receive_json()
     assert replayed == {"type": "phase", "phase": {"id": "extract"}}
     assert streamed == {"type": "done", "ok": True}

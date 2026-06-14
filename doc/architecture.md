@@ -92,18 +92,23 @@ offenders:
   family), `patches`, `templates`, `print_guard`, `python_deps`, `archive`, `dependencies` (the dep graph
   and topo sort), `recovery` (pairs with `core/safety/`), and `phases`. Consolidate the duplicated
   deactivate/uninstall/guard helpers while extracting.
-- **`api/routes/` (from `api/routes.py`, 442 lines).** Thin route registration that delegates to core,
-  grouped by concern: `packages`, `access`, `status`, `feeds`. Keep handlers thin.
+- **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
+  core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck),
+  `feeds` (the three live websocket handlers and the `install_hub`), `packages` (install/reconfigure/
+  recover/update-batch/uninstall), `lifecycle` (deactivate/teardown), `access` (the request/grant/revoke
+  flow). `paths` holds the shared data-root constant. Handlers stay thin.
 - **`core/auth/` (from `core/auth.py`, 149 lines).** One security concern per file: keys, roles, labels,
   tokens, identity, and the request/grant/revoke cycle.
 - **`core/intent/` (from `core/intent.py`, 184 lines).** Keep the generic destination classes and a generic
   restart interface; move the concrete device paths and restart commands behind the jinni (see the central
   boundary above).
-- **`core/uds/`.** Group `klippy_uds.py` and `moonraker_uds.py` under one transport directory.
+- **`core/printer_comms/` DONE (was the tentative `core/uds/`).** Groups the clients that talk to the
+  printer's own running services: `klippy`, `moonraker`, and the shared `frame` transport.
 - **`core/safety/fixers/` (from `core/safety/fixers.py`).** One fixer per file with a registry, so new
   failure modes slot in cleanly. `core/safety/health.py` (233 lines) splits the same way: per-service
   probes plus the retry/verify cycle.
-- **`core/log_capture/`.** Structure for multiple log sources captured different ways.
+- **`core/live/` DONE (absorbed `core/log_capture.py`).** The websocket push-on-change sources:
+  `install_progress`, `print_state`, and `log_capture`.
 
 Each extraction is its own reviewed step: gate green to start, write the failing test first, extract, gate
 green, stop for review. The decomposition is tracked in the project's cleanup ledger.
