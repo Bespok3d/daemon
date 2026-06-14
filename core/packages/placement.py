@@ -112,3 +112,24 @@ def _restore_one_symlink(link: dict, plugin_dir: Path, vars: dict[str, str]) -> 
 def remove_plugin_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> None:
     for link in symlinks:
         _restore_one_symlink(link, plugin_dir, vars)
+
+
+def points_into(link: Path, target_dir: Path) -> bool:
+    """True if the symlink resolves to a path inside target_dir (so teardown owns removing it)."""
+    try:
+        link.resolve().relative_to(target_dir.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def symlink_owner(link: Path, plugin_root: Path) -> str | None:
+    """The plugin id that owns the symlink, by resolving its target under plugin_root. None if the
+    path is not a symlink or resolves outside the plugin tree."""
+    if not link.is_symlink():
+        return None
+    try:
+        relative = link.resolve().relative_to(plugin_root)
+    except (ValueError, OSError):
+        return None
+    return relative.parts[0] if relative.parts else None

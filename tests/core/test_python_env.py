@@ -34,3 +34,18 @@ def test_requirements_install_is_offline_no_resolver() -> None:
 def test_requirements_install_with_no_wheels_installs_nothing() -> None:
     command = python_env.requirements_install_command(Path("/v"), [])
     assert command == ["/v/bin/pip", "install", "--no-index", "--no-deps"]
+
+
+def test_import_name_strips_py_suffix() -> None:
+    assert python_env.import_name("humanize.py") == "humanize"
+    assert python_env.import_name("humanize") == "humanize"
+
+
+def test_baked_site_packages_dir() -> None:
+    assert python_env.baked_site_packages_dir(Path("/p")) == Path("/p/files/site-packages")
+
+
+def test_system_site_packages_from_vars() -> None:
+    declared = {"PYTHON_SITE_PACKAGES": "/usr/lib/py"}
+    assert python_env.system_site_packages(declared) == Path("/usr/lib/py")
+    assert python_env.system_site_packages({}) is None

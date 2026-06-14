@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from core import packages
+from core.packages import python_deps
 
 
 def _find_workspace_root() -> Path:
@@ -90,7 +91,7 @@ def test_real_b3_provisions_klipper_extra_dep(tmp_path: Path, monkeypatch: MP) -
     broke for moonraker-notify (apprise declared, never baked, never linked). Per-layer unit tests
     with hand-built fixtures missed it; this exercises packer -> .b3 -> daemon together."""
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path / "plugins")
-    monkeypatch.setattr(packages, "_already_importable", lambda module: False)
+    monkeypatch.setattr(python_deps, "_already_importable", lambda module: False)
     site_pkgs = tmp_path / "site-packages"
     b3 = _pack_fixture(tmp_path / "repo", _sibling_pack_scripts()[0], {
         "manifest.json": '{"name": "demo", "version": "0.0.1", "install": {}, "files": []}\n',

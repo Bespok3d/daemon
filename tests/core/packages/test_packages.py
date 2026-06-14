@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from core import packages
-from core.packages import print_guard, services
+from core.packages import print_guard, python_deps, services
 from core.safety import health
 
 MP = pytest.MonkeyPatch
@@ -1696,7 +1696,7 @@ def _site_link_b3(zip_path: Path, plugin_name: str) -> None:
 
 def test_site_link_created_for_baked_top_level(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
-    monkeypatch.setattr(packages, "_already_importable", lambda module: False)
+    monkeypatch.setattr(python_deps, "_already_importable", lambda module: False)
     site_pkgs = tmp_path / "site-packages"
     zip_path = tmp_path / "p.b3"
     _site_link_b3(zip_path, "notifier")
@@ -1710,7 +1710,7 @@ def test_site_link_created_for_baked_top_level(tmp_path: Path, monkeypatch: MP) 
 
 def test_site_link_preserves_existing_base_package(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
-    monkeypatch.setattr(packages, "_already_importable", lambda module: True)
+    monkeypatch.setattr(python_deps, "_already_importable", lambda module: True)
     site_pkgs = tmp_path / "site-packages"
     zip_path = tmp_path / "p.b3"
     _site_link_b3(zip_path, "notifier")
@@ -1724,7 +1724,7 @@ def test_site_link_preserves_existing_base_package(tmp_path: Path, monkeypatch: 
 
 def test_site_link_conflict_refused_on_version_mismatch(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
-    monkeypatch.setattr(packages, "_already_importable", lambda module: False)
+    monkeypatch.setattr(python_deps, "_already_importable", lambda module: False)
     site_pkgs = tmp_path / "site-packages"
     site_pkgs.mkdir()
     other = tmp_path / "other"
@@ -1753,7 +1753,7 @@ def _arrange_extra_install(tmp_path: Path, monkeypatch: MP) -> dict:
     plugin_root.mkdir(parents=True)
     site_pkgs = tmp_path / "site-packages"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
-    monkeypatch.setattr(packages, "_already_importable", lambda module: False)
+    monkeypatch.setattr(python_deps, "_already_importable", lambda module: False)
     # Stub the HTTP boundary healthy so the post-restart safety check sees a working printer.
     monkeypatch.setattr(urlreq, "urlopen", lambda *_a, **_kw: _HealthyServerInfo())
     monkeypatch.setattr(sp, "run", _RecordingRun())

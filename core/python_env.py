@@ -8,16 +8,18 @@ and no pip ever reaches PyPI on the printer.
 
 A plugin whose dependency must instead be importable by Klipper/Moonraker's own interpreter ships a
 `klipper_requirements.txt` and the daemon symlinks the baked packages into the system site-packages
-(handled in packages.py); the two files are mutually exclusive.
+(the symlinking IO lives in `core/packages/python_deps.py`); the two files are mutually exclusive.
 
-The path derivation and pip command-building here are pure; `packages.py` owns the subprocess
-boundary that runs the commands.
+The path derivation, name derivation, and pip command-building here are pure; `core/packages` owns
+the subprocess and symlink boundaries that act on them.
 """
 from pathlib import Path
 
 PLUGIN_VENV_DIRNAME = "venv-plugins"
 PLUGIN_VENV_VAR = "PLUGIN_VENV"
 _WHEELS_SUBDIR = "files/wheels"
+_SITE_PACKAGES_SUBDIR = "files/site-packages"
+_SITE_PACKAGES_VAR = "PYTHON_SITE_PACKAGES"
 
 
 def plugin_venv_path(bespok3d_root: str, plugin_id: str) -> Path:
@@ -30,6 +32,21 @@ def venv_create_command(venv_path: Path) -> list[str]:
 
 def plugin_wheels_dir(plugin_dir: Path) -> Path:
     return plugin_dir / _WHEELS_SUBDIR
+
+
+def baked_site_packages_dir(plugin_dir: Path) -> Path:
+    return plugin_dir / _SITE_PACKAGES_SUBDIR
+
+
+def system_site_packages(vars: dict[str, str]) -> Path | None:
+    """Where a Klipper/Moonraker extra's deps get linked, or None when the host declares no path."""
+    target = vars.get(_SITE_PACKAGES_VAR)
+    return Path(target) if target else None
+
+
+def import_name(entry_name: str) -> str:
+    """The importable module name of a baked top-level entry (a package dir or a single `.py`)."""
+    return entry_name[:-3] if entry_name.endswith(".py") else entry_name
 
 
 def requirements_install_command(venv_path: Path, wheel_files: list[Path]) -> list[str]:
