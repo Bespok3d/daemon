@@ -1,14 +1,8 @@
 """Template rendering (the $VAR-expanding config-template writer) has a canonical home in
-core.packages.templates and stays reachable from the core.packages namespace. These guard the
-path-escape rejection a template 'to' must enforce."""
+core.packages.templates. These guard the path-escape rejection a template 'to' must enforce."""
 from pathlib import Path
 
-from core import packages
 from core.packages import templates
-
-
-def test_render_templates_reexported_from_package_namespace() -> None:
-    assert packages.render_templates is templates.render_templates
 
 
 def test_render_one_template_expands_vars(tmp_path: Path) -> None:

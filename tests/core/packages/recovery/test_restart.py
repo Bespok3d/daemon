@@ -9,8 +9,6 @@ from core.safety import OperationKind
 
 
 def test_orchestrator_reexports_the_restart_entry_points() -> None:
-    assert packages.op_context is restart.op_context
-    assert packages.restart_phases is restart.restart_phases
     assert packages.restart_services is restart.restart_services
 
 

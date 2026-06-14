@@ -8,7 +8,6 @@ from core.packages import deactivation
 def test_orchestrator_reexports_the_deactivation_mechanics() -> None:
     assert packages.neutralize_plugin is deactivation.neutralize_plugin
     assert packages.run_stop_commands is deactivation.run_stop_commands
-    assert packages.clear_failure_markers is deactivation.clear_failure_markers
     assert packages.DEACTIVATED_MARKER is deactivation.DEACTIVATED_MARKER
 
 

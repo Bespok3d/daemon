@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from core import packages
 from core.packages import archive, print_guard
 
 MP = pytest.MonkeyPatch
@@ -19,12 +18,6 @@ def _make_b3(path: Path, manifest: dict, files: dict[str, str]) -> Path:
             zf.writestr(name, body)
     path.write_bytes(buffer.getvalue())
     return path
-
-
-def test_orchestrator_reexports_the_archive_helpers() -> None:
-    assert packages.unpack_package is archive.unpack_package
-    assert packages.read_manifest is archive.read_manifest
-    assert packages.fix_ownership is archive.fix_ownership
 
 
 def test_read_manifest_reads_without_extracting(tmp_path: Path) -> None:

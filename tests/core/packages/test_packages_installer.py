@@ -1,0 +1,44 @@
+"""Install-shaped operations live in core/packages/installer.py: a fresh install, a config-only
+reconfigure, and a batched update share ONE phase runner (`_apply_install_deferred`), which install
+drives live (a notify callback) and update drives silently (the default no-op)."""
+
+from pathlib import Path
+
+from core import packages
+from core.packages import installer
+
+
+def test_installer_module_exposes_the_op_workers() -> None:
+    assert callable(installer.run_install)
+    assert callable(installer.run_reconfigure)
+    assert callable(installer.run_update_batch)
+
+
+def test_phase_listener_is_reexported_from_the_facade() -> None:
+    assert packages.PhaseListener is installer.PhaseListener
+
+
+def test_apply_install_deferred_runs_every_phase_and_defers_the_restart(tmp_path: Path) -> None:
+    plugin_dir = tmp_path / "plug"
+    plugin_dir.mkdir()
+    manifest = {"name": "plug", "install": {}, "files": []}
+
+    phases, deferred = installer._apply_install_deferred(tmp_path, plugin_dir, manifest, {})
+
+    assert [phase["id"] for phase in phases] == [
+        "modes", "dirs", "templates", "services", "symlinks", "patches", "ownership", "start",
+    ]
+    assert deferred == []
+
+
+def test_apply_install_deferred_announces_each_phase_to_the_notify(tmp_path: Path) -> None:
+    plugin_dir = tmp_path / "plug"
+    plugin_dir.mkdir()
+    manifest = {"name": "plug", "install": {}, "files": []}
+    seen: list[dict] = []
+
+    phases, _deferred = installer._apply_install_deferred(
+        tmp_path, plugin_dir, manifest, {}, seen.append,
+    )
+
+    assert [phase["id"] for phase in seen] == [phase["id"] for phase in phases]

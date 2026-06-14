@@ -8,9 +8,6 @@ from core.packages import placement
 
 
 def test_symbols_reexported_from_package_namespace() -> None:
-    assert packages.create_symlinks is placement.create_symlinks
-    assert packages.create_dirs is placement.create_dirs
-    assert packages.apply_modes is placement.apply_modes
     assert packages.remove_plugin_symlinks is placement.remove_plugin_symlinks
 
 

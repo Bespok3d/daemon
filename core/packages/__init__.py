@@ -1,66 +1,45 @@
-"""
-Package operations: install, uninstall.
+"""Package-operations facade.
 
-A .b3 package is a zip containing manifest.json plus the plugin file tree.
-Install is manifest-driven: dirs, symlinks, and unified-diff patches.
-Signature verification is deferred until packages are signed.
+Re-exports the public package API the routes import and owns the plugin root, injecting it into the
+worker modules. The install-shaped operations (install, reconfigure, update-batch) live in
+`installer.py`; recover, uninstall, and the deactivate/teardown lifecycle still live here pending
+their own extraction.
+
+A .b3 package is a zip of manifest.json plus the plugin file tree. Signature verification is
+deferred until packages are signed.
 """
 
 import json
 import os
 import shutil
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from ..intent import RESTART_HOOKS, normalize_install
-from ..results import item as _item
-from ..results import phase as _phase
 from ..safety import OperationContext, OperationKind
-from .archive import fix_ownership, read_manifest, unpack_package
-from .deactivation import (
-    DEACTIVATED_MARKER,
-    clear_failure_markers,
-    neutralize_plugin,
-    run_stop_commands,
+from .deactivation import DEACTIVATED_MARKER, neutralize_plugin, run_stop_commands
+from .dependencies import installed_dependents, provided_services, topo_sort
+from .errors import (
+    ConflictError,  # noqa: F401  re-export for api.routes
+    DependentsError,
 )
-from .dependencies import (
-    installed_conflicts,
-    installed_dependents,
-    provided_services,
-    topo_sort,
+from .installer import (
+    PhaseListener,  # noqa: F401  re-export for api.routes
+    run_install,
+    run_reconfigure,
+    run_update_batch,
 )
-from .errors import ConflictError, DependentsError
 from .manifest import manifest_at
-from .patches import apply_patches, restore_original_files
-from .placement import (
-    apply_modes,
-    create_dirs,
-    create_symlinks,
-    remove_plugin_symlinks,
-)
-from .print_guard import (
-    guard_batch_no_print,
-    guard_no_print,
-    guard_no_print_during_restart,
-    guard_no_print_for_removal,
-)
-from .python_deps import (
-    provision_deps_phases,
-    remove_plugin_site_links,
-    remove_plugin_venv,
-)
-from .recovery import op_context, recover_one, restart_phases, restart_services
-from .services import generate_service_scripts
-from .start_commands import run_plugin_start_commands
-from .templates import render_templates
+from .patches import restore_original_files
+from .placement import remove_plugin_symlinks
+from .print_guard import guard_no_print, guard_no_print_for_removal
+from .python_deps import remove_plugin_site_links, remove_plugin_venv
+from .recovery import recover_one, restart_services
 from .user_vars import (
     USER_VARS_FILE,  # noqa: F401  re-export for tests
     expand,
     load_user_vars,
-    persist_user_vars,
     validate_user_vars,  # noqa: F401  re-export for api.routes
-    with_plugin_venv,
 )
 
 _DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
@@ -81,98 +60,25 @@ def ensure_lmd_control_script(jinni: Any, paths: dict[str, str]) -> None:
     target.chmod(0o755)
 
 
-PhaseListener = Callable[[dict], None]
-
-
-def _noop_phase(_phase: dict) -> None:
-    return None
-
-
-def _emit(phase: dict, notify: PhaseListener) -> dict:
-    """Append-and-announce: report a phase the moment it finishes so a watcher (the install-progress
-    feed) sees it live, while still returning it for the final install log."""
-    notify(phase)
-    return phase
-
-
-def _install_apply_phases(plugin_dir: Path, manifest: dict, full_vars: dict[str, str], on_phase: PhaseListener | None = None) -> list[dict]:  # noqa: E501
-    """Run a fresh install's phases, announcing each as it finishes. A core-service restart goes
-    through the auto-fix safety net, so a plugin that breaks Klipper/Moonraker is deactivated and
-    the printer stays usable (the protection recover/OTA already had)."""
-    raw_inst = manifest.get("install", {})
-    inst = normalize_install(raw_inst)
-    notify = on_phase or _noop_phase
-    phases = [
-        _emit(apply_modes(plugin_dir, manifest.get("files", [])), notify),
-        _emit(create_dirs(inst["dirs"], full_vars), notify),
-        _emit(render_templates(inst["templates"], plugin_dir, full_vars), notify),
-        _emit(generate_service_scripts(raw_inst.get("service", []), plugin_dir, full_vars), notify),  # noqa: E501
-        _emit(create_symlinks(inst["symlinks"], plugin_dir, full_vars), notify),
-        _emit(apply_patches(inst["patches"], plugin_dir, full_vars), notify),
-        _emit(fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")), notify),
-    ]
-    phases.extend(_emit(phase, notify) for phase in provision_deps_phases(PLUGIN_ROOT, plugin_dir, full_vars))  # noqa: E501
-    start_phase, deferred = run_plugin_start_commands(inst["start"], full_vars)
-    phases.append(_emit(start_phase, notify))
-    phases.extend(_emit(phase, notify) for phase in restart_phases(PLUGIN_ROOT, deferred, full_vars, op_context(OperationKind.INSTALL, manifest)))  # noqa: E501
-    return phases
-
-
 def install(
     package_path: Path,
     vars: dict[str, str],
     user_vars: dict[str, str] | None = None,
     on_phase: PhaseListener | None = None,
 ) -> tuple[str, list[dict]]:
-    manifest, plugin_dir, file_count = unpack_package(PLUGIN_ROOT, package_path)
-    plugin_id: str = manifest["name"]
-
-    conflicts = installed_conflicts(PLUGIN_ROOT, plugin_id, manifest)
-    if conflicts:
-        shutil.rmtree(plugin_dir, ignore_errors=True)
-        raise ConflictError(plugin_id, conflicts)
-
-    notify = on_phase or _noop_phase
-    extract_items = [_item(f"Extracted {file_count} files", ok=True)]
-    log: list[dict] = [_emit(_phase("extract", "Unpack", extract_items), notify)]
-
-    persist_user_vars(plugin_dir, user_vars or {})
-    full_vars = with_plugin_venv(vars, plugin_id)
-    log.extend(_install_apply_phases(plugin_dir, manifest, full_vars, on_phase))
-    if all(phase["ok"] for phase in log):
-        clear_failure_markers(plugin_dir)
-
-    return plugin_id, log
+    return run_install(PLUGIN_ROOT, package_path, vars, user_vars, on_phase)
 
 
-def reconfigure(
-    plugin_id: str,
-    vars: dict[str, str],
-    user_vars: dict[str, str],
-) -> tuple[str, list[dict]]:
-    """Re-render a plugin's config templates from new values and restart its services.
+def reconfigure(plugin_id: str, vars: dict[str, str], user_vars: dict[str, str]) -> tuple[str, list[dict]]:  # noqa: E501
+    return run_reconfigure(PLUGIN_ROOT, plugin_id, vars, user_vars)
 
-    Lighter than a reinstall: files, symlinks, and patches are left untouched; only the
-    rendered config files change. Relies on installs being idempotent.
-    """
-    plugin_dir = PLUGIN_ROOT / plugin_id
-    manifest_path = plugin_dir / "manifest.json"
-    if not manifest_path.exists():
-        raise ValueError(f"plugin {plugin_id!r} is not installed")
-    manifest = json.loads(manifest_path.read_text())
-    guard_no_print_during_restart(manifest)
 
-    full_vars = with_plugin_venv(vars, plugin_id)
-    inst = normalize_install(manifest.get("install", {}))
-    persist_user_vars(plugin_dir, user_vars)
-    start_phase, deferred = run_plugin_start_commands(inst.get("start", []), full_vars)
-    phases = [
-        render_templates(inst.get("templates", []), plugin_dir, full_vars),
-        fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")),
-        start_phase,
-    ]
-    phases.extend(restart_phases(PLUGIN_ROOT, deferred, full_vars, op_context(OperationKind.RECONFIGURE, manifest)))  # noqa: E501
-    return plugin_id, phases
+def update_batch(
+    base_vars: dict[str, str],
+    package_paths: list[Path],
+    vars_by_id: dict[str, dict[str, str]],
+) -> list[dict]:
+    return run_update_batch(PLUGIN_ROOT, base_vars, package_paths, vars_by_id)
 
 
 def recover(vars: dict[str, str]) -> list[dict]:
@@ -204,72 +110,6 @@ def recover(vars: dict[str, str]) -> list[dict]:
     unique_restarts = list(dict.fromkeys(deferred_restarts))
     if unique_restarts:
         results.append(restart_services(PLUGIN_ROOT, unique_restarts, vars, OperationContext(OperationKind.RECOVER)))  # noqa: E501
-    return results
-
-
-def _apply_install_deferred(plugin_dir: Path, manifest: dict, vars: dict[str, str]) -> tuple[list[dict], list[str]]:  # noqa: E501
-    """Run a fresh install's file phases, deferring service restarts to the batch end."""
-    raw_inst = manifest.get("install", {})
-    inst = normalize_install(raw_inst)
-    log = [
-        apply_modes(plugin_dir, manifest.get("files", [])),
-        create_dirs(inst["dirs"], vars),
-        render_templates(inst["templates"], plugin_dir, vars),
-        generate_service_scripts(raw_inst.get("service", []), plugin_dir, vars),
-        create_symlinks(inst["symlinks"], plugin_dir, vars),
-        apply_patches(inst["patches"], plugin_dir, vars),
-        fix_ownership(plugin_dir, vars.get("RUNTIME_USER", "")),
-    ]
-    log.extend(provision_deps_phases(PLUGIN_ROOT, plugin_dir, vars))
-    start_phase, deferred = run_plugin_start_commands(inst["start"], vars)
-    log.append(start_phase)
-    return log, deferred
-
-
-def _update_one(base_vars: dict[str, str], package_path: Path, user_vars: dict[str, str]) -> tuple[dict, list[str]]:  # noqa: E501
-    manifest, plugin_dir, file_count = unpack_package(PLUGIN_ROOT, package_path)
-    plugin_id = manifest["name"]
-    full_vars = with_plugin_venv({**base_vars, **user_vars}, plugin_id)
-    persist_user_vars(plugin_dir, user_vars)
-    extract = _phase("extract", "Unpack", [_item(f"Extracted {file_count} files", ok=True)])
-    phases, deferred = _apply_install_deferred(plugin_dir, manifest, full_vars)
-    log = [extract, *phases]
-    ok = all(phase["ok"] for phase in log)
-    if ok:
-        clear_failure_markers(plugin_dir)
-    reason = "" if ok else "update phase failed"
-    result = {"plugin_id": plugin_id, "ok": ok, "skipped": False, "reason": reason, "log": log}
-    return result, (deferred if ok else [])
-
-
-def update_batch(
-    base_vars: dict[str, str],
-    package_paths: list[Path],
-    vars_by_id: dict[str, dict[str, str]],
-) -> list[dict]:
-    """Update several plugins, restarting affected services only once at the end.
-
-    Each package is unpacked and re-applied (templates, symlinks, patches, inline start commands);
-    init-script and nginx restarts are deferred, deduped, and run once, then Klipper and Moonraker
-    are awaited healthy. Mirrors recover's deferred-restart batching for the update path. Packages
-    are applied in the order given, so callers pass dependencies before their dependents.
-    """
-    if not package_paths:
-        return []
-    specs = [(package_path, read_manifest(package_path)) for package_path in package_paths]
-    guard_batch_no_print([manifest for _, manifest in specs])
-    results: list[dict] = []
-    deferred_restarts: list[str] = []
-    for package_path, manifest in specs:
-        user_vars = vars_by_id.get(manifest["name"], {})
-        result, deferred = _update_one(base_vars, package_path, user_vars)
-        results.append(result)
-        deferred_restarts.extend(deferred)
-    unique_restarts = list(dict.fromkeys(deferred_restarts))
-    if unique_restarts:
-        only = specs[0][1]["name"] if len(specs) == 1 else None
-        ctx = OperationContext(OperationKind.UPDATE, plugin_id=only)
-        results.append(restart_services(PLUGIN_ROOT, unique_restarts, base_vars, ctx))
     return results
 
 

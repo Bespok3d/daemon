@@ -87,11 +87,14 @@ The daemon is mid-reorganization from "split and jumbled" into directories named
 rule for new code is to land it in the right concern, not to grow a god file. The target for the largest
 offenders:
 
-- **`core/packages/` (from `core/packages.py`, 1441 lines).** The orchestrator keeps the public API the
-  routes import; the rest splits by concern: `errors`, `user_vars`, `placement` (the symlink/dir/mode
-  family), `patches`, `templates`, `print_guard`, `python_deps`, `archive`, `dependencies` (the dep graph
-  and topo sort), `recovery` (pairs with `core/safety/`), and `phases`. Consolidate the duplicated
-  deactivate/uninstall/guard helpers while extracting.
+- **`core/packages/` (from `core/packages.py`, 1441 lines).** The `__init__` keeps a thin public facade
+  (the API the routes import) and owns the plugin root, injecting it into the worker modules; the rest
+  splits by concern: `errors`, `user_vars`, `placement` (the symlink/dir/mode family), `patches`,
+  `templates`, `services`, `installer` (the install/reconfigure/update-batch family + its shared phase
+  runner), `print_guard`, `python_deps`, `archive`, `manifest`, `dependencies` (the dep graph and topo
+  sort), `deactivation`, and `recovery` (pairs with `core/safety/`). Still in `__init__` pending their own
+  packets: recover, the uninstall family, and the deactivate/teardown lifecycle. Consolidate the
+  duplicated deactivate/uninstall/guard helpers while extracting.
 - **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
   core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck),
   `feeds` (the three live websocket handlers and the `install_hub`), `packages` (install/reconfigure/

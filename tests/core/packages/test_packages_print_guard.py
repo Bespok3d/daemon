@@ -11,8 +11,6 @@ MP = pytest.MonkeyPatch
 
 def test_orchestrator_reexports_the_guards() -> None:
     assert packages.guard_no_print is print_guard.guard_no_print
-    assert packages.guard_no_print_during_restart is print_guard.guard_no_print_during_restart
-    assert packages.guard_batch_no_print is print_guard.guard_batch_no_print
     assert packages.guard_no_print_for_removal is print_guard.guard_no_print_for_removal
 
 

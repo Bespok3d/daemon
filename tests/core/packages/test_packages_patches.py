@@ -8,7 +8,6 @@ from core.packages import patches
 
 
 def test_symbols_reexported_from_package_namespace() -> None:
-    assert packages.apply_patches is patches.apply_patches
     assert packages.restore_original_files is patches.restore_original_files
 
 
