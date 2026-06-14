@@ -4,18 +4,18 @@ import os
 import socket
 import threading
 
-from core import moonraker_uds
+from core.printer_comms import moonraker
 
 
 def test_encode_rpc_is_jsonrpc_terminated_by_etx() -> None:
-    raw = moonraker_uds.encode_rpc("server.info", request_id=7700)
+    raw = moonraker.encode_rpc("server.info", request_id=7700)
     assert raw.endswith(b"\x03")
     assert json.loads(raw[:-1].decode()) == {"jsonrpc": "2.0", "method": "server.info", "id": 7700}
 
 
 def test_decode_frames_parses_each_complete_object() -> None:
     blob = b'{"id": 1}\x03{"method": "notify"}\x03'
-    assert moonraker_uds.decode_frames(blob) == [{"id": 1}, {"method": "notify"}]
+    assert moonraker.decode_frames(blob) == [{"id": 1}, {"method": "notify"}]
 
 
 def test_result_for_id_skips_notifications_and_errors() -> None:
@@ -23,8 +23,8 @@ def test_result_for_id_skips_notifications_and_errors() -> None:
         {"jsonrpc": "2.0", "method": "notify_status_update", "params": []},  # id-less notification
         {"jsonrpc": "2.0", "id": 7700, "result": {"klippy_state": "ready"}},
     ]
-    assert moonraker_uds.result_for_id(frames) == {"klippy_state": "ready"}
-    assert moonraker_uds.result_for_id([{"id": 7700, "error": {"message": "x"}}]) == {}
+    assert moonraker.result_for_id(frames) == {"klippy_state": "ready"}
+    assert moonraker.result_for_id([{"id": 7700, "error": {"message": "x"}}]) == {}
 
 
 def _serve_once(sock_path: str, frames: list[dict]) -> threading.Thread:
@@ -54,7 +54,7 @@ def test_server_info_reads_failed_components_past_a_notification() -> None:
     reply = {"jsonrpc": "2.0", "id": 7700, "result": info}
     thread = _serve_once(sock_path, [notification, reply])
     try:
-        assert moonraker_uds.server_info(sock_path) == info
+        assert moonraker.server_info(sock_path) == info
     finally:
         thread.join(timeout=2)
         if os.path.exists(sock_path):
@@ -62,4 +62,4 @@ def test_server_info_reads_failed_components_past_a_notification() -> None:
 
 
 def test_server_info_none_when_socket_absent() -> None:
-    assert moonraker_uds.server_info(f"/tmp/muds-missing-{os.getpid()}.sock") is None
+    assert moonraker.server_info(f"/tmp/muds-missing-{os.getpid()}.sock") is None

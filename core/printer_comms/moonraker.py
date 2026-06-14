@@ -6,22 +6,20 @@ force_logins and shuts the HTTP API. Protocol: JSON-RPC 2.0 frames terminated by
 interleaves id-less async notifications with replies, so we read frames until our request id shows.
 """
 import json
-import socket
 
-_ETX = b"\x03"
-_RECV_CHUNK = 4096
-_DEFAULT_TIMEOUT_S = 3.0
+from .frame import ETX, encode, exchange
+
 _REQUEST_ID = 7700  # any int; matched in the reply to skip interleaved notifications
 
 
 def encode_rpc(method: str, request_id: int = _REQUEST_ID) -> bytes:
-    return json.dumps({"jsonrpc": "2.0", "method": method, "id": request_id}).encode() + _ETX
+    return encode({"jsonrpc": "2.0", "method": method, "id": request_id})
 
 
 def decode_frames(blob: bytes) -> list[dict]:
     """Every complete 0x03-delimited JSON object in blob (malformed or partial pieces skipped)."""
     frames: list[dict] = []
-    for piece in blob.split(_ETX):
+    for piece in blob.split(ETX):
         if not piece:
             continue
         try:
@@ -43,32 +41,15 @@ def result_for_id(frames: list[dict], request_id: int = _REQUEST_ID) -> dict:
     return {}
 
 
-def _exchange(socket_path: str, request: bytes, request_id: int,
-              timeout: float = _DEFAULT_TIMEOUT_S) -> list[dict] | None:
-    """Send one request, read frames until our reply lands; None when the socket is unreachable."""
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout)
-            sock.connect(socket_path)
-            sock.sendall(request)
-            buffer = b""
-            while True:
-                chunk = sock.recv(_RECV_CHUNK)
-                if not chunk:
-                    break
-                buffer += chunk
-                complete = decode_frames(buffer.rpartition(_ETX)[0])
-                if any(frame.get("id") == request_id for frame in complete):
-                    break
-    except OSError:
-        return None
-    return decode_frames(buffer.rpartition(_ETX)[0])
+def _reply_present(buffer: bytes, request_id: int) -> bool:
+    return any(frame.get("id") == request_id for frame in decode_frames(buffer.rpartition(ETX)[0]))
 
 
 def server_info(socket_path: str, request_id: int = _REQUEST_ID) -> dict | None:
     """Moonraker's server.info result (klippy_state / failed_components / warnings ...), or None if
     the socket is unreachable; {} when it answered without a usable result."""
-    frames = _exchange(socket_path, encode_rpc("server.info", request_id), request_id)
-    if frames is None:
+    request = encode_rpc("server.info", request_id)
+    buffer = exchange(socket_path, request, lambda reply: _reply_present(reply, request_id))
+    if buffer is None:
         return None
-    return result_for_id(frames, request_id)
+    return result_for_id(decode_frames(buffer.rpartition(ETX)[0]), request_id)

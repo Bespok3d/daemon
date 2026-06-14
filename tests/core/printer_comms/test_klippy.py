@@ -4,28 +4,28 @@ import os
 import socket
 import threading
 
-from core import klippy_uds
+from core.printer_comms import klippy
 
 
 def test_encode_request_is_json_terminated_by_etx() -> None:
-    raw = klippy_uds.encode_request("info", {}, request_id=7)
+    raw = klippy.encode_request("info", {}, request_id=7)
     assert raw.endswith(b"\x03")
     assert json.loads(raw[:-1].decode()) == {"id": 7, "method": "info", "params": {}}
 
 
 def test_decode_frame_parses_first_complete_frame() -> None:
     body = json.dumps({"id": 1, "result": {"state": "ready"}}).encode() + b"\x03rest"
-    assert klippy_uds.decode_frame(body) == {"id": 1, "result": {"state": "ready"}}
+    assert klippy.decode_frame(body) == {"id": 1, "result": {"state": "ready"}}
 
 
 def test_decode_frame_returns_empty_without_terminator() -> None:
-    assert klippy_uds.decode_frame(b'{"id": 1}') == {}
+    assert klippy.decode_frame(b'{"id": 1}') == {}
 
 
 def test_state_extractors() -> None:
     query = {"result": {"status": {"print_stats": {"state": "printing"}}}}
-    assert klippy_uds.print_state_from_query(query) == "printing"
-    assert klippy_uds.klippy_state_from_info({"result": {"state": "ready"}}) == "ready"
+    assert klippy.print_state_from_query(query) == "printing"
+    assert klippy.klippy_state_from_info({"result": {"state": "ready"}}) == "ready"
 
 
 def _serve_once(sock_path: str, response: dict) -> threading.Thread:
@@ -52,7 +52,7 @@ def test_query_print_state_round_trips_over_a_unix_socket() -> None:
     reply = {"id": 1, "result": {"status": {"print_stats": {"state": "printing"}}}}
     thread = _serve_once(sock_path, reply)
     try:
-        assert klippy_uds.query_print_state(sock_path) == "printing"
+        assert klippy.query_print_state(sock_path) == "printing"
     finally:
         thread.join(timeout=2)
         if os.path.exists(sock_path):
@@ -60,4 +60,4 @@ def test_query_print_state_round_trips_over_a_unix_socket() -> None:
 
 
 def test_query_returns_none_when_socket_absent() -> None:
-    assert klippy_uds.query_print_state(f"/tmp/kuds-missing-{os.getpid()}.sock") is None
+    assert klippy.query_print_state(f"/tmp/kuds-missing-{os.getpid()}.sock") is None

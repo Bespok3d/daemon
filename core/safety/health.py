@@ -16,8 +16,8 @@ from pathlib import Path
 
 from jinni.loader import get_jinni
 
-from .. import klippy_uds, moonraker_uds
 from ..intent import RESTART_HOOKS, restarts_klipper, restarts_moonraker
+from ..printer_comms import klippy, moonraker
 from ..results import MAX_OUTPUT_BYTES, item, phase
 from ..shell import run_one_command, start_env
 from .logs import service_log_tails
@@ -95,7 +95,7 @@ def _probe_moonraker_once(socket_path: str) -> MoonrakerInfo:
     """One probe. Prefer Moonraker's auth-free Unix socket so failed_components/warnings survive
     force_logins; fall back to HTTP /server/info (a 401 there still means up, body unreadable)."""
     if socket_path:
-        result = moonraker_uds.server_info(socket_path)
+        result = moonraker.server_info(socket_path)
         if result is not None:
             return _info_from_result(result, json.dumps(result)[:MAX_OUTPUT_BYTES])
     up, body = _service_get(_MOONRAKER_INFO_URL)
@@ -138,7 +138,7 @@ def _klipper_ready_once(socket_path: str) -> tuple[bool, str]:
     """One readiness check. Prefer Klipper's API socket (no auth, immune to Moonraker force_logins);
     fall back to the Moonraker HTTP probe when the socket is unreachable."""
     if socket_path:
-        state = klippy_uds.query_klippy_state(socket_path)
+        state = klippy.query_klippy_state(socket_path)
         if state is not None:
             return state == "ready", f"klippy state via api socket: {state or 'unknown'}"
     return _service_get(_KLIPPER_INFO_URL)

@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 from ..intent import normalize_install, restarts_klipper, restarts_lmd, restarts_moonraker
-from ..klippy_uds import query_print_state
+from ..printer_comms.klippy import query_print_state
 from ..safety.health import klippy_socket_path
 
 _PRINTING_STATES = ("printing", "paused")

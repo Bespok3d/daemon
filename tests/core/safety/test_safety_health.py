@@ -53,7 +53,7 @@ def test_probe_moonraker_unreachable_when_connection_refused(
 def test_klipper_ready_once_prefers_the_api_socket(monkeypatch: pytest.MonkeyPatch) -> None:
     # Klipper's API socket is auth-free, so it is the source of truth even when Moonraker forces
     # logins; the HTTP probe is only the fallback when the socket is unavailable.
-    monkeypatch.setattr(health.klippy_uds, "query_klippy_state", lambda _path: "ready")
+    monkeypatch.setattr(health.klippy, "query_klippy_state", lambda _path: "ready")
     healthy, out = health._klipper_ready_once("/tmp/klippy.sock")
     assert healthy is True
     assert "api socket" in out
@@ -74,7 +74,7 @@ def test_probe_moonraker_once_reads_failed_components_over_the_socket(
     # The Moonraker socket is auth-free, so soft fails (a component that failed to load) stay seen
     # even when force_logins blocks the HTTP body. This is what the safety net needs to attribute.
     monkeypatch.setattr(
-        health.moonraker_uds, "server_info",
+        health.moonraker, "server_info",
         lambda _path: {"klippy_state": "ready", "failed_components": ["timelapse"], "warnings": []},
     )
     info = health._probe_moonraker_once("/tmp/moonraker.sock")
@@ -85,7 +85,7 @@ def test_probe_moonraker_once_reads_failed_components_over_the_socket(
 def test_probe_moonraker_once_falls_back_to_http_when_socket_unreachable(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(health.moonraker_uds, "server_info", lambda _path: None)
+    monkeypatch.setattr(health.moonraker, "server_info", lambda _path: None)
     monkeypatch.setattr(health, "_service_get", lambda _url, timeout=3: (True, "auth required 401"))
     info = health._probe_moonraker_once("/tmp/moonraker.sock")
     assert info.reachable is True

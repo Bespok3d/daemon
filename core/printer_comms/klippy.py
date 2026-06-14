@@ -5,25 +5,23 @@ This is local IPC with NO authentication, so it keeps working when Moonraker has
 docs/API_Server.md + webhooks.py): JSON request/response dicts terminated by an ASCII 0x03 byte.
 """
 import json
-import socket
 
-_ETX = b"\x03"
-_RECV_CHUNK = 4096
-_DEFAULT_TIMEOUT_S = 3.0
+from .frame import DEFAULT_TIMEOUT_S, ETX, encode, exchange
+
 _PRINT_STATS_QUERY = {"objects": {"print_stats": None}}
 
 
 def encode_request(method: str, params: dict, request_id: int = 1) -> bytes:
-    return json.dumps({"id": request_id, "method": method, "params": params}).encode() + _ETX
+    return encode({"id": request_id, "method": method, "params": params})
 
 
 def decode_frame(buffer: bytes) -> dict:
     """Parse the first complete 0x03-terminated JSON frame; {} if none present or it is bad."""
-    frame, terminator, _rest = buffer.partition(_ETX)
+    body, terminator, _rest = buffer.partition(ETX)
     if not terminator:
         return {}
     try:
-        decoded = json.loads(frame.decode(errors="replace"))
+        decoded = json.loads(body.decode(errors="replace"))
     except ValueError:
         return {}
     return decoded if isinstance(decoded, dict) else {}
@@ -39,23 +37,12 @@ def klippy_state_from_info(response: dict) -> str:
 
 
 def _request(socket_path: str, method: str, params: dict,
-             timeout: float = _DEFAULT_TIMEOUT_S) -> dict | None:
+             timeout: float = DEFAULT_TIMEOUT_S) -> dict | None:
     """Send one request to the API socket and return the parsed response, or None when the socket is
     unreachable (Klipper down / restarting, or no socket on this host)."""
-    try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout)
-            sock.connect(socket_path)
-            sock.sendall(encode_request(method, params))
-            buffer = b""
-            while _ETX not in buffer:
-                chunk = sock.recv(_RECV_CHUNK)
-                if not chunk:
-                    break
-                buffer += chunk
-    except OSError:
-        return None
-    return decode_frame(buffer)
+    request = encode_request(method, params)
+    buffer = exchange(socket_path, request, lambda reply: ETX in reply, timeout)
+    return None if buffer is None else decode_frame(buffer)
 
 
 def query_print_state(socket_path: str) -> str | None:
