@@ -17,9 +17,9 @@ from fastapi import (
     WebSocketDisconnect,
 )
 
-from core import auth, log_capture, packages, print_events
+from core import auth, packages
 from core.capabilities import get_capabilities
-from core.install_progress import InstallProgressHub
+from core.live import install_progress, log_capture, print_state
 from core.selfcheck import run_selfcheck
 from jinni.loader import get_jinni
 from version import DAEMON_VERSION
@@ -48,7 +48,7 @@ from .schemas import (
 
 router = APIRouter()
 
-_install_hub = InstallProgressHub()
+_install_hub = install_progress.InstallProgressHub()
 
 _DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
 _CERT_PATH = _DATA_ROOT / "etc/daemon/server.crt"
@@ -69,9 +69,9 @@ _MOONRAKER_WS = "ws://localhost:7125/websocket"
 async def _relay_moonraker_state(websocket: WebSocket) -> None:
     """Subscribe to Moonraker print_stats and forward each {active,state} change to the app."""
     async with websockets.connect(_MOONRAKER_WS) as moonraker:
-        await moonraker.send(print_events.subscribe_message())
+        await moonraker.send(print_state.subscribe_message())
         async for raw in moonraker:
-            event = print_events.print_state_event(json.loads(raw))
+            event = print_state.print_state_event(json.loads(raw))
             if event is not None:
                 await websocket.send_json(event)
 

@@ -2,7 +2,7 @@ import asyncio
 import re
 from pathlib import Path
 
-from core import log_capture
+from core.live import log_capture
 
 _OE_LINE = "Companion ready. Link this printer: https://octoeverywhere.com/getstarted?code=ABC123\n"
 

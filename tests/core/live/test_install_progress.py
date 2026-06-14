@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from core.install_progress import InstallProgressHub
+from core.live.install_progress import InstallProgressHub
 
 
 @pytest.mark.asyncio
