@@ -46,7 +46,7 @@ def _write_deactivated_marker(data_root: Path) -> None:
 
 def deactivate_all(vars: dict[str, str]) -> None:
     """Stop all plugins and remove config hooks; leave plugin files intact."""
-    guard_no_print("deactivate plugins")
+    guard_no_print()
     data_root = Path(vars["BESPOK3D"])
     _deactivate_plugins_in(data_root / "usr/local/plugins", vars)
     _remove_include_line(Path(vars["PRINTER_CFG"]), "[include bespok3d/klipper")
@@ -91,7 +91,7 @@ def _remove_bespok3d_config_dir(vars: dict[str, str]) -> None:
 def teardown(vars: dict[str, str]) -> None:
     """Uninstall all plugins and remove config hooks; SSH caller removes the workspace."""
     # Guard at the top: the per-plugin uninstall guard is swallowed by _uninstall_plugins_in.
-    guard_no_print("remove all plugins")
+    guard_no_print()
     data_root = Path(vars["BESPOK3D"])
     _uninstall_plugins_in(data_root / "usr/local/plugins", vars)
     _remove_include_line(Path(vars["PRINTER_CFG"]), "[include bespok3d/klipper")

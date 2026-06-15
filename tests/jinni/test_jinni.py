@@ -27,7 +27,7 @@ def test_core_paths_are_guaranteed_even_for_a_minimal_jinni() -> None:
 
 
 def test_base_jinni_makes_no_klipper_assumptions(monkeypatch: MP) -> None:
-    monkeypatch.setattr(jinni.inspection, "port_open", lambda port: True)
+    monkeypatch.setattr(jinni.Jinni, "port_listening", lambda self, port: True)
     generic = _GenericTestJinni()
     assert not hasattr(generic, "klipper_version")
     assert 7125 not in generic.inspect()["open_ports"]
@@ -35,7 +35,7 @@ def test_base_jinni_makes_no_klipper_assumptions(monkeypatch: MP) -> None:
 
 
 def test_base_inspect_reports_generic_ports_only(monkeypatch: MP) -> None:
-    monkeypatch.setattr(jinni.inspection, "port_open", lambda port: port in (80, 7125))
+    monkeypatch.setattr(jinni.Jinni, "port_listening", lambda self, port: port in (80, 7125))
     result = _GenericTestJinni().inspect()
     assert result["open_ports"] == [80]
     assert result["print_active"] is False
@@ -43,8 +43,8 @@ def test_base_inspect_reports_generic_ports_only(monkeypatch: MP) -> None:
 
 
 def test_klipper_inspect_reports_moonraker_and_print_state(monkeypatch: MP) -> None:
-    monkeypatch.setattr(jinni.inspection, "port_open", lambda port: port in (80, 7125))
-    monkeypatch.setattr(jinni.inspection, "moonraker_print_state", lambda: (False, "standby"))
+    monkeypatch.setattr(jinni.Jinni, "port_listening", lambda self, port: port in (80, 7125))
+    monkeypatch.setattr(jinni.inspection, "print_state", lambda _socket: "standby")
     result = _KlipperTestJinni().inspect()
     assert result["open_ports"] == [80, 7125]
     assert {"label": "Web UI", "url": "http://{host}"} in result["endpoints"]
@@ -53,15 +53,15 @@ def test_klipper_inspect_reports_moonraker_and_print_state(monkeypatch: MP) -> N
 
 
 def test_klipper_inspect_reports_an_active_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(jinni.inspection, "port_open", lambda port: False)
-    monkeypatch.setattr(jinni.inspection, "moonraker_print_state", lambda: (True, "printing"))
+    monkeypatch.setattr(jinni.Jinni, "port_listening", lambda self, port: False)
+    monkeypatch.setattr(jinni.inspection, "print_state", lambda _socket: "printing")
     result = _KlipperTestJinni().inspect()
     assert result["open_ports"] == []
     assert result["print_active"] is True
 
 
 def test_klipper_diagnose_reports_core_service_liveness(monkeypatch: MP) -> None:
-    monkeypatch.setattr(jinni.inspection, "port_open", lambda port: port == 7125)
+    monkeypatch.setattr(jinni.Jinni, "port_listening", lambda self, port: port == 7125)
     diag = _KlipperTestJinni().diagnose()
     assert diag["moonraker"] is True
     assert diag["web"] is False

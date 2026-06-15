@@ -5,12 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from core import packages
-from core.packages import dependencies, print_guard, python_deps, services
-from core.packages.recovery import evidence
-from core.safety.probe import klipper, moonraker
+from core import jinni_client, packages
+from core.packages import dependencies, python_deps
+from jinni import health
 from jinni.base import Jinni
-from jinni.contracts import ControlScript
+from jinni.klipper import KlipperPrinterJinni
 
 MP = pytest.MonkeyPatch
 
@@ -347,11 +346,11 @@ def test_install_intent_place_and_restart(tmp_path: Path, monkeypatch: MP) -> No
     assert "/etc/init.d/S60klipper restart" in ran
 
 
-class FakeServiceAdapter:
+class FakeServiceAdapter(KlipperPrinterJinni):
     def capability_flags(self) -> set[str]:
         return {"managed-service"}
 
-    def render_service_script(self, service: dict, vars: dict[str, str]) -> str:
+    def render_service_script(self, service: dict, paths: dict[str, str]) -> str:
         return f"#gen {service['name']} {service['command']}"
 
 
@@ -359,7 +358,7 @@ def test_managed_service_generates_and_wires_script(tmp_path: Path, monkeypatch:
     import subprocess as sp
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     fake_adapter = FakeServiceAdapter()
-    monkeypatch.setattr(services, "get_jinni", lambda: fake_adapter)
+    monkeypatch.setattr(jinni_client, "get_jinni", lambda: fake_adapter)
     ran: list[str] = []
 
     class FakeResult:
@@ -390,12 +389,12 @@ def test_managed_service_generates_and_wires_script(tmp_path: Path, monkeypatch:
 def test_managed_service_refused_without_capability(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
 
-    class NoServiceAdapter:
+    class NoServiceAdapter(KlipperPrinterJinni):
         def capability_flags(self) -> set[str]:
             return set()
 
     no_service = NoServiceAdapter()
-    monkeypatch.setattr(services, "get_jinni", lambda: no_service)
+    monkeypatch.setattr(jinni_client, "get_jinni", lambda: no_service)
     manifest = minimal_manifest(
         extra={"install": {"service": [{"name": "worker", "command": "/bin/worker"}]}}
     )
@@ -1019,7 +1018,9 @@ def test_recover_defers_and_dedupes_service_restarts(tmp_path: Path, monkeypatch
     assert services["ok"] is True
 
 
-def test_recover_reports_failed_service_restart(tmp_path: Path, monkeypatch: MP) -> None:
+def test_recover_reports_failed_service_restart(
+    tmp_path: Path, monkeypatch: MP, device_jinni: Jinni,
+) -> None:
     import subprocess as sp
     import urllib.request as urlreq
 
@@ -1036,9 +1037,8 @@ def test_recover_reports_failed_service_restart(tmp_path: Path, monkeypatch: MP)
 
     monkeypatch.setattr(sp, "run", lambda *_a, **_kw: FakeOk())
     monkeypatch.setattr(urlreq, "urlopen", urlopen_fail)
-    monkeypatch.setattr(klipper.time, "sleep", lambda _: None)
-    monkeypatch.setattr(moonraker.time, "sleep", lambda _: None)
-    monkeypatch.setattr(evidence, "port_listening", lambda port: True)
+    monkeypatch.setattr(health.time, "sleep", lambda _: None)
+    monkeypatch.setattr(device_jinni, "port_listening", lambda port: True)
 
     results = packages.recover({})
 
@@ -1087,17 +1087,12 @@ def test_restart_phase_waits_for_moonraker_when_restarted(
     assert any("moonraker" in item["label"] for item in restart_phase["items"])
 
 
-def test_start_phase_skips_moonraker_wait_when_not_restarted(
-    tmp_path: Path, monkeypatch: MP,
+def test_start_phase_skips_the_health_check_when_no_service_restarted(
+    tmp_path: Path, monkeypatch: MP, device_jinni: Jinni,
 ) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
-    probe_calls: list[bool] = []
-
-    def fake_probe() -> object:
-        probe_calls.append(True)
-        return None
-
-    monkeypatch.setattr(evidence, "probe_moonraker", fake_probe)
+    health_calls: list[bool] = []
+    monkeypatch.setattr(device_jinni, "health", lambda: health_calls.append(True))
     manifest = minimal_manifest(
         extra={
             "install": {"dirs": [], "symlinks": [], "patches": [], "start": ["echo hello"]}
@@ -1108,7 +1103,7 @@ def test_start_phase_skips_moonraker_wait_when_not_restarted(
 
     packages.install(zip_path, {})
 
-    assert not probe_calls
+    assert not health_calls
 
 
 def test_validate_user_vars_accepts_valid_values() -> None:
@@ -1177,40 +1172,22 @@ def test_teardown_removes_plugin_dirs_and_include_lines(tmp_path: Path) -> None:
     assert "bespok3d/moonraker" not in moonraker_cfg.read_text()
 
 
-def test_deactivate_blocked_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(print_guard, "_print_active", lambda: (True, "printing"))
-    with pytest.raises(ValueError, match="Cannot deactivate plugins while a print is printing"):
+def test_deactivate_blocked_during_print(monkeypatch: MP, device_jinni: Jinni) -> None:
+    monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
+    with pytest.raises(packages.BlockedActionError):
         packages.deactivate_all({"BESPOK3D": "/x"})
 
 
-def test_teardown_blocked_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(print_guard, "_print_active", lambda: (True, "paused"))
-    with pytest.raises(ValueError, match="Cannot remove all plugins while a print is paused"):
+def test_teardown_blocked_during_print(monkeypatch: MP, device_jinni: Jinni) -> None:
+    monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "paused"))
+    with pytest.raises(packages.BlockedActionError):
         packages.teardown({"BESPOK3D": "/x"})
 
 
-def test_recover_blocked_during_print(monkeypatch: MP) -> None:
-    monkeypatch.setattr(print_guard, "_print_active", lambda: (True, "printing"))
-    with pytest.raises(ValueError, match="Cannot recover plugins while a print is printing"):
+def test_recover_blocked_during_print(monkeypatch: MP, device_jinni: Jinni) -> None:
+    monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
+    with pytest.raises(packages.BlockedActionError):
         packages.recover({"BESPOK3D": "/x"})
-
-
-class _ControlScriptJinni(Jinni):
-    def startup_control_scripts(self, paths: dict[str, str]) -> list[ControlScript]:
-        target = f"{paths['BESPOK3D']}/etc/init.d/lmdctl"
-        return [ControlScript(path=target, content="#!/bin/sh\n# lmdctl\n", mode=0o755)]
-
-
-def test_startup_control_scripts_are_written(tmp_path: Path) -> None:
-    packages.write_startup_control_scripts(_ControlScriptJinni(), {"BESPOK3D": str(tmp_path)})
-    target = tmp_path / "etc" / "init.d" / "lmdctl"
-    assert target.read_text() == "#!/bin/sh\n# lmdctl\n"
-    assert target.stat().st_mode & 0o755 == 0o755
-
-
-def test_a_jinni_with_no_startup_control_scripts_writes_nothing(tmp_path: Path) -> None:
-    packages.write_startup_control_scripts(Jinni(), {"BESPOK3D": str(tmp_path)})
-    assert not (tmp_path / "etc" / "init.d").exists()
 
 
 def write_plugin(
@@ -1395,12 +1372,14 @@ def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: 
     assert saved == {"SPOOLMAN_SERVER": "printer.local"}
 
 
-def test_update_batch_refused_during_print(tmp_path: Path, monkeypatch: MP) -> None:
+def test_update_batch_refused_during_print(
+    tmp_path: Path, monkeypatch: MP, device_jinni: Jinni,
+) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path / "plugins")
-    monkeypatch.setattr(print_guard, "_print_active", lambda: (True, "printing"))
+    monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
     package = make_package_file(tmp_path, "alpha", start=["/etc/init.d/S60klipper restart"])
 
-    with pytest.raises(ValueError, match="while a print is printing"):
+    with pytest.raises(packages.BlockedActionError):
         packages.update_batch({}, [package], {})
 
 

@@ -5,8 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 
-from core import packages
-from jinni.loader import get_jinni
+from core import jinni_client, packages
 
 from ..schemas import (
     InstallResponse,
@@ -38,6 +37,9 @@ def _install_or_raise(
         plugin_id, install_log = packages.install(
             tmp_path, all_vars, user_vars=user_vars, on_phase=on_phase,
         )
+    except packages.BlockedActionError as exc:
+        detail = {"error": "blocked", "blocked_actions": exc.blocked}
+        raise HTTPException(status_code=409, detail=detail) from exc
     except packages.ConflictError as exc:
         detail = {"error": "conflict", "plugin_id": exc.plugin_id, "conflicts": exc.conflicts}
         raise HTTPException(status_code=409, detail=detail) from exc
@@ -58,8 +60,7 @@ async def install_package(
     vars_json: str = Form(""),
 ) -> InstallResponse:
     user_vars: dict[str, str] = json.loads(vars_json) if vars_json else {}
-    jinni = get_jinni()
-    all_vars = {**jinni.paths(), **user_vars}
+    all_vars = {**jinni_client.paths(), **user_vars}
     tmp = tempfile.NamedTemporaryFile(suffix=".b3", delete=False)
     tmp_path = Path(tmp.name)
     tmp.write(await file.read())
@@ -89,11 +90,12 @@ async def install_package(
     summary="Re-render a plugin's config from new values and restart it",
 )
 async def reconfigure_package(plugin_id: str, user_vars: dict[str, str]) -> ReconfigureResponse:
-    jinni = get_jinni()
-    all_vars = {**jinni.paths(), **user_vars}
+    all_vars = {**jinni_client.paths(), **user_vars}
     try:
         packages.validate_user_vars(user_vars)
         result_id, log = packages.reconfigure(plugin_id, all_vars, user_vars)
+    except packages.BlockedActionError:
+        raise
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -107,9 +109,8 @@ async def reconfigure_package(plugin_id: str, user_vars: dict[str, str]) -> Reco
     summary="Re-apply all installed plugins after OTA firmware update",
 )
 async def recover_packages() -> RecoverResponse:
-    jinni = get_jinni()
     try:
-        results = packages.recover(jinni.paths())
+        results = packages.recover(jinni_client.paths())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RecoverResponse(
@@ -137,13 +138,14 @@ async def update_batch_packages(
     files: list[UploadFile],
     vars_json: str = Form(""),
 ) -> UpdateBatchResponse:
-    jinni = get_jinni()
     vars_by_id: dict[str, dict[str, str]] = json.loads(vars_json) if vars_json else {}
     tmp_paths = await _write_temp_packages(files)
     try:
         for user_vars in vars_by_id.values():
             packages.validate_user_vars(user_vars)
-        results = packages.update_batch(jinni.paths(), tmp_paths, vars_by_id)
+        results = packages.update_batch(jinni_client.paths(), tmp_paths, vars_by_id)
+    except packages.BlockedActionError:
+        raise
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -163,9 +165,8 @@ async def update_batch_packages(
     summary="Uninstall a plugin",
 )
 async def uninstall_package(plugin_id: str, cascade: bool = False) -> UninstallResponse:
-    jinni = get_jinni()
     try:
-        removed = packages.uninstall(plugin_id, jinni.paths(), cascade=cascade)
+        removed = packages.uninstall(plugin_id, jinni_client.paths(), cascade=cascade)
     except packages.DependentsError as exc:
         detail = {"error": "dependents", "plugin_id": exc.plugin_id, "dependents": exc.dependents}
         raise HTTPException(status_code=409, detail=detail) from exc

@@ -1,48 +1,81 @@
-"""Probing a device for what is reachable: open ports, the endpoints plugins serve, and print state.
+"""Generic device probes over loopback: low-level reachability, the endpoints plugins serve, and the
+Klipper print state.
 
-These are the generic readings the Jinni interface surfaces through `inspect()` and `diagnose()`.
-They talk to the device over loopback (a TCP connect, a Moonraker HTTP query) and over the installed
-plugins' manifests; they name no concrete device, so they belong in the generic jinni layer.
+These are the readings the Jinni interface surfaces through `inspect()` and its reachability
+methods. They talk to the device over loopback (a TCP connect, an HTTP query, Klipper's API socket)
+and over the installed plugins' manifests; they name no concrete device, so they live in the generic
+jinni layer. The base `Jinni` exposes `tcp_port_listening` / `http_service_get` as the overridable
+`port_listening` / `service_get` methods, so a device with an unusual probe can replace them.
 """
 import json
 import socket
+import urllib.error
 import urllib.request
 from pathlib import Path
+
+from .printer_comms import klippy
 
 _PROBE_HOST = "127.0.0.1"
 _PORT_PROBE_TIMEOUT_S = 0.3
 _PRINT_QUERY_TIMEOUT_S = 3
-_PRINTING_STATES = ("printing", "paused")
+
+# Klipper / Moonraker answer these under `[authorization] force_logins` (the moonraker-auth plugin):
+# the service IS up and answering, it just demands a login. A healthy, expected response, NOT a
+# failure, so a reachability check must not read it as "down" (which auto-deactivated the plugin
+# that set it).
+_AUTH_REQUIRED_CODES = (401, 403)
 
 HTTP_PORT = 80
 DAEMON_PORT = 4269
 MOONRAKER_PORT = 7125
+MQTT_PORT = 1883
 
 # Ports probed on ANY device, with the label shown to the user. A klipper printer jinni adds 7125.
 GENERIC_PORTS = {
     HTTP_PORT: "Web UI",
     443: "Web UI (TLS)",
-    1883: "MQTT",
+    MQTT_PORT: "MQTT",
     DAEMON_PORT: "Bespok3d daemon",
 }
 
 
-def port_open(port: int) -> bool:
+def tcp_port_listening(port: int) -> bool:
+    """Whether a localhost TCP port is open (a connect probe)."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.settimeout(_PORT_PROBE_TIMEOUT_S)
         return probe.connect_ex((_PROBE_HOST, port)) == 0
 
 
-def moonraker_print_state() -> tuple[bool, str]:
+def http_service_get(url: str, timeout: int = 3) -> tuple[bool, str]:
+    """GET a localhost service URL, returning (up, body). An auth-required response still means the
+    service is up; a connection error (refused / timeout) means it is not yet up."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return True, response.read().decode(errors="replace")
+    except urllib.error.HTTPError as exc:
+        if exc.code in _AUTH_REQUIRED_CODES:
+            return True, f"auth required (HTTP {exc.code}); service is up"
+        return False, f"HTTP {exc.code}"
+    except Exception as exc:  # noqa: BLE001 - connection refused / timeout means not-yet-up
+        return False, str(exc)
+
+
+def print_state(socket_path: str) -> str:
+    """Klipper's print_stats.state, read auth-immune over its API socket first (so it survives the
+    moonraker-auth plugin's force_logins), falling back to Moonraker HTTP. "" when unread (which the
+    caller reads as idle)."""
+    state = klippy.query_print_state(socket_path) if socket_path else None
+    return state if state is not None else _moonraker_print_state_http()
+
+
+def _moonraker_print_state_http() -> str:
     url = f"http://{_PROBE_HOST}:{MOONRAKER_PORT}/printer/objects/query?print_stats"
     try:
         with urllib.request.urlopen(url, timeout=_PRINT_QUERY_TIMEOUT_S) as response:
             payload = json.loads(response.read().decode(errors="replace"))
-    except Exception:
-        return False, ""
-    stats = payload.get("result", {}).get("status", {}).get("print_stats", {})
-    state = stats.get("state", "")
-    return state in _PRINTING_STATES, state
+    except Exception:  # noqa: BLE001 - unreachable / 401 under force_logins reads as idle
+        return ""
+    return str(payload.get("result", {}).get("status", {}).get("print_stats", {}).get("state", ""))
 
 
 def _plugin_endpoints(plugin_dir: Path) -> list[dict[str, str]]:

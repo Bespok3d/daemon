@@ -1,104 +1,69 @@
-"""Print-safety guards: refuse a plugin op that would restart a service mid-print.
+"""Print-safety guards: refuse a plugin op whose action is blocked on the printer right now.
 
-Every guard makes a LIVE check at the moment of the op (Klipper's auth-immune API socket first,
-Moonraker HTTP as a fallback), never a cached or periodic value.
+The daemon decides nothing about printing and never translates (ADR-0037). The jinni owns both sides
+as machine TOKENS: `blocked_actions()` is the set blocked right now (a running print forbids
+restarting Klipper, Moonraker, or the display), and `classify_commands()` tags each command with the
+token it would trigger. A guard is then pure set membership: map the op to its required tokens,
+refuse if any is blocked, raise `BlockedActionError` carrying the offending tokens for the CLIENT to
+localize. The guard's only judgment is WHICH ops to check: a system-wide op always, a per-plugin op
+only when its manifest restarts something.
 """
 
 import json
-import urllib.request
 from pathlib import Path
 
-from jinni.loader import get_jinni
-
+from .. import jinni_client
 from ..intent import normalize_install
-from ..printer_comms.klippy import query_print_state
-from ..safety.probe.klipper import klippy_socket_path
-from ..service_actions import restarts_klipper, restarts_lmd, restarts_moonraker
-
-_PRINTING_STATES = ("printing", "paused")
+from .errors import BlockedActionError
 
 
-def _print_state_via_moonraker() -> str:
-    """Fallback when Klipper's API socket is unavailable. Returns "" on any failure (including a 401
-    under force_logins), which reads as idle: the auth-immune Klipper socket is the main source."""
-    try:
-        url = "http://localhost:7125/printer/objects/query?print_stats"
-        with urllib.request.urlopen(url, timeout=3) as resp:
-            payload = json.loads(resp.read().decode(errors="replace"))
-    except Exception:
-        return ""
-    return str(payload.get("result", {}).get("status", {}).get("print_stats", {}).get("state", ""))
-
-
-def _print_active() -> tuple[bool, str]:
-    """Return (is_active, state). Reads Klipper's print_stats over its API socket (no auth, so it
-    works even when the moonraker-auth plugin forces logins); falls back to Moonraker HTTP when the
-    socket is unavailable. An idle / unreadable result is treated as not-printing."""
-    socket_path = klippy_socket_path()
-    state = query_print_state(socket_path) if socket_path else None
-    if state is None:
-        state = _print_state_via_moonraker()
-    return state in _PRINTING_STATES, state
-
-
-def _manifest_restarts_services(manifest: dict) -> bool:
+def _required_tokens(manifest: dict) -> frozenset[str]:
+    # Every command the op could run against a service: the install start commands, the managed
+    # services' stop hooks, and the teardown `stop` list (where a display-owning plugin like
+    # camera-hw-accel declares the display restart its own init script performs). The jinni tags
+    # each with the blocked-action token it would trigger; None means it touches no gated service.
     ops = normalize_install(manifest.get("install", {}))
-    start_cmds = ops["start"]
-    if any(restarts_klipper(cmd) or restarts_moonraker(cmd) for cmd in start_cmds):
-        return True
-    # A plugin that bounces the display service is detectable two ways: the generic `restart`
-    # display hook lands the device's display command in `start`, and a display-owning plugin like
-    # camera-hw-accel (whose start runs its own init script) declares the display command in its
-    # teardown `stop`. Either marks it as display-touching, judged against the device's vocabulary.
-    vocabulary = get_jinni().service_action_vocabulary()
-    display_cmds = [*start_cmds, *ops["stops"], *manifest.get("stop", [])]
-    return any(restarts_lmd(cmd, vocabulary) for cmd in display_cmds)
-
-
-def guard_no_print(action: str) -> None:
-    """Refuse a system-wide plugin op (deactivate/teardown/recover) while printing or paused.
-
-    These bounce services across all plugins, so the check is unconditional: a LIVE Moonraker
-    query at the moment of the op, never a cached/periodic value.
-    """
-    active, state = _print_active()
-    if active:
-        raise ValueError(
-            f"Cannot {action} while a print is {state}: it restarts printer services, which "
-            "would interrupt the print. Try again when the printer is idle."
-        )
-
-
-def guard_no_print_during_restart(manifest: dict, action: str = "install") -> None:
-    """Refuse an op that would bounce Klipper, Moonraker, or the display while printing/paused."""
-    if not _manifest_restarts_services(manifest):
-        return
-    active, state = _print_active()
-    if not active:
-        return
-    raise ValueError(
-        f"Cannot {action} {manifest.get('name', 'this plugin')} while a print is {state}: "
-        "it restarts Klipper, Moonraker, or the display service, which would interrupt the "
-        "print. Try again when the printer is idle."
+    commands = [*ops["start"], *ops["stops"], *manifest.get("stop", [])]
+    return frozenset(
+        effect.blocking_token
+        for effect in jinni_client.classify_commands(commands)
+        if effect.blocking_token is not None
     )
+
+
+def _refuse_if_blocked(required: frozenset[str]) -> None:
+    if not required:
+        return
+    offending = required & jinni_client.blocked_actions()
+    if offending:
+        raise BlockedActionError(offending)
+
+
+def guard_no_print() -> None:
+    """Refuse a system-wide plugin op (deactivate/teardown/recover) while anything is blocked.
+
+    These bounce services across all plugins, so the check is unconditional: any blocked action
+    means the op is refused, carrying the whole blocked set.
+    """
+    blocked = jinni_client.blocked_actions()
+    if blocked:
+        raise BlockedActionError(blocked)
+
+
+def guard_no_print_during_restart(manifest: dict) -> None:
+    """Refuse an op whose own commands would restart a service that is blocked right now."""
+    _refuse_if_blocked(_required_tokens(manifest))
 
 
 def guard_batch_no_print(manifests: list[dict]) -> None:
-    """Refuse the whole batch up front if any update restarts Klipper/Moonraker mid-print."""
-    if not any(_manifest_restarts_services(manifest) for manifest in manifests):
-        return
-    active, state = _print_active()
-    if not active:
-        return
-    raise ValueError(
-        f"Cannot update plugins while a print is {state}: some updates restart Klipper or "
-        "Moonraker, which would interrupt the print. Try again when the printer is idle."
-    )
+    """Refuse the whole batch up front if any update needs an action that is blocked right now."""
+    _refuse_if_blocked(frozenset().union(*(_required_tokens(m) for m in manifests)) if manifests
+                        else frozenset())
 
 
 def guard_no_print_for_removal(plugin_root: Path, plugin_ids: list[str]) -> None:
-    """Refuse removing any plugin that would bounce a core/display service while printing/paused."""
+    """Refuse removing a plugin whose teardown would restart a blocked service right now."""
     for plugin_id in plugin_ids:
         manifest_path = plugin_root / plugin_id / "manifest.json"
         if manifest_path.exists():
-            guard_no_print_during_restart(json.loads(manifest_path.read_text()), action="remove")
+            guard_no_print_during_restart(json.loads(manifest_path.read_text()))

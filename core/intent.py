@@ -13,7 +13,7 @@ the current executor runs, merging in any legacy keys a not-yet-migrated manifes
 """
 from pathlib import PurePosixPath
 
-from jinni.loader import get_jinni
+from core import jinni_client
 
 # A managed service (ADR-0026/0029) is realized by the adapter generating an init script the
 # daemon writes under this dir inside the plugin and wires into the autostart dir. The script
@@ -27,7 +27,7 @@ DATA_DIR_TEMPLATE = "$BESPOK3D/var/lib/{name}"
 
 def _placement_target(placement: dict) -> tuple[str, str]:
     target_name = placement.get("name") or PurePosixPath(placement["src"]).name
-    destination = get_jinni().placement_destination(placement["class"], target_name)
+    destination = jinni_client.placement_destination(placement["class"], target_name)
     return destination, target_name
 
 
@@ -46,7 +46,7 @@ def _placement_ops(placement: dict) -> tuple[dict | None, dict]:
 
 
 def _instrument_op(entry: dict) -> dict:
-    destination = get_jinni().instrument_destination(entry["class"], entry["name"])
+    destination = jinni_client.instrument_destination(entry["class"], entry["name"])
     return {"file": destination, "patch": entry["diff"]}
 
 
@@ -93,10 +93,9 @@ def _service_additions(services: list[dict]) -> tuple[list[dict], list[str], lis
 
 
 def _restart_commands(hooks: list[str]) -> list[str]:
-    jinni = get_jinni()
     commands = []
     for hook in hooks:
-        command = jinni.restart_command(hook)
+        command = jinni_client.restart_command(hook)
         if command is None:
             raise ValueError(f"unsupported restart hook: {hook}")
         commands.append(command)

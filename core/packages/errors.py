@@ -1,4 +1,14 @@
-"""Errors raised when an install or uninstall is refused by the dependency graph."""
+"""Errors raised when a plugin op is refused: by the dependency graph, or by the print guard."""
+
+
+class BlockedActionError(Exception):
+    """A plugin op was refused because an action it needs is blocked on the printer right now (a
+    print is running). Carries the blocked-action TOKENS; the daemon relays them and the CLIENT
+    localizes (ADR-0037). The message lists tokens for the daemon's own logs, never for the user."""
+
+    def __init__(self, blocked: frozenset[str]) -> None:
+        self.blocked = sorted(blocked)
+        super().__init__(f"blocked actions: {', '.join(self.blocked)}")
 
 
 class DependentsError(Exception):

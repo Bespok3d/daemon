@@ -1,7 +1,7 @@
-"""The chain of fixers: each recognises ONE class of failure and names the culprit (or, for the
-broker, that no plugin is at fault). They are pure - they read the gathered evidence and the
-operation context and return a `Decision` or None. The daemon walks the chain and acts on the first
-hit; the catch-all at the end guarantees the user is never left without an explanation.
+"""The chain of fixers: each recognises ONE class of failure and names the culprit (or that no
+plugin is at fault). They are pure - they read the gathered evidence and the operation context and
+return a `Decision` or None. The daemon walks the chain and acts on the first hit; the catch-all at
+the end guarantees the user is never left without an explanation.
 
 If a real failure ever reaches the catch-all (`escaped=True`), that is the signal that we need a new
 specific fixer.
@@ -9,6 +9,8 @@ specific fixer.
 
 import re
 from collections.abc import Callable
+
+from jinni.contracts import MOONRAKER_SERVICE
 
 from .context import OperationContext
 from .decision import Decision, FailureEvidence
@@ -34,7 +36,7 @@ def moonraker_component_failure(
 ) -> Decision | None:
     """Moonraker is reachable but a component failed to import (the apprise/notifier case). Blame
     the plugin that activated the component via its config section."""
-    info = evidence.moonraker
+    info = evidence.health.services[MOONRAKER_SERVICE]
     for component in info.failed_components:
         plugin_id = _component_section_owner(component, evidence)
         if plugin_id and plugin_id not in already:
@@ -77,20 +79,16 @@ def klipper_import_failure(
     return None
 
 
-def broker_down(
+def device_infrastructure(
     evidence: FailureEvidence,
     _ctx: OperationContext,
     _already: list[str],
 ) -> Decision | None:
-    """Klipper is down and the stock MQTT broker is too: not a plugin's fault, so say so honestly
-    and deactivate nothing."""
-    if not evidence.klipper_reachable and not evidence.mqtt_up:
-        return Decision(
-            None,
-            "Klipper did not come back and the MQTT broker on port 1883 is down. "
-            "That broker is stock firmware, not a plugin: restart it and try again.",
-            "broker-down",
-        )
+    """The jinni diagnosed a non-plugin cause and emits a TOKEN for it (e.g. the U1's stock MQTT
+    broker is down): relay the token verbatim and deactivate nothing. The token is the jinni's; the
+    daemon never turns it into a sentence, the app localizes it."""
+    if evidence.health.diagnosis:
+        return Decision(None, evidence.health.diagnosis, "device-infrastructure")
     return None
 
 
@@ -134,7 +132,7 @@ def default_chain() -> list[Fixer]:
     return [
         moonraker_component_failure,
         klipper_import_failure,
-        broker_down,
+        device_infrastructure,
         last_resort_target,
         catch_all,
     ]

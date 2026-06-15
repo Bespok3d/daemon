@@ -12,12 +12,11 @@ deferred until packages are signed.
 import os
 from pathlib import Path
 
-from jinni.base import Jinni
-
 from ..safety import OperationContext, OperationKind
 from .deactivation import DEACTIVATED_MARKER
 from .dependencies import provided_services, topo_sort
 from .errors import (
+    BlockedActionError,  # noqa: F401  re-export for api.routes
     ConflictError,  # noqa: F401  re-export for api.routes
     DependentsError,  # noqa: F401  re-export for api.routes
 )
@@ -43,19 +42,6 @@ from .user_vars import (
 _DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
 PLUGIN_ROOT = _DATA_ROOT / "usr/local/plugins"
 
-def write_startup_control_scripts(jinni: Jinni, paths: dict[str, str]) -> None:
-    """Write the control scripts the jinni declares for startup into the persistent bespok3d tree.
-
-    Each lands at its absolute path in the persistent tree (not the redeployed daemon dir) so it
-    survives a full daemon redeploy. A generic daemon and non-display adapters declare none and so
-    write nothing; the jinni owns which scripts a device needs.
-    """
-    for script in jinni.startup_control_scripts(paths):
-        target = Path(script.path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(script.content)
-        target.chmod(script.mode)
-
 
 def install(
     package_path: Path,
@@ -80,7 +66,7 @@ def update_batch(
 
 def recover(vars: dict[str, str]) -> list[dict]:
     """Re-apply all installed, non-deactivated plugins after OTA. Returns per-plugin results."""
-    guard_no_print("recover plugins")
+    guard_no_print()
     if not PLUGIN_ROOT.exists():
         return []
     plugin_dirs = [

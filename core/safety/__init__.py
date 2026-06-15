@@ -10,13 +10,13 @@ Public surface:
   a decision always comes back).
 - `is_healthy(evidence)` -> the stronger verdict (reachable AND no failed components).
 - data types the daemon fills in: `OperationContext`, `OperationKind`, `FailureEvidence`,
-  `Decision`, `Placement`, `AttributionIndex`, `MoonrakerInfo`.
+  `Decision`, `Placement`, `AttributionIndex`. The device-health verdict it carries is the jinni's
+  `jinni.contracts.DeviceHealth`.
 """
 from .attribution import AttributionIndex, Placement, attribute_failure, build_index
 from .context import OperationContext, OperationKind
 from .decision import Decision, FailureEvidence, is_healthy
 from .net import decide
-from .probe.moonraker import MoonrakerInfo
 
 __all__ = [
     "decide",
@@ -27,7 +27,6 @@ __all__ = [
     "Decision",
     "Placement",
     "AttributionIndex",
-    "MoonrakerInfo",
     "attribute_failure",
     "build_index",
 ]

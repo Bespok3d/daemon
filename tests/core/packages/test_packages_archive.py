@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core.packages import archive, print_guard
+from core.packages import archive
 
 MP = pytest.MonkeyPatch
 
@@ -32,7 +32,6 @@ def test_is_doc_member_matches_doc_tree() -> None:
 
 
 def test_unpack_package_extracts_and_skips_doc(tmp_path: Path, monkeypatch: MP) -> None:
-    monkeypatch.setattr(print_guard, "_print_active", lambda: (False, "standby"))
     package = _make_b3(
         tmp_path / "p.b3",
         {"name": "alpha", "version": "1.0", "install": {"start": []}},
@@ -48,7 +47,6 @@ def test_unpack_package_extracts_and_skips_doc(tmp_path: Path, monkeypatch: MP) 
 
 
 def test_unpack_package_rejects_archive_without_manifest(tmp_path: Path, monkeypatch: MP) -> None:
-    monkeypatch.setattr(print_guard, "_print_active", lambda: (False, "standby"))
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as zf:
         zf.writestr("files/x", "y")
@@ -70,7 +68,6 @@ def test_fix_ownership_chmods_without_a_runtime_user(tmp_path: Path) -> None:
 def test_unpack_replaces_an_existing_file(tmp_path: Path, monkeypatch: MP) -> None:
     # A reinstall / version switch must replace files already on disk. Overwriting a running binary
     # in place raises ETXTBSY; _extract_members unlinks first, so extraction always succeeds.
-    monkeypatch.setattr(print_guard, "_print_active", lambda: (False, "standby"))
     package = _make_b3(
         tmp_path / "p.b3",
         {"name": "alpha", "version": "1.0", "install": {"start": []}},

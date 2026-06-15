@@ -7,15 +7,13 @@ here: this module only builds the evidence; core.safety decides, restart acts.
 
 from pathlib import Path
 
+from ... import jinni_client
 from ...intent import normalize_install
 from ...python_env import import_name
 from ...safety import FailureEvidence
 from ...safety.attribution import AttributionIndex, Placement
 from ...safety.attribution import build_index as build_attribution_index
 from ...safety.logs import read_log_tail
-from ...safety.probe.klipper import klipper_healthy
-from ...safety.probe.moonraker import probe_moonraker
-from ...safety.probe.reach import MQTT_PORT, port_listening
 from ..manifest import installed_manifest_dirs, manifest_at
 from ..python_deps import baked_top_level_names
 from ..user_vars import expand, load_user_vars
@@ -43,13 +41,10 @@ def _log_tail(vars: dict[str, str], key: str) -> str:
 
 def gather_evidence(plugin_root: Path, vars: dict[str, str]) -> FailureEvidence:
     """Probe the printer after a restart and build the attribution index: the data the brain judges.
-    The Moonraker probe reads failed_components, so a reachable-but-broken component is caught."""
-    klipper_reachable, _raw = klipper_healthy()
+    The health report carries failed_components, so a reachable-but-broken component is caught."""
     return FailureEvidence(
-        klipper_reachable=klipper_reachable,
+        health=jinni_client.health(),
         klipper_log=_log_tail(vars, "KLIPPER_LOG"),
-        moonraker=probe_moonraker(),
         moonraker_log=_log_tail(vars, "MOONRAKER_LOG"),
-        mqtt_up=port_listening(MQTT_PORT),
         index=_build_attribution_index(plugin_root, vars),
     )

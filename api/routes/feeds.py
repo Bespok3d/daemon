@@ -1,13 +1,11 @@
 import asyncio
 import contextlib
-import json
 import re
 from pathlib import Path
 
-import websockets
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from core import auth, packages
+from core import auth, jinni_client, packages
 from core.live import install_progress, log_capture, print_state
 
 from .paths import DATA_ROOT
@@ -16,21 +14,16 @@ router = APIRouter()
 
 install_hub = install_progress.InstallProgressHub()
 
-_MOONRAKER_WS = "ws://localhost:7125/websocket"
 
-
-async def _relay_moonraker_state(websocket: WebSocket) -> None:
-    """Subscribe to Moonraker print_stats and forward each {active,state} change to the app."""
-    async with websockets.connect(_MOONRAKER_WS) as moonraker:
-        await moonraker.send(print_state.subscribe_message())
-        async for raw in moonraker:
-            event = print_state.print_state_event(json.loads(raw))
-            if event is not None:
-                await websocket.send_json(event)
+async def _relay_blocked_actions(websocket: WebSocket) -> None:
+    """Forward the jinni's blocked-action set to the app, pushed on change. The daemon is a dumb
+    relay (ADR-0037): the jinni subscribes to the device and decides; the daemon never reads it."""
+    async for blocked in jinni_client.subscribe_blocked_actions():
+        await websocket.send_json(print_state.app_frame(blocked))
 
 
 async def _wait_for_client_close(websocket: WebSocket) -> None:
-    """Return when the app closes the socket (it never sends), so we can drop the Moonraker side."""
+    """Return when the app closes the socket (it never sends), so we can drop the relay side."""
     with contextlib.suppress(WebSocketDisconnect):
         while True:
             await websocket.receive_text()
@@ -38,21 +31,20 @@ async def _wait_for_client_close(websocket: WebSocket) -> None:
 
 @router.websocket("/ws/print-state")
 async def print_state_feed(websocket: WebSocket, token: str = Query(default="")) -> None:
-    """Live print-state feed: token-auth the handshake (the HTTP bearer middleware skips ws), then
-    bridge Moonraker print_stats to the app, pushing only on change. No polling."""
+    """Live blocked-action feed: token-auth the handshake (the HTTP bearer middleware skips ws),
+    then relay the jinni's blocked-action set to the app, pushed on change. No polling, no device
+    fact in the daemon. The app maps each token to a localized lock reason."""
     if not auth.is_authorized_token(token):
         await websocket.close(code=1008)
         return
     await websocket.accept()
-    relay = asyncio.create_task(_relay_moonraker_state(websocket))
+    relay = asyncio.create_task(_relay_blocked_actions(websocket))
     watch = asyncio.create_task(_wait_for_client_close(websocket))
     try:
         await asyncio.wait({relay, watch}, return_when=asyncio.FIRST_COMPLETED)
     finally:
         relay.cancel()
         watch.cancel()
-        with contextlib.suppress(Exception):
-            await websocket.send_json({"active": False, "state": ""})
         with contextlib.suppress(Exception):
             await websocket.close()
 

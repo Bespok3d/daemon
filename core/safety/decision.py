@@ -4,18 +4,19 @@ Pure: `is_healthy` and the fixers judge this data; the daemon does the I/O that 
 """
 from dataclasses import dataclass
 
+from jinni.contracts import DeviceHealth
+
 from .attribution import AttributionIndex
-from .probe.moonraker import MoonrakerInfo
 
 
 @dataclass
 class FailureEvidence:
-    """A snapshot of the printer's state after a restart, plus the attribution index for blame."""
-    klipper_reachable: bool
+    """A snapshot of the printer's state after a restart, plus the attribution index for blame. The
+    device-health verdict (per-service readiness, failed components, the broker) is the jinni's
+    `DeviceHealth`; the log tails and the index are the daemon's own."""
+    health: DeviceHealth
     klipper_log: str
-    moonraker: MoonrakerInfo
     moonraker_log: str
-    mqtt_up: bool
     index: AttributionIndex
 
 
@@ -29,11 +30,8 @@ class Decision:
 
 
 def is_healthy(evidence: FailureEvidence) -> bool:
-    """The printer is usable: both services answer AND Moonraker reports no failed components. The
+    """The printer is usable: every service ready AND none reporting a failed component. The
     failed-components check is the crux: a component that fails to import leaves Moonraker reachable
-    but a plugin's feature dead, which plain reachability misses."""
-    return (
-        evidence.klipper_reachable
-        and evidence.moonraker.reachable
-        and not evidence.moonraker.failed_components
-    )
+    but a plugin's feature dead, which plain reachability misses. The jinni's report already encodes
+    this in `DeviceHealth.healthy`."""
+    return evidence.health.healthy

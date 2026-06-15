@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
+from core import jinni_client
 from core.capabilities import get_capabilities
 from core.selfcheck import run_selfcheck
-from jinni.loader import get_jinni
 from version import DAEMON_VERSION
 
 from ..schemas import (
@@ -41,7 +41,6 @@ async def capabilities() -> CapabilitiesResponse:
     ),
 )
 async def selfcheck() -> SelfCheckResponse:
-    jinni = get_jinni()
-    drift_raw = run_selfcheck(jinni.paths())
+    drift_raw = run_selfcheck(jinni_client.paths())
     drift = [PluginDrift(**report) for report in drift_raw]
     return SelfCheckResponse(ok=len(drift) == 0, drift=drift)

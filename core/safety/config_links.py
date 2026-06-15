@@ -7,15 +7,14 @@ and restarts Moonraker once more when its first restart left it down.
 import subprocess
 from pathlib import Path
 
-from jinni.loader import get_jinni
-
+from .. import jinni_client
 from ..shell import start_env
 
 
 def _config_link_dirs() -> list[Path]:
     """The bespok3d include dirs where plugin .cfg symlinks live (config/bespok3d/*)."""
     try:
-        paths = get_jinni().paths()
+        paths = jinni_client.paths()
     except Exception:  # noqa: BLE001 - missing jinni on a non-printer host: nothing to prune
         return []
     keys = ("BESPOK3D_KLIPPER", "BESPOK3D_MOONRAKER")
@@ -42,7 +41,7 @@ def prune_dead_config_links(dirs: list[Path] | None = None) -> list[str]:
 
 
 def restart_moonraker() -> None:
-    command = get_jinni().restart_command("moonraker")
+    command = jinni_client.restart_command("moonraker")
     if command is None:
         return
     subprocess.run(command, shell=True, capture_output=True, check=False, env=start_env())

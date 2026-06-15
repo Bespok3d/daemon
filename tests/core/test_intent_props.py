@@ -3,8 +3,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from core import intent
-from jinni.base import _BESPOK3D_PLACEMENTS
-from jinni.klipper import _KLIPPER_PLACEMENTS
+from jinni.realization import _BESPOK3D_PLACEMENTS, _KLIPPER_PLACEMENTS
 
 _PLACEMENT_CLASSES = sorted({*_BESPOK3D_PLACEMENTS, *_KLIPPER_PLACEMENTS})
 # The restart hooks the device jinni (tests/core/conftest.py DeviceTestJinni) resolves to a command.

@@ -9,6 +9,7 @@ published. It runs on every operation that restarts a core service, not only rec
 
 from pathlib import Path
 
+from ... import jinni_client
 from ...results import item, phase
 from ...safety import (
     Decision,
@@ -20,7 +21,6 @@ from ...safety import (
 )
 from ...safety.logs import format_tails
 from ...safety.restart_batch import run_restart_batch
-from ...service_actions import restarts_klipper, restarts_moonraker
 from ..deactivation import deactivate_plugin
 from ..manifest import installed_manifest_dirs
 from .evidence import gather_evidence
@@ -83,7 +83,8 @@ def _auto_recover(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, s
 def _touches_core_service(deferred_cmds: list[str]) -> bool:
     """Only a Klipper/Moonraker restart needs the safety net; a plugin-service or nginx bounce does
     not put the printer's base functions at risk, so we skip the probe + recovery for those."""
-    return any(restarts_klipper(cmd) or restarts_moonraker(cmd) for cmd in deferred_cmds)
+    effects = jinni_client.classify_commands(deferred_cmds)
+    return any(effect.restarts_klipper or effect.restarts_moonraker for effect in effects)
 
 
 def restart_services(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, str],

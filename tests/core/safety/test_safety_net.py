@@ -14,20 +14,27 @@ from core.safety import (
     is_healthy,
 )
 from core.safety.decision import Decision
-from core.safety.probe.moonraker import MoonrakerInfo
+from jinni.contracts import KLIPPER_SERVICE, MOONRAKER_SERVICE, DeviceHealth, ServiceHealth
 
 
 def _evidence(*, klipper_reachable: bool = True,  # noqa: PLR0913
               failed_components: list[str] | None = None,
               warnings: list[str] | None = None, klipper_log: str = "", moonraker_log: str = "",
-              mqtt_up: bool = True, index: AttributionIndex | None = None) -> FailureEvidence:
+              diagnosis: str = "", index: AttributionIndex | None = None) -> FailureEvidence:
     return FailureEvidence(
-        klipper_reachable=klipper_reachable,
+        health=DeviceHealth(
+            services={
+                KLIPPER_SERVICE: ServiceHealth(ready=klipper_reachable, detail=""),
+                MOONRAKER_SERVICE: ServiceHealth(
+                    ready=True, detail="",
+                    failed_components=tuple(failed_components or ()),
+                    warnings=tuple(warnings or ()),
+                ),
+            },
+            diagnosis=diagnosis,
+        ),
         klipper_log=klipper_log,
-        moonraker=MoonrakerInfo(reachable=True, raw="", failed_components=failed_components or [],
-                                warnings=warnings or []),
         moonraker_log=moonraker_log,
-        mqtt_up=mqtt_up,
         index=index or AttributionIndex(by_path={}, by_module={}, by_section={}),
     )
 
@@ -81,21 +88,23 @@ def test_decide_blames_klipper_config_section() -> None:
     assert decision.fixer == "klipper-import"
 
 
-def test_decide_reports_broker_down_as_not_a_plugin() -> None:
-    decision = decide(_evidence(klipper_reachable=False, mqtt_up=False), _ctx(None, OperationKind.RECOVER))  # noqa: E501
+def test_decide_reports_a_device_infrastructure_outage_as_not_a_plugin() -> None:
+    # The jinni diagnosed a non-plugin cause via a TOKEN; the daemon relays the token verbatim and
+    # never turns it into a sentence (the app localizes it).
+    decision = decide(_evidence(klipper_reachable=False, diagnosis="broker-down"), _ctx(None, OperationKind.RECOVER))  # noqa: E501
     assert decision.culprit is None
-    assert decision.fixer == "broker-down"
-    assert "MQTT broker" in decision.signal
+    assert decision.fixer == "device-infrastructure"
+    assert decision.signal == "broker-down"
 
 
 def test_decide_last_resort_blames_the_operated_plugin() -> None:
-    decision = decide(_evidence(klipper_reachable=False, mqtt_up=True), _ctx("mystery"))
+    decision = decide(_evidence(klipper_reachable=False), _ctx("mystery"))
     assert decision.culprit == "mystery"
     assert decision.fixer == "last-resort"
 
 
 def test_decide_catch_all_when_unattributable_and_no_target() -> None:
-    decision = decide(_evidence(klipper_reachable=False, mqtt_up=True), _ctx(None, OperationKind.RECOVER))  # noqa: E501
+    decision = decide(_evidence(klipper_reachable=False), _ctx(None, OperationKind.RECOVER))
     assert decision.culprit is None
     assert decision.fixer == "catch-all"
     assert decision.escaped is True

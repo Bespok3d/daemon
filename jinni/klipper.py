@@ -1,69 +1,58 @@
-"""The klipper-printer Jinni tier: a base for klipper-3d-printer adapters.
+"""The klipper-printer Jinni tier: composes the klipper concern facets over the generic base.
 
-It owns the klipper path-variable contract plus the klipper-only facts (klipper version, the
-moonraker probe, print state). A device adapter extends this and supplies only its own paths and
-hardware specifics.
+A klipper printer overrides realization (its config / extra / component placement classes), facts
+(the running Klipper version), and probing (the live print state plus the mid-print permission
+gate), and adds per-service health verdicts; each override lives in its concern's facet
+(jinni/realization.py, facts.py, probing.py, health.py), exactly as the base tier is faceted. This
+tier wires those facets onto the base Jinni, carries the klipper path-variable contract as a class
+attr, and assembles the klipper-extended reports (the only cross-facet work, kept on the composition
+root where `self` is the fully-typed jinni). A device adapter extends it and supplies only its own
+paths and hardware specifics.
 """
-import subprocess
+from collections.abc import AsyncIterator
 
 from . import inspection
 from .base import Jinni
-
-_KLIPPER_VERSION_TIMEOUT_S = 3
-
-# The path variables a klipper printer adapter must expose (the VALUES are device-specific). The
-# loader strict-output gate checks these are present for any KlipperPrinterJinni.
-KLIPPER_PATH_KEYS = frozenset({
-    "BESPOK3D_KLIPPER", "BESPOK3D_MOONRAKER", "KLIPPER_SRC", "KLIPPER_EXTRAS",
-    "MOONRAKER_COMPONENTS", "PRINTER_CFG", "MOONRAKER_CFG",
-})
-
-# Placement and instrument classes a klipper printer adds, resolving to $VAR-templated paths over
-# the klipper path contract above. The executor expands the variables from the device jinni's paths.
-_KLIPPER_PLACEMENTS = {
-    "klipper-config": "$BESPOK3D_KLIPPER/{name}",
-    "moonraker-config": "$BESPOK3D_MOONRAKER/{name}",
-    "klipper-extra": "$KLIPPER_EXTRAS/{name}",
-    "moonraker-component": "$MOONRAKER_COMPONENTS/{name}",
-}
-_KLIPPER_INSTRUMENTS = {
-    "klipper-source": "$KLIPPER_SRC/{name}",
-}
+from .contracts import RESTART_DISPLAY, RESTART_KLIPPER, RESTART_MOONRAKER
+from .facts import KlipperFacts
+from .health import KlipperHealth
+from .layout import KLIPPER_PATH_KEYS
+from .printer_comms import klippy_subscribe
+from .probing import KlipperProbing
+from .realization import KlipperRealization
 
 
-class KlipperPrinterJinni(Jinni):
+class KlipperPrinterJinni(KlipperRealization, KlipperFacts, KlipperProbing, KlipperHealth, Jinni):
     KLIPPER_PATH_KEYS = KLIPPER_PATH_KEYS
 
-    def placement_destination(self, destination_class: str, name: str) -> str:
-        template = _KLIPPER_PLACEMENTS.get(destination_class)
-        if template is None:
-            return super().placement_destination(destination_class, name)
-        return template.format(name=name)
-
-    def instrument_destination(self, instrument_class: str, name: str) -> str:
-        template = _KLIPPER_INSTRUMENTS.get(instrument_class)
-        if template is None:
-            return super().instrument_destination(instrument_class, name)
-        return template.format(name=name)
-
-    def _candidate_ports(self) -> dict[int, str]:
-        return {**inspection.GENERIC_PORTS, inspection.MOONRAKER_PORT: "Moonraker API"}
-
-    def _print_status(self) -> tuple[bool, str]:
-        return inspection.moonraker_print_state()
-
     def diagnose(self) -> dict:
-        return {**super().diagnose(), "moonraker": inspection.port_open(inspection.MOONRAKER_PORT)}
-
-    def klipper_version(self) -> str:
-        try:
-            result = subprocess.run(
-                ["python3", "-c", "import klippy; print(klippy.VERSION)"],
-                capture_output=True, text=True, timeout=_KLIPPER_VERSION_TIMEOUT_S, check=False,
-            )
-            return result.stdout.strip() or "unknown"
-        except Exception:
-            return "unknown"
+        return {**super().diagnose(), "moonraker": self.port_listening(inspection.MOONRAKER_PORT)}
 
     def capabilities(self) -> dict:
         return {**super().capabilities(), "klipper_version": self.klipper_version()}
+
+    def blocked_actions(self) -> frozenset[str]:
+        """The action tokens a running print forbids right now, read live. Cross-facet (print state
+        from probing, the display token from realization), so it sits on the composition root where
+        `self` is the fully-typed jinni."""
+        _active, state = self.print_active()
+        return self._blocked_for_state(state)
+
+    async def watch_blocked_actions(self) -> AsyncIterator[frozenset[str]]:
+        """Push the blocked-action set on change, subscribing to Klipper's print_stats (auth-immune)
+        so the daemon's feed never polls. Dedupes by token set: distinct states that forbid the same
+        actions emit nothing new."""
+        last: frozenset[str] | None = None
+        async for state in klippy_subscribe.watch_print_state(self.paths().get("KLIPPER_UDS", "")):
+            blocked = self._blocked_for_state(state)
+            if blocked != last:
+                last = blocked
+                yield blocked
+
+    def _blocked_for_state(self, state: str) -> frozenset[str]:
+        if not self.is_active_print_state(state):
+            return frozenset()
+        tokens = {RESTART_KLIPPER, RESTART_MOONRAKER}
+        if self.display_service_tokens():
+            tokens.add(RESTART_DISPLAY)
+        return frozenset(tokens)

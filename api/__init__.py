@@ -3,10 +3,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
-from core.packages import write_startup_control_scripts
-from jinni.loader import get_jinni
+from core import jinni_client
+from core.packages import BlockedActionError
 
 from .middleware import BearerTokenMiddleware
 from .routes import router
@@ -17,16 +18,15 @@ _on_printer = _CERT_FILE.exists()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    jinni = get_jinni()
-    if _on_printer:
-        write_startup_control_scripts(jinni, jinni.paths())
-    tasks = [asyncio.create_task(coro) for coro in jinni.background_tasks()]
+    # On the printer the daemon spawns and parents the jinni child, then talks to it over the socket
+    # (ADR-0037); the child does its own startup scripts and background tasks. In dev the seam stays
+    # in-process. The spawn blocks on the handshake, so it runs off the event loop.
+    process = await asyncio.to_thread(jinni_client.start_jinni) if _on_printer else None
     try:
         yield
     finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        if process is not None:
+            jinni_client.stop_jinni(process)
 
 
 app = FastAPI(
@@ -42,3 +42,11 @@ app = FastAPI(
 )
 app.add_middleware(BearerTokenMiddleware)
 app.include_router(router)
+
+
+@app.exception_handler(BlockedActionError)
+async def blocked_action_handler(_request: Request, exc: BlockedActionError) -> JSONResponse:
+    """A refused op carries blocked-action TOKENS, never prose; the app localizes them."""
+    return JSONResponse(
+        status_code=409, content={"error": "blocked", "blocked_actions": exc.blocked},
+    )

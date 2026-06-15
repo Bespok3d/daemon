@@ -1,6 +1,6 @@
 import pytest
 
-from core import capabilities
+from core import capabilities, jinni_client
 from jinni.loader import GenericJinni
 
 
@@ -38,7 +38,8 @@ def test_generic_jinni_firmware_version_returns_unknown() -> None:
     assert GenericJinni().firmware_version() == "unknown"
 
 
-def test_get_capabilities_returns_complete_response() -> None:
+def test_get_capabilities_returns_complete_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(jinni_client, "get_jinni", GenericJinni)
     response = capabilities.get_capabilities()
 
     assert response.adapter == "generic"
