@@ -116,6 +116,17 @@ Only the bespok3d-layout conventions stay in core (the `etc/init.d` autostart wi
 data dir in `core/intent.py`), because they name the daemon's own `$BESPOK3D` tree, not a device. The
 daemon asks; the jinni answers.
 
+**OUTSTANDING (ADR-0037 not done): the Klipper jinni does not belong in the daemon repo.** The realm
+definition is absolute: the daemon's realm IS the bespok3d filesystem, and everything else, Klipper
+included, is the jinni's. The runtime boundary holds (the daemon process imports only the seam), but the
+daemon REPO still ships the generic Klipper jinni (`KlipperPrinterJinni` + the klipper facets,
+`klippy`/`moonraker` comms, klipper health/probing, the `KLIPPER_PATH_KEYS` and Moonraker/MQTT port
+constants), and `core/safety` still names `KLIPPER_SERVICE`/`MOONRAKER_SERVICE`. That is device knowledge
+living in the daemon, a violation. The fix (its own packet, owned by the next session): extract the
+generic Klipper jinni into a shared adapter-layer `klipper-jinni` library that device jinnis extend, and
+stop core naming any printer service, so the daemon repo carries the generic contract plus runtime only.
+Until then, ADR-0037 is open.
+
 ## The transport boundary: HTTP for commands, websockets for live state
 
 This split is intentional and stable.
@@ -166,11 +177,14 @@ scripts/              check.sh, pack.sh, generate-atom.mjs, test-daemon-docker.s
 doc/                  README + CHANGELOG (shipped in the .b3); this file + engineering-rules (not shipped)
 ```
 
-## Decomposition in progress (the concern-directory target)
+## Decomposition (the concern-directory model)
 
-The daemon is mid-reorganization from "split and jumbled" into directories named for their concern. The
-rule for new code is to land it in the right concern, not to grow a god file. The target for the largest
-offenders:
+The daemon was reorganized from "split and jumbled" into directories named for their concern. One MAJOR
+ADR-0037 item is still outstanding (see "Where the device half lives now" in the central boundary above):
+the daemon repo still ships the generic Klipper jinni, which is device knowledge that does not belong in
+the daemon. The rule for new code is unchanged: land it in the right concern, not in a growing god file.
+Where the concern split landed (two small residual splits, `core/auth/` and `core/safety/fixers/`, are
+optional polish, both single files under the ceiling):
 
 - **`core/packages/` (from `core/packages.py`, 1441 lines).** The `__init__` keeps a thin public facade
   (the API the routes import) and owns the plugin root, injecting it into the worker modules; the rest
@@ -187,8 +201,8 @@ offenders:
   `feeds` (the three live websocket handlers and the `install_hub`), `packages` (install/reconfigure/
   recover/update-batch/uninstall), `lifecycle` (deactivate/teardown), `access` (the request/grant/revoke
   flow). `paths` holds the shared data-root constant. Handlers stay thin.
-- **`core/auth/` (from `core/auth.py`, 149 lines).** One security concern per file: keys, roles, labels,
-  tokens, identity, and the request/grant/revoke cycle.
+- **`core/auth/` (DEFERRED, optional). From `core/auth.py` (149 lines), under the ceiling.** When split,
+  one security concern per file: keys, roles, labels, tokens, identity, and the request/grant/revoke cycle.
 - **`core/intent.py` DONE (ADR-0026, then ADR-0037).** It translates the intent-based install block
   (`place` / `instrument` / `service` / `restart`) into the mechanism operations the executor runs,
   naming no device value: a placement or instrument resolves its CLASS via
@@ -203,8 +217,8 @@ offenders:
   `moonraker`, and the shared `frame` transport. Talking to the printer's OWN software is the device's
   realm, so these live with the jinni; generic `core/` reaches them through the jinni boundary
   (`from jinni.printer_comms import ...`).
-- **`core/safety/fixers/` (from `core/safety/fixers.py`).** One fixer per file with a registry, so new
-  failure modes slot in cleanly.
+- **`core/safety/fixers/` (DEFERRED, optional). From `core/safety/fixers.py` (138 lines), under the
+  ceiling.** When split, one fixer per file with a registry, so new failure modes slot in cleanly.
 - **`core/safety/health.py` DONE, then `probe/` moved behind the jinni (ADR-0029 Part 2 P7+P8).** The
   233-line file first split into a `core/safety/probe/` package plus two siblings. Part 2 then moved the
   whole printer-service-health concern onto the jinni: the low-level reachability (`reach.py`'s
