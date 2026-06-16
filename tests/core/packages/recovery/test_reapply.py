@@ -60,6 +60,27 @@ def test_recover_one_succeeds_and_clears_a_stale_marker(tmp_path: Path) -> None:
     assert not (plugin_dir / reapply.RECOVERY_FAILURE_MARKER).exists()
 
 
+def test_recover_one_isolates_an_unexpected_exception(tmp_path: Path, monkeypatch: MP) -> None:
+    # printer-never-broken: a verb that RAISES (not returns ok=False) during one plugin's re-apply
+    # must not abort recover. The plugin is deactivated and the real error reported in its result,
+    # so the rest still recover and the app shows what failed instead of a bare 500.
+    manifest = _installed_plugin(tmp_path, "boom")
+    plugin_dir = tmp_path / "boom"
+
+    def explode(*_args: object, **_kwargs: object) -> dict:
+        raise RuntimeError("jinni wire blew up")
+
+    monkeypatch.setattr(reapply, "create_symlinks", explode)
+
+    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+
+    assert result["ok"] is False
+    assert "recover error" in result["reason"]
+    assert "jinni wire blew up" in result["reason"]
+    assert deferred == []
+    assert (plugin_dir / reapply.RECOVERY_FAILURE_MARKER).exists()
+
+
 def test_recover_one_deactivates_when_a_phase_fails(tmp_path: Path, monkeypatch: MP) -> None:
     manifest = _installed_plugin(tmp_path, "broken")
     plugin_dir = tmp_path / "broken"

@@ -46,7 +46,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.3-dev"
+    assert body["version"] == "0.12.7-dev"
 
 
 async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClient) -> None:
@@ -226,6 +226,21 @@ async def test_recover_route_returns_ok(
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert response.json()["results"] == []
+
+
+async def test_recover_route_reports_a_top_level_fault_as_422_not_500(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A top-level recover fault (e.g. the closing restart cannot reach the jinni) must surface as a
+    # reported error, never a contentless 500 (printer-never-broken: act or report).
+    def boom(_vars: dict[str, str]) -> list:
+        raise RuntimeError("no reply from the jinni for 'write_files'")
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "recover", boom)
+    response = await client.post("/packages/recover")
+    assert response.status_code == 422
+    assert "no reply from the jinni" in response.json()["detail"]
 
 
 async def test_update_batch_route_returns_per_plugin_results(

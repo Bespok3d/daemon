@@ -73,6 +73,25 @@ def _removal_restart_commands(plugin_root: Path, plugin_ids: list[str], vars: di
     return list(dict.fromkeys(commands))
 
 
+def remove_all_plugins(plugin_root: Path, vars: dict[str, str]) -> list[str]:
+    """Remove every plugin's effect and files WITHOUT restarting, returning the deduped core-service
+    restart commands so the caller restarts ONCE after everything is gone. teardown's path: removing
+    each plugin through run_uninstall bounced Klipper/Moonraker per plugin and waited on health each
+    pass (the restart storm). Collect the restart hooks up front (the manifests are read before the
+    dirs are deleted), then remove unconditionally (a full teardown takes everything, so dependents
+    and conflicts are moot); best-effort so one bad plugin never strands the rest."""
+    if not plugin_root.exists():
+        return []
+    plugin_ids = [plugin_dir.name for plugin_dir in plugin_root.iterdir() if plugin_dir.is_dir()]
+    restart_commands = _removal_restart_commands(plugin_root, plugin_ids, vars)
+    for plugin_id in plugin_ids:
+        try:
+            _remove_one(plugin_root / plugin_id, vars)
+        except Exception:  # noqa: BLE001  teardown is best-effort: keep removing the rest
+            pass
+    return restart_commands
+
+
 def run_uninstall(plugin_root: Path, plugin_id: str, vars: dict[str, str], cascade: bool = False) -> list[str]:  # noqa: E501
     """Remove a plugin. Refuses if installed dependents need it, unless cascade removes them too.
 

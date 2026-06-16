@@ -12,9 +12,11 @@ mutation, so the daemon asks the jinni to do it (ADR-0037); the daemon owns only
 from pathlib import Path
 
 from .. import jinni_client
+from ..safety import OperationContext, OperationKind
 from .deactivation import neutralize_plugin
 from .print_guard import guard_no_print
-from .uninstaller import run_uninstall
+from .recovery import restart_services
+from .uninstaller import remove_all_plugins
 
 _GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"
 
@@ -47,22 +49,18 @@ def deactivate_all(vars: dict[str, str]) -> None:
     _write_deactivated_marker(data_root)
 
 
-def _uninstall_plugins_in(plugin_root: Path, vars: dict[str, str]) -> None:
-    if not plugin_root.exists():
-        return
-    plugin_ids = [plugin_dir.name for plugin_dir in plugin_root.iterdir() if plugin_dir.is_dir()]
-    for plugin_id in plugin_ids:
-        try:
-            run_uninstall(plugin_root, plugin_id, vars)
-        except Exception:  # noqa: BLE001  teardown is best-effort: keep removing the rest
-            pass
-
-
 def teardown(vars: dict[str, str]) -> None:
-    """Uninstall all plugins and remove config hooks; SSH caller removes the workspace."""
-    # Guard at the top: the per-plugin uninstall guard is swallowed by _uninstall_plugins_in.
+    """Uninstall all plugins and remove config hooks; SSH caller removes the workspace. Remove every
+    plugin's effect and files first, drop the include hooks, THEN restart the core services once, so
+    a full teardown bounces Klipper/Moonraker a single time into the final clean state rather than
+    once per plugin (the restart storm)."""
+    # Guard at the top: remove_all_plugins removes unconditionally, with no per-plugin guard.
     guard_no_print()
     data_root = Path(vars["BESPOK3D"])
-    _uninstall_plugins_in(data_root / "usr/local/plugins", vars)
+    plugin_root = data_root / "usr/local/plugins"
+    restart_commands = remove_all_plugins(plugin_root, vars)
     jinni_client.remove_bespok3d_includes()
+    if restart_commands:
+        context = OperationContext(OperationKind.TEARDOWN)
+        restart_services(plugin_root, restart_commands, vars, context)
     jinni_client.prune_bespok3d_config_dir()

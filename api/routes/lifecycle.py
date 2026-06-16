@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from core import jinni_client, packages
@@ -7,6 +9,8 @@ from ..schemas import DeactivateResponse, TeardownResponse
 router = APIRouter()
 
 
+# These run off the event loop (asyncio.to_thread): each makes many blocking jinni socket calls and
+# restarts services, which on the loop would starve the live feeds and wedge the jinni (ADR-0037).
 @router.post(
     "/deactivate",
     response_model=DeactivateResponse,
@@ -14,7 +18,9 @@ router = APIRouter()
 )
 async def deactivate() -> DeactivateResponse:
     try:
-        packages.deactivate_all(jinni_client.paths())
+        await asyncio.to_thread(packages.deactivate_all, jinni_client.paths())
+    except packages.BlockedActionError as exc:
+        raise HTTPException(status_code=409, detail={"error": "blocked", "blocked_actions": exc.blocked}) from exc  # noqa: E501
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return DeactivateResponse(ok=True)
@@ -27,7 +33,9 @@ async def deactivate() -> DeactivateResponse:
 )
 async def teardown() -> TeardownResponse:
     try:
-        packages.teardown(jinni_client.paths())
+        await asyncio.to_thread(packages.teardown, jinni_client.paths())
+    except packages.BlockedActionError as exc:
+        raise HTTPException(status_code=409, detail={"error": "blocked", "blocked_actions": exc.blocked}) from exc  # noqa: E501
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return TeardownResponse(ok=True)

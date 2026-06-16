@@ -2,10 +2,10 @@
 diagnostics, and a baseline of every original so teardown can restore it.
 
 The stock file is FETCHED from the device through the jinni (reading a device file is the jinni's,
-ADR-0037), captured once as the pristine baseline in the plugin's `patches_orig/`. The diff is
-applied to a working copy of that baseline in the bespok3d tree (pure daemon CPU), and the patched
-result is WRITTEN back through the jinni (writing a device file is its actuation). `restore` writes
-the pristine baseline back the same way; the jinni records the restore reversion as it writes.
+ADR-0037) and captured once as the pristine baseline in `patches_orig/`. Every fragment targeting
+that file is applied IN ORDER to one working copy of the baseline (pure daemon CPU), so a later
+fragment builds on an earlier one (klipper-motion patches toolhead.py four times); the cumulative
+result is WRITTEN back through the jinni once. `restore` writes the baseline back the same way.
 """
 
 import re
@@ -67,61 +67,82 @@ def _ensure_pristine(target: Path, pristine_path: Path) -> bool:
     return True
 
 
-def _build_patched_content(pristine_path: Path, patch_file: Path) -> tuple[bool, str, str]:
-    """Apply the diff to a working copy of the pristine baseline (pure daemon CPU on a bespok3d-tree
-    file). Returns (ok, patched_content, diagnostics)."""
+def _apply_fragment(work_path: Path, patch_file: Path, patch_rel: str, crlf_stripped: bool) -> dict:
+    """Apply one diff fragment to the working copy IN PLACE, so the next fragment for the same file
+    builds on it (the old in-place cumulative patching, now on a bespok3d-tree copy). The item is
+    named for the fragment, so a conflict points at the exact diff to re-author."""
+    result = subprocess.run(["patch", "-N", "--strip=1", str(work_path), str(patch_file)],
+                            capture_output=True, check=False)
+    raw = (result.stdout + result.stderr).decode(errors="replace") + _collect_rej(work_path)
+    ok = result.returncode == 0
+    context = _actual_context(work_path, patch_file, crlf_stripped) if not ok else ""
+    raw += f"\n{context}" if context else ""
+    output = raw[:MAX_OUTPUT_BYTES] + ("…" if len(raw) > MAX_OUTPUT_BYTES else "")
+    return item(f"patch {Path(patch_rel).name}", ok=ok, output=output.strip())
+
+
+def _write_back(target: Path, work_path: Path, pristine_path: Path, plugin_dir: Path, applied: bool) -> dict | None:  # noqa: E501
+    """Write the cumulative patched content back to the device through the jinni once, only if a
+    fragment applied. Returns a failed item if the jinni write failed, so the install settles it."""
+    if not applied:
+        return None
+    write = {"path": str(target), "content": work_path.read_text(errors="replace"),
+             "restore_from": str(pristine_path)}
+    written = jinni_client.write_files(str(plugin_dir), [write])
+    if written[0].ok:
+        return None
+    return item(f"write {target.name}", ok=False, output=written[0].output)
+
+
+def _patch_target(target: str, fragments: list[dict], plugin_dir: Path, vars: dict[str, str], orig_dir: Path) -> list[dict]:  # noqa: E501
+    """Apply every fragment for ONE target file cumulatively, then write the result back once. The
+    pristine baseline is fetched once and kept only for restore; the fragments build on a working
+    copy of it, never re-applying against the original."""
+    target_path = Path(target)
+    pristine_path = orig_dir / target_path.name
+    if not _ensure_pristine(target_path, pristine_path):
+        return [item(f"patch {Path(fragment['patch']).name}", ok=False, output="target file not found")  # noqa: E501
+                for fragment in fragments]
     work_path = pristine_path.parent / (pristine_path.name + ".b3work")
     shutil.copy2(pristine_path, work_path)
     crlf_stripped = _normalize_line_endings(work_path)
-    result = subprocess.run(
-        ["patch", "-N", "--strip=1", str(work_path), str(patch_file)],
-        capture_output=True,
-        check=False,
-    )
-    raw = (result.stdout + result.stderr).decode(errors="replace") + _collect_rej(work_path)
-    ok = result.returncode == 0
-    content = work_path.read_text(errors="replace") if ok else ""
-    if not ok:
-        ctx = _actual_context(work_path, patch_file, crlf_stripped)
-        if ctx:
-            raw += f"\n{ctx}"
+    items = [_apply_fragment(work_path, plugin_dir / fragment["patch"], fragment["patch"], crlf_stripped)  # noqa: E501
+             for fragment in fragments]
+    write_failure = _write_back(target_path, work_path, pristine_path, plugin_dir,
+                                any(fragment_item["ok"] for fragment_item in items))
     work_path.unlink(missing_ok=True)
-    return ok, content, raw
+    return [*items, write_failure] if write_failure else items
 
 
-def _patch_one(patch_def: dict, plugin_dir: Path, vars: dict[str, str], orig_dir: Path) -> dict:
-    target = Path(expand(patch_def["file"], vars))
-    patch_file = plugin_dir / patch_def["patch"]
-    label = f"patch {target.name}"
-    pristine_path = orig_dir / target.name
-    if not _ensure_pristine(target, pristine_path):
-        return item(label, ok=False, output="target file not found")
-    ok, content, raw = _build_patched_content(pristine_path, patch_file)
-    output = raw[:MAX_OUTPUT_BYTES] + ("…" if len(raw) > MAX_OUTPUT_BYTES else "")
-    if not ok:
-        return item(label, ok=False, output=output.strip())
-    write = {"path": str(target), "content": content, "restore_from": str(pristine_path)}
-    written = jinni_client.write_files(str(plugin_dir), [write])
-    if not written[0].ok:
-        return item(label, ok=False, output=written[0].output)
-    return item(label, ok=True, output=output.strip())
+def _group_by_target(patches: list[dict], vars: dict[str, str]) -> dict[str, list[dict]]:
+    """Fragments grouped by resolved target file, first-appearance order kept. Several fragments for
+    one file apply cumulatively (see _patch_target)."""
+    groups: dict[str, list[dict]] = {}
+    for patch_def in patches:
+        groups.setdefault(expand(patch_def["file"], vars), []).append(patch_def)
+    return groups
 
 
 def apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
     orig_dir = plugin_dir / "patches_orig"
     orig_dir.mkdir(parents=True, exist_ok=True)
-    items = [_patch_one(patch_def, plugin_dir, vars, orig_dir) for patch_def in patches]
+    items: list[dict] = []
+    for target, fragments in _group_by_target(patches, vars).items():
+        items.extend(_patch_target(target, fragments, plugin_dir, vars, orig_dir))
     return phase("patches", "Patches", items)
 
 
 def restore_original_files(patches: list[dict], orig_dir: Path, vars: dict[str, str]) -> None:
-    """Write each kept pristine baseline back over its target through the jinni, undoing the patch."""  # noqa: E501
+    """Write each kept pristine baseline back over its target through the jinni, undoing the patch.
+    Deduped by target: several fragments for one file share one baseline, so it is restored once."""
     plugin_dir = orig_dir.parent
     writes = []
+    seen: set[str] = set()
     for patch_def in patches:
-        target = Path(expand(patch_def["file"], vars))
-        pristine_path = orig_dir / target.name
-        if pristine_path.exists():
-            writes.append({"path": str(target), "content": pristine_path.read_text(errors="replace")})  # noqa: E501
+        target = str(Path(expand(patch_def["file"], vars)))
+        pristine_path = orig_dir / Path(target).name
+        if target not in seen and pristine_path.exists():
+            seen.add(target)
+            writes.append({"path": target, "content": pristine_path.read_text(errors="replace")})
     if writes:
         jinni_client.write_files(str(plugin_dir), writes)

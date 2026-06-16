@@ -50,3 +50,18 @@ def deactivate_plugin(plugin_dir: Path, vars: dict[str, str], reason: str) -> No
     if (plugin_dir / "manifest.json").exists():
         neutralize_plugin(plugin_dir, vars)
     (plugin_dir / DEACTIVATED_MARKER).write_text(json.dumps({"reason": reason}))
+
+
+def finalize_install_outcome(plugin_dir: Path, vars: dict[str, str], log: list[dict]) -> None:
+    """Settle a finished install by its phase log: clear stale markers on a clean run; on a failed
+    required phase, take the half-applied plugin off the system (drop its symlinks, restore any
+    patched source) and mark it deactivated, the protection recover gives a broken plugin. The
+    install log is retained: every phase is still returned to the app and the plugin dir stays on
+    disk for inspection. The marker check leaves a plugin the restart safety net already deactivated
+    untouched, so its diagnosis reason is not overwritten."""
+    if all(logged_phase["ok"] for logged_phase in log):
+        clear_failure_markers(plugin_dir)
+        return
+    if (plugin_dir / DEACTIVATED_MARKER).exists():
+        return
+    deactivate_plugin(plugin_dir, vars, "install failed: a required phase did not apply")

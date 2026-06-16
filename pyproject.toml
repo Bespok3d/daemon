@@ -6,6 +6,13 @@ line-length = 100
 # UP: modern syntax  C9: complexity  PLR/PLW/PLE: pylint rules
 select = ["E", "W", "F", "I", "N", "UP", "C901", "PLR", "PLW", "PLE"]
 
+[tool.ruff.lint.isort]
+# The Bespok3d packages, declared so import grouping is stable. Without this, ruff auto-detects
+# first-party from the checked file's path, so a klipper-jinni test (which imports both `jinni` and
+# the daemon's `protocol`) gets them split into different groups while a daemon file does not. Naming
+# them is the truth (`protocol` is ours, not a third-party lib) and keeps both gates consistent.
+known-first-party = ["core", "api", "protocol", "jinni"]
+
 [tool.ruff.lint.mccabe]
 max-complexity = 8
 

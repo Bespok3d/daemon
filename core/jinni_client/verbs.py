@@ -4,7 +4,7 @@ Each verb routes through `dispatch.route` and casts the boundary's dynamic value
 shape. Read/resolve verbs ask a semantic question or for a realized path; actuation verbs mutate the
 device (the daemon resolves, sequences, and reports; the jinni performs the device-realm action).
 """
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import cast
 
 import protocol
@@ -118,7 +118,7 @@ def blocked_actions() -> frozenset[str]:
     return cast(frozenset[str], route("blocked_actions", []))
 
 
-async def subscribe_blocked_actions() -> AsyncIterator[frozenset[str]]:
+async def subscribe_blocked_actions() -> AsyncGenerator[frozenset[str], None]:
     """Stream the blocked-action set, pushed on change. In dev the loaded jinni's watcher runs
     in-process; on the printer the daemon holds one persistent subscribe connection to its jinni
     child. The /ws/print-state route relays each frame to the app verbatim."""

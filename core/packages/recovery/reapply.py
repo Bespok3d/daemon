@@ -48,31 +48,52 @@ def recover_one(
     vars: dict[str, str],
 ) -> tuple[dict, list[str]]:
     plugin_id = plugin_dir.name
-    missing_deps = [
-        service for service in required_services(manifest)
-        if service in all_provided and service not in satisfied
-    ]
-    if missing_deps:
-        reason = f"dependency not satisfied: {', '.join(missing_deps)}"
-        return {"plugin_id": plugin_id, "ok": False, "skipped": True, "reason": reason, "log": []}, []  # noqa: E501
-
     full_vars = with_plugin_venv({**vars, **load_user_vars(plugin_dir)}, plugin_id)
-    missing_vars = missing_required_vars(manifest, full_vars)
-    if missing_vars:
-        reason = f"missing required variable(s): {', '.join(missing_vars)}; reinstall the plugin"
-        return {"plugin_id": plugin_id, "ok": False, "skipped": False, "reason": reason, "log": []}, []  # noqa: E501
+    precondition = _precondition_skip(plugin_id, manifest, full_vars, satisfied, all_provided)
+    if precondition is not None:
+        return precondition
 
     raw_inst = manifest.get("install", {})
-    inst = normalize_install(raw_inst)
-    phase_log, deferred = _apply_plugin(plugin_dir, raw_inst, inst, full_vars)
+    try:
+        inst = normalize_install(raw_inst)
+        phase_log, deferred = _apply_plugin(plugin_dir, raw_inst, inst, full_vars)
+    except Exception as exc:  # noqa: BLE001 - one plugin's recover error must NOT abort the rest
+        # printer-never-broken: deactivate just this plugin and report the real error in its result,
+        # so recover completes for the others and the app shows what failed (not a bare 500).
+        return _record_failure(plugin_dir, vars, f"recover error: {type(exc).__name__}: {exc}",
+                               {"error": str(exc)}, []), []
     if not all(phase["ok"] for phase in phase_log):
-        reason = "install phase failed"
-        (plugin_dir / RECOVERY_FAILURE_MARKER).write_text(json.dumps({"phases": phase_log}))
-        deactivate_plugin(plugin_dir, vars, reason)
-        failed = {"plugin_id": plugin_id, "ok": False, "skipped": False, "reason": reason, "log": phase_log}  # noqa: E501
-        return failed, []
+        return _record_failure(plugin_dir, vars, "install phase failed",
+                               {"phases": phase_log}, phase_log), []
 
     satisfied.update(provided_services(manifest))
     clear_failure_markers(plugin_dir)
     recovered = {"plugin_id": plugin_id, "ok": True, "skipped": False, "reason": "", "log": phase_log}  # noqa: E501
     return recovered, deferred
+
+
+def _precondition_skip(
+    plugin_id: str, manifest: dict, full_vars: dict[str, str],
+    satisfied: set[str], all_provided: set[str],
+) -> tuple[dict, list[str]] | None:
+    """A skip (a dependency another recovered plugin should provide is not satisfied) or a fail (a
+    required variable is missing), or None to proceed with the re-apply."""
+    missing_deps = [service for service in required_services(manifest)
+                    if service in all_provided and service not in satisfied]
+    if missing_deps:
+        reason = f"dependency not satisfied: {', '.join(missing_deps)}"
+        return {"plugin_id": plugin_id, "ok": False, "skipped": True, "reason": reason, "log": []}, []  # noqa: E501
+    missing_vars = missing_required_vars(manifest, full_vars)
+    if missing_vars:
+        reason = f"missing required variable(s): {', '.join(missing_vars)}; reinstall the plugin"
+        return {"plugin_id": plugin_id, "ok": False, "skipped": False, "reason": reason, "log": []}, []  # noqa: E501
+    return None
+
+
+def _record_failure(plugin_dir: Path, vars: dict[str, str], reason: str,
+                    marker: dict, log: list[dict]) -> dict:
+    """Mark a plugin's recover failed and deactivate it (so it is off the system but its files stay
+    for a fixed version to revive), returning the failed result the orchestrator reports."""
+    (plugin_dir / RECOVERY_FAILURE_MARKER).write_text(json.dumps(marker))
+    deactivate_plugin(plugin_dir, vars, reason)
+    return {"plugin_id": plugin_dir.name, "ok": False, "skipped": False, "reason": reason, "log": log}  # noqa: E501

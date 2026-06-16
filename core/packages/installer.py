@@ -19,7 +19,7 @@ from ..intent import normalize_install
 from ..results import item, phase
 from ..safety import OperationContext, OperationKind
 from .archive import fix_ownership, read_manifest, unpack_package
-from .deactivation import clear_failure_markers
+from .deactivation import clear_failure_markers, finalize_install_outcome
 from .dependencies import installed_conflicts
 from .errors import ConflictError
 from .manifest import manifest_at
@@ -112,9 +112,7 @@ def run_install(
     persist_user_vars(plugin_dir, user_vars or {})
     full_vars = with_plugin_venv(vars, plugin_id)
     log.extend(_install_apply_phases(plugin_root, plugin_dir, manifest, full_vars, notify))
-    if all(logged_phase["ok"] for logged_phase in log):
-        clear_failure_markers(plugin_dir)
-
+    finalize_install_outcome(plugin_dir, full_vars, log)
     return plugin_id, log
 
 

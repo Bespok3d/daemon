@@ -12,6 +12,13 @@ ETX = b"\x03"
 DEFAULT_TIMEOUT_S = 3.0
 _RECV_CHUNK = 4096
 
+# The asyncio StreamReader buffer cap for a single framed message. The default (64 KiB) is far too
+# small for the write_files verb, whose request carries whole device files (a patched Klipper
+# source, several at once on a restore): a larger frame overran readuntil with LimitOverrunError,
+# which the jinni swallowed by closing the connection unanswered ("no reply for write_files").
+# Generous headroom over any realistic source/config file, bounding memory.
+MAX_FRAME_BYTES = 16 * 1024 * 1024
+
 
 def encode(payload: dict) -> bytes:
     return json.dumps(payload).encode() + ETX

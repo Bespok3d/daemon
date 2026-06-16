@@ -14,6 +14,7 @@ class OperationKind(str, Enum):
     RECOVER = "recover"
     UPDATE = "update"
     UNINSTALL = "uninstall"
+    TEARDOWN = "teardown"
 
 
 _ACTION_TEMPLATES = {
@@ -33,6 +34,8 @@ class OperationContext:
 
     def human_action(self) -> str:
         """A plain-words description of the operation for user-facing messages."""
+        if self.kind == OperationKind.TEARDOWN:
+            return "removing Bespok3d"
         if self.kind == OperationKind.RECOVER or self.plugin_id is None:
             return "recovering your plugins"
         plugin = self.plugin_id

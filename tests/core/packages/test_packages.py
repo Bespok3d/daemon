@@ -271,6 +271,78 @@ def test_uninstall_restores_stock_dir_displaced_by_symlink(tmp_path: Path, monke
     assert (stock / "stock-marker.txt").read_text() == "factory"
 
 
+def test_install_with_a_failing_required_patch_deactivates_and_keeps_the_log(
+    tmp_path: Path, monkeypatch: MP,
+) -> None:
+    """A required phase that fails (a patch whose context does not match) must NOT pass as a clean
+    install. The half-applied plugin is deactivated, the protection recover gives a broken plugin,
+    and the install log is kept for inspection: every phase is still returned and the plugin dir
+    stays on disk. It is never reported as Installed-and-working (the truthfulness violation)."""
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    stock_source = tmp_path / "klippy" / "toolhead.py"
+    stock_source.parent.mkdir(parents=True)
+    stock_source.write_text("real source line\n")
+    mismatched_patch = (
+        "--- a/toolhead.py\n+++ b/toolhead.py\n"
+        "@@ -1 +1 @@\n-context that does not match\n+replacement\n"
+    )
+    manifest = minimal_manifest(
+        "patchy",
+        extra={"install": {"dirs": [], "symlinks": [],
+                           "patches": [{"file": str(stock_source), "patch": "bad.patch"}]}},
+    )
+    zip_path = tmp_path / "patchy.b3"
+    zip_path.write_bytes(
+        make_zip({"manifest.json": manifest, "bad.patch": mismatched_patch}).getvalue()
+    )
+
+    _plugin_id, log = packages.install(zip_path, {})
+
+    patch_phase = next(phase for phase in log if phase["id"] == "patches")
+    assert patch_phase["ok"] is False
+    assert not all(logged_phase["ok"] for logged_phase in log)
+    plugin_dir = tmp_path / "patchy"
+    assert (plugin_dir / "deactivated.json").exists()
+    assert (plugin_dir / "manifest.json").exists()
+
+
+def test_install_applies_multiple_fragments_to_one_file_cumulatively(
+    tmp_path: Path, monkeypatch: MP,
+) -> None:
+    """Several patch fragments targeting ONE file (klipper-motion patches toolhead.py four times)
+    apply in order, each building on the previous. The second fragment's context IS the first's
+    result, so it applies only if the daemon accumulates on a working copy instead of re-applying
+    against the pristine baseline. The final device file carries both, the phase is clean (no
+    deactivate), and each fragment is its own item so a conflict pins the exact diff."""
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    stock_source = tmp_path / "klippy" / "toolhead.py"
+    stock_source.parent.mkdir(parents=True)
+    stock_source.write_text("alpha\n")
+    first_fragment = "--- a/toolhead.py\n+++ b/toolhead.py\n@@ -1 +1 @@\n-alpha\n+beta\n"
+    second_fragment = "--- a/toolhead.py\n+++ b/toolhead.py\n@@ -1 +1 @@\n-beta\n+gamma\n"
+    manifest = minimal_manifest(
+        "motion",
+        extra={"install": {"dirs": [], "symlinks": [], "patches": [
+            {"file": str(stock_source), "patch": "01.patch"},
+            {"file": str(stock_source), "patch": "02.patch"},
+        ]}},
+    )
+    zip_path = tmp_path / "motion.b3"
+    zip_path.write_bytes(make_zip({
+        "manifest.json": manifest, "01.patch": first_fragment, "02.patch": second_fragment,
+    }).getvalue())
+
+    _plugin_id, log = packages.install(zip_path, {})
+
+    patch_phase = next(phase for phase in log if phase["id"] == "patches")
+    assert patch_phase["ok"] is True
+    assert [patch_item["label"] for patch_item in patch_phase["items"]] == [
+        "patch 01.patch", "patch 02.patch",
+    ]
+    assert stock_source.read_text() == "gamma\n"
+    assert not (tmp_path / "motion" / "deactivated.json").exists()
+
+
 def test_install_runs_start_commands(tmp_path: Path, monkeypatch: MP) -> None:
     import subprocess as sp
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
@@ -635,6 +707,36 @@ def test_cascade_uninstall_restarts_klipper_once(tmp_path: Path, monkeypatch: MP
     assert set(removed) == {"core", "leaf"}
     assert not (tmp_path / "core").exists()
     assert not (tmp_path / "leaf").exists()
+    assert ran.count("/etc/init.d/S60klipper restart") == 1
+
+
+def test_teardown_restarts_core_services_once(tmp_path: Path, monkeypatch: MP) -> None:
+    """A full teardown removes every plugin then bounces Klipper exactly once, after everything is
+    gone (regression: teardown uninstalled per plugin, so it restarted Klipper/Moonraker and waited
+    on their health once per plugin, a restart storm that read like an uninstall loop)."""
+    import subprocess as sp
+
+    plugin_root = tmp_path / "usr/local/plugins"
+    plugin_root.mkdir(parents=True)
+    ran: list[object] = []
+
+    class FakeResult:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+
+    def fake_run(cmd: object, **kw: object) -> FakeResult:
+        ran.append(cmd)
+        return FakeResult()
+
+    monkeypatch.setattr(sp, "run", fake_run)
+    _install_restart_manifest(plugin_root / "alpha", "alpha", provides=[], depends=[])
+    _install_restart_manifest(plugin_root / "beta", "beta", provides=[], depends=[])
+
+    packages.teardown({"BESPOK3D": str(tmp_path)})
+
+    assert not (plugin_root / "alpha").exists()
+    assert not (plugin_root / "beta").exists()
     assert ran.count("/etc/init.d/S60klipper restart") == 1
 
 

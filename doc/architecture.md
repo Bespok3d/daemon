@@ -77,7 +77,10 @@ and the config-include unwire (`remove_bespok3d_includes` / `prune_bespok3d_conf
 event loop, so a long restart never blocks the concurrent reads or streams; as it wires, the jinni
 records each reversion in the plugin's `wiring.json` (the escape-hatch record). The daemon builds its
 logic ON these answers and mutates only its own `$BESPOK3D` tree; it never reaches in for the device
-knowledge behind them, and it actuates no device file itself.
+knowledge behind them, and it actuates no device file itself. Because `write_files` and `fetch` carry
+whole device files (a patched Klipper source, several at once on a restore), the framed socket caps a
+message at `frame.MAX_FRAME_BYTES` (16 MiB), well above asyncio's 64 KiB `readuntil` default: a frame
+past that default overran and the jinni dropped the reply unanswered ("no reply for write_files").
 
 ### Worked example: the print guard
 

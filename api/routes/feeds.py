@@ -17,7 +17,9 @@ install_hub = install_progress.InstallProgressHub()
 
 async def _relay_blocked_actions(websocket: WebSocket) -> None:
     """Forward the jinni's blocked-action set to the app, pushed on change. The daemon is a dumb
-    relay (ADR-0037): the jinni subscribes to the device and decides; the daemon never reads it."""
+    relay (ADR-0037): the jinni subscribes to the device and decides; the daemon never reads it.
+    When the ws drops, `print_state_feed` cancels this task and awaits it, so cancellation unwinds
+    the subscribe generator through its own `finally` rather than an external aclose racing it."""
     async for blocked in jinni_client.subscribe_blocked_actions():
         await websocket.send_json(print_state.app_frame(blocked))
 
@@ -45,6 +47,9 @@ async def print_state_feed(websocket: WebSocket, token: str = Query(default=""))
     finally:
         relay.cancel()
         watch.cancel()
+        # Await the cancelled tasks so the relay's subscribe generator unwinds through its own
+        # finally (closing the socket to the jinni) before this handler returns.
+        await asyncio.gather(relay, watch, return_exceptions=True)
         with contextlib.suppress(Exception):
             await websocket.close()
 
