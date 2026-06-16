@@ -1,26 +1,26 @@
-"""Guard: generic `core/` code reaches the jinni only through the seam, never device code.
+"""Guard: the daemon and the jinni share ONLY the protocol; no `core/` code imports the jinni
+runtime, and the shared protocol contract carries only generic shapes, never device vocabulary.
 
 The daemon is generic (ADR-0037): it orchestrates and never names a device or printer service. The
-device half is the jinni, behind one door, `core/jinni_client`. So a `core/` file may import that
-door and the shared contract shapes (`jinni.contracts`, the serializable values that cross the
-boundary), but nothing else under `jinni`: not the loader, not a tier, not the loopback probes. This
-catches the coupling mechanically, the in-process equivalent of a process boundary's enforcement.
+device half is the jinni runtime, which lives outside the daemon repo and is reached at runtime over
+the socket. The only thing the two sides share is the `protocol` package (defined here, imported by
+the jinni). So no `core/` file imports `jinni.*` at all: not the loader, not a tier, not the probes.
+The in-process transport injects its jinni (a test sets `jinni_client.get_jinni`) rather than
+importing it. This catches the coupling mechanically, the way a process boundary would.
 
-Only the seam itself is exempt; it is the door and imports the jinni internals on the daemon's
-behalf. Production `core/` code only: tests are white-box and may reach in on purpose.
+The protocol contract (`protocol/contracts.py`) is the one module the daemon and the jinni both
+import, so it must hold only generic data SHAPES (the dataclasses that cross the wire). A
+module-level string constant there is device vocabulary, a service name or an action token, which is
+the jinni's. Naming one in the contract is the same coupling read from the other side.
+
+Production `core/` code only: tests are white-box and may reach in on purpose.
 """
 import ast
 import sys
 from pathlib import Path
 
 SOURCE_ROOT = "core"
-CONTRACT_MODULE = "jinni.contracts"
-
-
-def is_seam_path(path: Path) -> bool:
-    """The one door allowed to import the jinni internals (a module `core/jinni_client.py` or a
-    package `core/jinni_client/`); every other `core/` file goes through it."""
-    return path.stem == "jinni_client" or "jinni_client" in path.parts
+CONTRACT_PATH = Path("protocol/contracts.py")
 
 
 def _reaches_jinni(module: str | None) -> bool:
@@ -28,13 +28,13 @@ def _reaches_jinni(module: str | None) -> bool:
 
 
 def device_imports(path: Path) -> list[tuple[int, str]]:
-    """Imports in one file that reach the jinni outside the shared contract shapes."""
+    """Imports in one file that reach the jinni runtime (anything under `jinni`)."""
     tree = ast.parse(path.read_text(), str(path))
     return [
         (lineno, statement)
         for node in ast.walk(tree)
         for lineno, module, statement in _import_targets(node)
-        if _reaches_jinni(module) and module != CONTRACT_MODULE
+        if _reaches_jinni(module)
     ]
 
 
@@ -47,19 +47,44 @@ def _import_targets(node: ast.AST) -> list[tuple[int, str | None, str]]:
     return []
 
 
+def _assigned_string_names(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):  # noqa: E501
+        return [target.id for target in node.targets if isinstance(target, ast.Name)]
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):  # noqa: E501
+        return [node.target.id]
+    return []
+
+
+def contract_vocabulary(path: Path) -> list[tuple[int, str]]:
+    """Module-level string constants in the protocol contract. The contract is generic data shapes
+    the daemon and jinni both import; a string constant there is device vocabulary (a service name,
+    an action token), which the jinni owns."""
+    if not path.exists():
+        return []
+    tree = ast.parse(path.read_text(), str(path))
+    return [
+        (node.lineno, name)
+        for node in tree.body
+        for name in _assigned_string_names(node)
+    ]
+
+
 def main() -> int:
     violations = [
         (path, lineno, statement)
         for path in sorted(Path(SOURCE_ROOT).rglob("*.py"))
-        if not is_seam_path(path)
         for lineno, statement in device_imports(path)
     ]
+    vocabulary = contract_vocabulary(CONTRACT_PATH)
     for path, lineno, statement in violations:
-        print(f"{path}:{lineno}: core reaches the jinni outside the seam: {statement}")
+        print(f"{path}:{lineno}: core imports the jinni runtime; only the protocol crosses: {statement}")  # noqa: E501
+    for lineno, name in vocabulary:
+        print(f"{CONTRACT_PATH}:{lineno}: the protocol contract names device vocabulary: {name}; move it to the jinni")  # noqa: E501
     if violations:
-        print(f"\n{len(violations)} device coupling(s) in core/: route via core.jinni_client.")
-        return 1
-    return 0
+        print(f"\n{len(violations)} jinni-runtime import(s) in core/: talk to the jinni over the protocol.")  # noqa: E501
+    if vocabulary:
+        print(f"\n{len(vocabulary)} device constant(s) in the protocol contract: move them to the jinni.")  # noqa: E501
+    return 1 if violations or vocabulary else 0
 
 
 if __name__ == "__main__":

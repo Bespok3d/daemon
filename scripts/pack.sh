@@ -49,7 +49,9 @@ for top_file in version.py daemon.py S99bespok3d s10bespok3d-daemon requirements
   cp -p "$REPO_DIR/$top_file" "$files_root/$top_file"
 done
 
-for tree in api core jinni; do
+# The jinni runtime is a SEPARATE app (klipper-jinni); the daemon ships only its own halves plus the
+# shared `protocol` package the jinni imports. The adapter deploys the jinni runtime alongside.
+for tree in api core protocol; do
   ( cd "$REPO_DIR" && find "$tree" -type f -name '*.py' ! -path '*/__pycache__/*' ) \
     | while read -r rel; do
         mkdir -p "$files_root/$(dirname "$rel")"

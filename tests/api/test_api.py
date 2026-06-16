@@ -46,7 +46,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.2-dev"
+    assert body["version"] == "0.12.3-dev"
 
 
 async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClient) -> None:
@@ -125,7 +125,7 @@ def _minimal_b3() -> bytes:
 async def test_deactivate_returns_ok(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "deactivate_all", _noop_vars)
     response = await client.post("/deactivate")
     assert response.status_code == 200
@@ -135,7 +135,7 @@ async def test_deactivate_returns_ok(
 async def test_teardown_returns_ok(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "teardown", _noop_vars)
     response = await client.post("/teardown")
     assert response.status_code == 200
@@ -145,7 +145,7 @@ async def test_teardown_returns_ok(
 async def test_selfcheck_returns_ok_true_when_no_drift(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(routes_health, "run_selfcheck", lambda _vars: [])
     response = await client.get("/selfcheck")
     assert response.status_code == 200
@@ -172,7 +172,7 @@ async def test_selfcheck_returns_ok_false_with_drift_details(
             ],
         }
     ]
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(routes_health, "run_selfcheck", lambda _vars: sample_drift)
     response = await client.get("/selfcheck")
     assert response.status_code == 200
@@ -192,7 +192,7 @@ async def test_install_route_returns_ok(
     ) -> tuple[str, list]:
         return "test-plugin", []
 
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "install", fake_install)
     response = await client.post(
         "/packages/install",
@@ -207,7 +207,7 @@ async def test_install_route_returns_ok(
 async def test_install_route_returns_400_on_bad_vars(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     response = await client.post(
         "/packages/install",
         files={"file": ("plugin.b3", b"", "application/octet-stream")},
@@ -220,7 +220,7 @@ async def test_install_route_returns_400_on_bad_vars(
 async def test_recover_route_returns_ok(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "recover", lambda _vars: [])
     response = await client.post("/packages/recover")
     assert response.status_code == 200
@@ -239,7 +239,7 @@ async def test_update_batch_route_returns_per_plugin_results(
             {"plugin_id": "(services)", "ok": True, "skipped": False, "reason": "", "log": []},
         ]
 
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "update_batch", fake_update_batch)
     response = await client.post(
         "/packages/update-batch",
@@ -258,7 +258,7 @@ async def test_update_batch_route_returns_per_plugin_results(
 async def test_update_batch_route_returns_400_on_bad_vars(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     response = await client.post(
         "/packages/update-batch",
         files=[("files", ("alpha.b3", _minimal_b3(), "application/octet-stream"))],
@@ -274,7 +274,7 @@ async def test_uninstall_route_returns_ok(
     def fake_uninstall(_plugin_id: str, _vars: dict[str, str], cascade: bool = False) -> list[str]:
         return ["my-plugin"]
 
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "uninstall", fake_uninstall)
     response = await client.delete("/packages/my-plugin")
     assert response.status_code == 200
@@ -288,7 +288,7 @@ async def test_uninstall_route_returns_404_when_plugin_missing(
     def raise_not_found(plugin_id: str, _vars: dict[str, str], cascade: bool = False) -> None:
         raise FileNotFoundError(plugin_id)
 
-    monkeypatch.setattr(jinni_client, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "uninstall", raise_not_found)
     response = await client.delete("/packages/missing-plugin")
     assert response.status_code == 404

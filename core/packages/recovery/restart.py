@@ -19,7 +19,6 @@ from ...safety import (
     decide,
     is_healthy,
 )
-from ...safety.logs import format_tails
 from ...safety.restart_batch import run_restart_batch
 from ..deactivation import deactivate_plugin
 from ..manifest import installed_manifest_dirs
@@ -48,7 +47,7 @@ def _recovery_result(deactivated: list[str], decision: Decision,
                   else f"Deactivated {joined} but the printer still did not recover")
     else:
         reason = decision.signal
-    failure_log = format_tails(failure.klipper_log, failure.moonraker_log)
+    failure_log = failure.health.signals.log_tails
     log_item = item("captured service log for diagnosis", ok=ok, output=failure_log)
     result = {"plugin_id": "(services)", "ok": ok, "skipped": False, "reason": reason,
               "failure_log": failure_log,
@@ -73,7 +72,7 @@ def _auto_recover(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, s
         deactivate_plugin(plugin_root / decision.culprit, vars,
                           f"auto-deactivated: {decision.signal}")
         deactivated.append(decision.culprit)
-        run_restart_batch(deferred_cmds, vars)
+        run_restart_batch(deferred_cmds)
         evidence = gather_evidence(plugin_root, vars)
         if is_healthy(evidence):
             break
@@ -81,17 +80,18 @@ def _auto_recover(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, s
 
 
 def _touches_core_service(deferred_cmds: list[str]) -> bool:
-    """Only a Klipper/Moonraker restart needs the safety net; a plugin-service or nginx bounce does
-    not put the printer's base functions at risk, so we skip the probe + recovery for those."""
+    """Only a core-service restart needs the safety net; a plugin-service or nginx bounce does not
+    put the printer's base functions at risk, so we skip the probe + recovery for those. The jinni
+    flags which commands restart a core service; the daemon never matches a command itself."""
     effects = jinni_client.classify_commands(deferred_cmds)
-    return any(effect.restarts_klipper or effect.restarts_moonraker for effect in effects)
+    return any(effect.restarts_services for effect in effects)
 
 
 def restart_services(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, str],
                      ctx: OperationContext) -> dict:
     """Do the restart, then ask the safety net to verify and recover. The daemon does the thing; the
     net watches (incl. failed components), acts (deactivate), and reports."""
-    result = run_restart_batch(deferred_cmds, vars)
+    result = run_restart_batch(deferred_cmds)
     if not _touches_core_service(deferred_cmds):
         return result
     evidence = gather_evidence(plugin_root, vars)

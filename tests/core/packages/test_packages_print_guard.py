@@ -11,8 +11,12 @@ import pytest
 from core import packages
 from core.packages import print_guard
 from core.packages.errors import BlockedActionError
-from jinni.base import Jinni
-from jinni.contracts import RESTART_DISPLAY, RESTART_KLIPPER
+from tests.fakes import FakeKlipperJinni
+
+# The print guard checks an op's required tokens against the jinni's blocked set, opaquely; these
+# stand in for any jinni's vocabulary.
+RESTART_DISPLAY = "restart-display"
+RESTART_KLIPPER = "restart-klipper"
 
 MP = pytest.MonkeyPatch
 
@@ -22,7 +26,7 @@ def test_orchestrator_reexports_the_guards() -> None:
 
 
 def test_guard_blocks_install_that_restarts_during_print(
-    monkeypatch: MP, device_jinni: Jinni,
+    monkeypatch: MP, device_jinni: FakeKlipperJinni,
 ) -> None:
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
     manifest = {"name": "tmc-low-current", "install": {"start": ["/etc/init.d/S60klipper restart"]}}
@@ -31,14 +35,16 @@ def test_guard_blocks_install_that_restarts_during_print(
     assert RESTART_KLIPPER in raised.value.blocked
 
 
-def test_guard_allows_install_when_printer_idle(monkeypatch: MP, device_jinni: Jinni) -> None:
+def test_guard_allows_install_when_printer_idle(
+    monkeypatch: MP, device_jinni: FakeKlipperJinni,
+) -> None:
     monkeypatch.setattr(device_jinni, "print_active", lambda: (False, "standby"))
     manifest = {"name": "tmc-low-current", "install": {"start": ["/etc/init.d/S60klipper restart"]}}
     print_guard.guard_no_print_during_restart(manifest)
 
 
 def test_guard_ignores_install_that_does_not_restart_services(
-    monkeypatch: MP, device_jinni: Jinni,
+    monkeypatch: MP, device_jinni: FakeKlipperJinni,
 ) -> None:
     def fail_if_called() -> object:
         raise AssertionError("the blocked set must not be read when no restart happens")
@@ -47,7 +53,9 @@ def test_guard_ignores_install_that_does_not_restart_services(
     print_guard.guard_no_print_during_restart({"name": "x", "install": {"start": []}})
 
 
-def test_guard_blocks_lmd_restart_hook_during_print(monkeypatch: MP, device_jinni: Jinni) -> None:
+def test_guard_blocks_lmd_restart_hook_during_print(
+    monkeypatch: MP, device_jinni: FakeKlipperJinni,
+) -> None:
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
     manifest = {"name": "x", "install": {"restart": ["lmd"]}}
     with pytest.raises(BlockedActionError) as raised:
@@ -56,7 +64,7 @@ def test_guard_blocks_lmd_restart_hook_during_print(monkeypatch: MP, device_jinn
 
 
 def test_guard_blocks_display_plugin_via_teardown_stop_during_print(
-    monkeypatch: MP, device_jinni: Jinni,
+    monkeypatch: MP, device_jinni: FakeKlipperJinni,
 ) -> None:
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
     # camera-hw-accel restarts lmd inside its own init script (no literal "lmd" in start); its
@@ -74,7 +82,9 @@ def test_guard_blocks_display_plugin_via_teardown_stop_during_print(
     assert RESTART_DISPLAY in raised.value.blocked
 
 
-def test_guard_blocks_camera_install_when_paused(monkeypatch: MP, device_jinni: Jinni) -> None:
+def test_guard_blocks_camera_install_when_paused(
+    monkeypatch: MP, device_jinni: FakeKlipperJinni,
+) -> None:
     # a paused print counts as active: bouncing the camera/display would still disrupt the user.
     assert device_jinni.is_active_print_state("paused") is True
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "paused"))
@@ -88,7 +98,7 @@ def test_guard_blocks_camera_install_when_paused(monkeypatch: MP, device_jinni: 
 
 
 def test_guard_no_print_for_removal_blocks_display_plugin_during_print(
-    tmp_path: Path, monkeypatch: MP, device_jinni: Jinni,
+    tmp_path: Path, monkeypatch: MP, device_jinni: FakeKlipperJinni,
 ) -> None:
     # removing the camera bounces lmd via its teardown stop, so it is locked while printing too.
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))

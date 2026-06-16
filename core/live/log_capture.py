@@ -12,10 +12,30 @@ import re
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from core.safety.logs import read_log_tail
-
 URL_PATTERN = re.compile(r"https?://[^\s<>\"')]+")
 DEFAULT_POLL_SECONDS = 1.0
+_LOG_TAIL_BYTES = 16384
+
+
+def _read_bytes(path: Path, max_bytes: int) -> str:
+    try:
+        return path.read_bytes()[-max_bytes:].decode(errors="replace")
+    except OSError:
+        return ""
+
+
+def read_log_tail(path: Path, max_bytes: int = _LOG_TAIL_BYTES) -> str:
+    """Tail the live log; if it is empty (a restart rotated it out), fall back to the rotated
+    sibling so a match logged just before rotation is still emitted. A plugin's own log is
+    bespok3d's realm, a generic file tail, not a device log (which the jinni reads)."""
+    live = _read_bytes(path, max_bytes)
+    if live.strip():
+        return live
+    for suffix in (".1", ".prev"):
+        rotated = _read_bytes(path.with_name(path.name + suffix), max_bytes)
+        if rotated.strip():
+            return rotated
+    return live
 
 
 def capture_matches(text: str, pattern: re.Pattern[str]) -> list[str]:

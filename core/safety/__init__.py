@@ -13,7 +13,7 @@ Public surface:
   `Decision`, `Placement`, `AttributionIndex`. The device-health verdict it carries is the jinni's
   `jinni.contracts.DeviceHealth`.
 """
-from .attribution import AttributionIndex, Placement, attribute_failure, build_index
+from .attribution import AttributionIndex, Placement, attribute, build_index
 from .context import OperationContext, OperationKind
 from .decision import Decision, FailureEvidence, is_healthy
 from .net import decide
@@ -27,6 +27,6 @@ __all__ = [
     "Decision",
     "Placement",
     "AttributionIndex",
-    "attribute_failure",
+    "attribute",
     "build_index",
 ]

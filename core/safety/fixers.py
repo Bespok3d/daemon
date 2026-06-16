@@ -10,7 +10,7 @@ specific fixer.
 import re
 from collections.abc import Callable
 
-from jinni.contracts import MOONRAKER_SERVICE
+from protocol import ServiceHealth
 
 from .context import OperationContext
 from .decision import Decision, FailureEvidence
@@ -18,64 +18,67 @@ from .decision import Decision, FailureEvidence
 Fixer = Callable[[FailureEvidence, OperationContext, list[str]], Decision | None]
 
 _BRACKET_SECTION_RE = re.compile(r"\[([^\]]+)\]")
+_COMPONENT_FAILURE = "component-failure"
 
 
 def _component_section_owner(component: str, evidence: FailureEvidence) -> str | None:
-    """A Moonraker component name (e.g. 'notifier') is owned by the plugin that placed a config
-    section whose first word is that name (e.g. '[notifier phone]')."""
+    """A failed component name (e.g. 'notifier') is owned by the plugin that placed a config section
+    whose first word is that name (e.g. '[notifier phone]')."""
     for section, plugin_id in evidence.index.by_section.items():
         if section.split()[:1] == [component]:
             return plugin_id
     return None
 
 
-def moonraker_component_failure(
-    evidence: FailureEvidence,
-    _ctx: OperationContext,
-    already: list[str],
-) -> Decision | None:
-    """Moonraker is reachable but a component failed to import (the apprise/notifier case). Blame
-    the plugin that activated the component via its config section."""
-    info = evidence.health.services[MOONRAKER_SERVICE]
-    for component in info.failed_components:
+def _failed_component_culprit(service: ServiceHealth, evidence: FailureEvidence, already: list[str]) -> tuple[str, str] | None:  # noqa: E501
+    for component in service.failed_components:
         plugin_id = _component_section_owner(component, evidence)
         if plugin_id and plugin_id not in already:
-            return Decision(
-                plugin_id,
-                f"Moonraker component '{component}' failed to load",
-                "moonraker-component",
-            )
-    for warning in info.warnings:
-        for section in _BRACKET_SECTION_RE.findall(warning):
-            plugin_id = evidence.index.plugin_for_section(section)
-            if plugin_id and plugin_id not in already:
-                return Decision(
-                    plugin_id,
-                    f"Moonraker config section [{section}] failed to load",
-                    "moonraker-component",
-                )
+            return plugin_id, component
     return None
 
 
-def _attribute_logs(evidence: FailureEvidence) -> tuple[str | None, str]:
-    from .attribution import attribute_failure
+def _warned_section_culprit(service: ServiceHealth, evidence: FailureEvidence, already: list[str]) -> tuple[str, str] | None:  # noqa: E501
+    sections = (s for warning in service.warnings for s in _BRACKET_SECTION_RE.findall(warning))
+    for section in sections:
+        plugin_id = evidence.index.plugin_for_section(section)
+        if plugin_id and plugin_id not in already:
+            return plugin_id, section
+    return None
 
-    for log_text in (evidence.klipper_log, evidence.moonraker_log):
-        culprit, signal = attribute_failure(log_text, evidence.index)
-        if culprit:
-            return culprit, signal
-    return None, ""
 
-
-def klipper_import_failure(
+def component_failure(
     evidence: FailureEvidence,
     _ctx: OperationContext,
     already: list[str],
 ) -> Decision | None:
-    """A failing Klipper config section, a missing import, or a traceback in a placed file."""
-    culprit, signal = _attribute_logs(evidence)
+    """A service is reachable but a component failed to import (the apprise/notifier case). Blame
+    the plugin that activated the component via its config section. The daemon reads the failed
+    components out of the jinni's per-service report without naming any service."""
+    for service in evidence.health.services.values():
+        failed = _failed_component_culprit(service, evidence, already)
+        if failed:
+            plugin_id, component = failed
+            return Decision(plugin_id, f"component '{component}' failed to load", _COMPONENT_FAILURE)  # noqa: E501
+        warned = _warned_section_culprit(service, evidence, already)
+        if warned:
+            plugin_id, section = warned
+            return Decision(plugin_id, f"config section [{section}] failed to load", _COMPONENT_FAILURE)  # noqa: E501
+    return None
+
+
+def placement_failure(
+    evidence: FailureEvidence,
+    _ctx: OperationContext,
+    already: list[str],
+) -> Decision | None:
+    """A failing config section, a missing import, or a traceback in a placed file: the jinni read
+    the identifier out of the device log, the daemon names the plugin that placed it."""
+    from .attribution import attribute
+
+    culprit, signal = attribute(evidence.health.signals, evidence.index)
     if culprit and culprit not in already:
-        return Decision(culprit, signal, "klipper-import")
+        return Decision(culprit, signal, "placement-failure")
     return None
 
 
@@ -130,8 +133,8 @@ def catch_all(
 
 def default_chain() -> list[Fixer]:
     return [
-        moonraker_component_failure,
-        klipper_import_failure,
+        component_failure,
+        placement_failure,
         device_infrastructure,
         last_resort_target,
         catch_all,

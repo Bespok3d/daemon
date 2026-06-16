@@ -17,9 +17,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .. import python_env
+from protocol import ActionResult
+
+from .. import jinni_client, python_env
 from ..results import MAX_OUTPUT_BYTES, item, phase
-from .placement import points_into, replace_with_symlink, symlink_owner
+from .placement import points_into, symlink_owner
 
 _REQUIREMENTS_FILE = "requirements.txt"
 _KLIPPER_REQUIREMENTS_FILE = "klipper_requirements.txt"
@@ -126,26 +128,26 @@ def _site_link_precheck(plugin_root: Path, plugin_dir: Path, site_pkgs: Path, na
     return None
 
 
-def _link_one_site_package(plugin_root: Path, plugin_dir: Path, site_pkgs: Path, name: str) -> dict:
-    terminal = _site_link_precheck(plugin_root, plugin_dir, site_pkgs, name)
-    if terminal is not None:
-        return terminal
-    try:
-        replace_with_symlink(python_env.baked_site_packages_dir(plugin_dir) / name, site_pkgs / name)  # noqa: E501
-    except Exception as exc:
-        return item(f"link {name}: {exc}", ok=False)
-    return item(f"link {name}", ok=True)
+def _link_result_item(name: str, result: ActionResult) -> dict:
+    return item(f"link {name}", ok=result.ok, output=result.output)
 
 
 def _link_site_packages(plugin_root: Path, plugin_dir: Path, vars: dict[str, str]) -> dict | None:
-    """Symlink baked packages into the system site-packages for a Klipper/Moonraker extra. None if absent."""  # noqa: E501
+    """Symlink baked packages into the system site-packages for a Klipper/Moonraker extra. None if
+    absent. The precheck (already-importable, cross-plugin version coexistence, real-file-in-the-
+    way) is a read the daemon owns; the symlink IO is the jinni's wire actuation (ADR-0037)."""
     if not (plugin_dir / _KLIPPER_REQUIREMENTS_FILE).is_file():
         return None
     site_pkgs = python_env.system_site_packages(vars)
     if site_pkgs is None:
         return phase("site_packages", "System Python links", [item("no system site-packages on this host; skipped", ok=True)])  # noqa: E501
     site_pkgs.mkdir(parents=True, exist_ok=True)
-    items = [_link_one_site_package(plugin_root, plugin_dir, site_pkgs, name) for name in baked_top_level_names(plugin_dir)]  # noqa: E501
+    baked = python_env.baked_site_packages_dir(plugin_dir)
+    prechecks = [(name, _site_link_precheck(plugin_root, plugin_dir, site_pkgs, name)) for name in baked_top_level_names(plugin_dir)]  # noqa: E501
+    to_link = [name for name, terminal in prechecks if terminal is None]
+    requests = [{"source": str(baked / name), "destination": str(site_pkgs / name)} for name in to_link]  # noqa: E501
+    results = dict(zip(to_link, jinni_client.wire(str(plugin_dir), requests)))
+    items = [terminal if terminal is not None else _link_result_item(name, results[name]) for name, terminal in prechecks]  # noqa: E501
     return phase("site_packages", "System Python links", items)
 
 
@@ -155,17 +157,17 @@ def provision_deps_phases(plugin_root: Path, plugin_dir: Path, vars: dict[str, s
 
 
 def remove_plugin_site_links(plugin_dir: Path, vars: dict[str, str]) -> list[str]:
-    """Remove the system site-packages symlinks that point into this plugin's baked deps."""
+    """Remove the system site-packages symlinks that point into this plugin's baked deps. The daemon
+    finds them (a read over its baked tree); the jinni unwires them (the device-realm unlink)."""
     site_pkgs = python_env.system_site_packages(vars)
     if site_pkgs is None or not site_pkgs.is_dir():
         return []
     baked = python_env.baked_site_packages_dir(plugin_dir)
-    removed: list[str] = []
-    for entry in sorted(site_pkgs.iterdir()):
-        if entry.is_symlink() and points_into(entry, baked):
-            entry.unlink()
-            removed.append(entry.name)
-    return removed
+    destinations = [entry for entry in sorted(site_pkgs.iterdir())
+                    if entry.is_symlink() and points_into(entry, baked)]
+    if destinations:
+        jinni_client.unwire(str(plugin_dir), [str(entry) for entry in destinations])
+    return [entry.name for entry in destinations]
 
 
 def remove_plugin_venv(plugin_id: str, vars: dict[str, str]) -> None:

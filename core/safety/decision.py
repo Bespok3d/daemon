@@ -4,7 +4,7 @@ Pure: `is_healthy` and the fixers judge this data; the daemon does the I/O that 
 """
 from dataclasses import dataclass
 
-from jinni.contracts import DeviceHealth
+from protocol import DeviceHealth
 
 from .attribution import AttributionIndex
 
@@ -12,11 +12,10 @@ from .attribution import AttributionIndex
 @dataclass
 class FailureEvidence:
     """A snapshot of the printer's state after a restart, plus the attribution index for blame. The
-    device-health verdict (per-service readiness, failed components, the broker) is the jinni's
-    `DeviceHealth`; the log tails and the index are the daemon's own."""
+    device-health verdict (per-service readiness, failed components, the failure signals read from
+    the device logs, the user-facing tail) is the jinni's `DeviceHealth`; the index, which plugin
+    placed what, is the daemon's own."""
     health: DeviceHealth
-    klipper_log: str
-    moonraker_log: str
     index: AttributionIndex
 
 

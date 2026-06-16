@@ -1,5 +1,9 @@
 from core.live import print_state
-from jinni.contracts import RESTART_DISPLAY, RESTART_KLIPPER, RESTART_MOONRAKER
+
+# The daemon relays blocked-action tokens opaquely; these stand in for any jinni's vocabulary.
+RESTART_DISPLAY = "restart-display"
+RESTART_KLIPPER = "restart-klipper"
+RESTART_MOONRAKER = "restart-moonraker"
 
 
 def test_app_frame_sorts_the_blocked_tokens() -> None:

@@ -7,9 +7,8 @@ import pytest
 
 from core import jinni_client, packages
 from core.packages import dependencies, python_deps
-from jinni import health
-from jinni.base import Jinni
-from jinni.klipper import KlipperPrinterJinni
+from protocol import DeviceHealth, ServiceHealth
+from tests.fakes import FakeKlipperJinni
 
 MP = pytest.MonkeyPatch
 
@@ -346,7 +345,7 @@ def test_install_intent_place_and_restart(tmp_path: Path, monkeypatch: MP) -> No
     assert "/etc/init.d/S60klipper restart" in ran
 
 
-class FakeServiceAdapter(KlipperPrinterJinni):
+class FakeServiceAdapter(FakeKlipperJinni):
     def capability_flags(self) -> set[str]:
         return {"managed-service"}
 
@@ -358,7 +357,7 @@ def test_managed_service_generates_and_wires_script(tmp_path: Path, monkeypatch:
     import subprocess as sp
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     fake_adapter = FakeServiceAdapter()
-    monkeypatch.setattr(jinni_client, "get_jinni", lambda: fake_adapter)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", lambda: fake_adapter)
     ran: list[str] = []
 
     class FakeResult:
@@ -389,12 +388,12 @@ def test_managed_service_generates_and_wires_script(tmp_path: Path, monkeypatch:
 def test_managed_service_refused_without_capability(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
 
-    class NoServiceAdapter(KlipperPrinterJinni):
+    class NoServiceAdapter(FakeKlipperJinni):
         def capability_flags(self) -> set[str]:
             return set()
 
     no_service = NoServiceAdapter()
-    monkeypatch.setattr(jinni_client, "get_jinni", lambda: no_service)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", lambda: no_service)
     manifest = minimal_manifest(
         extra={"install": {"service": [{"name": "worker", "command": "/bin/worker"}]}}
     )
@@ -1019,10 +1018,9 @@ def test_recover_defers_and_dedupes_service_restarts(tmp_path: Path, monkeypatch
 
 
 def test_recover_reports_failed_service_restart(
-    tmp_path: Path, monkeypatch: MP, device_jinni: Jinni,
+    tmp_path: Path, monkeypatch: MP, device_jinni: FakeKlipperJinni,
 ) -> None:
     import subprocess as sp
-    import urllib.request as urlreq
 
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     make_installed_plugin(tmp_path, "alpha", start=["/etc/init.d/S60klipper restart"])
@@ -1032,13 +1030,13 @@ def test_recover_reports_failed_service_restart(
         stdout = b""
         stderr = b""
 
-    def urlopen_fail(*_a: object, **_kw: object) -> None:
-        raise OSError("down")
-
     monkeypatch.setattr(sp, "run", lambda *_a, **_kw: FakeOk())
-    monkeypatch.setattr(urlreq, "urlopen", urlopen_fail)
-    monkeypatch.setattr(health.time, "sleep", lambda _: None)
-    monkeypatch.setattr(device_jinni, "port_listening", lambda port: True)
+    # The jinni reports the device unhealthy after the restart (klipper did not come back); the
+    # daemon's safety net acts on that verdict, it never probes the device itself.
+    monkeypatch.setattr(device_jinni, "health", lambda: DeviceHealth(services={
+        "klipper": ServiceHealth(ready=False, detail="down"),
+        "moonraker": ServiceHealth(ready=False, detail="down"),
+    }))
 
     results = packages.recover({})
 
@@ -1088,7 +1086,7 @@ def test_restart_phase_waits_for_moonraker_when_restarted(
 
 
 def test_start_phase_skips_the_health_check_when_no_service_restarted(
-    tmp_path: Path, monkeypatch: MP, device_jinni: Jinni,
+    tmp_path: Path, monkeypatch: MP, device_jinni: FakeKlipperJinni,
 ) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     health_calls: list[bool] = []
@@ -1126,7 +1124,9 @@ def test_validate_user_vars_rejects_disallowed_chars() -> None:
             packages.validate_user_vars({"KEY": bad})
 
 
-def test_deactivate_all_writes_marker_and_removes_include_lines(tmp_path: Path) -> None:
+def test_deactivate_all_writes_marker_and_removes_include_lines(
+    tmp_path: Path, device_jinni: FakeKlipperJinni,
+) -> None:
     plugin_dir = tmp_path / "usr" / "local" / "plugins" / "dummy"
     plugin_dir.mkdir(parents=True)
     (plugin_dir / "manifest.json").write_text(
@@ -1136,12 +1136,10 @@ def test_deactivate_all_writes_marker_and_removes_include_lines(tmp_path: Path) 
     moonraker_cfg = tmp_path / "moonraker.cfg"
     printer_cfg.write_text("[include bespok3d/klipper/main.cfg]\n[printer]\n")
     moonraker_cfg.write_text("[include bespok3d/moonraker/main.cfg]\n[server]\n")
+    # The jinni edits the printer's own config from its OWN paths (ADR-0037); point them at the tmp.
+    device_jinni.paths_override = {"PRINTER_CFG": str(printer_cfg), "MOONRAKER_CFG": str(moonraker_cfg)}  # noqa: E501
 
-    packages.deactivate_all({
-        "BESPOK3D": str(tmp_path),
-        "PRINTER_CFG": str(printer_cfg),
-        "MOONRAKER_CFG": str(moonraker_cfg),
-    })
+    packages.deactivate_all({"BESPOK3D": str(tmp_path)})
 
     assert (tmp_path / "etc" / "deactivated").exists()
     assert "bespok3d/klipper" not in printer_cfg.read_text()
@@ -1149,7 +1147,9 @@ def test_deactivate_all_writes_marker_and_removes_include_lines(tmp_path: Path) 
     assert "[printer]" in printer_cfg.read_text()
 
 
-def test_teardown_removes_plugin_dirs_and_include_lines(tmp_path: Path) -> None:
+def test_teardown_removes_plugin_dirs_and_include_lines(
+    tmp_path: Path, device_jinni: FakeKlipperJinni,
+) -> None:
     plugin_root = tmp_path / "usr" / "local" / "plugins"
     plugin_dir = plugin_root / "widget"
     plugin_dir.mkdir(parents=True)
@@ -1160,31 +1160,28 @@ def test_teardown_removes_plugin_dirs_and_include_lines(tmp_path: Path) -> None:
     moonraker_cfg = tmp_path / "moonraker.cfg"
     printer_cfg.write_text("[include bespok3d/klipper/main.cfg]\n[printer]\n")
     moonraker_cfg.write_text("[include bespok3d/moonraker/main.cfg]\n[server]\n")
+    device_jinni.paths_override = {"PRINTER_CFG": str(printer_cfg), "MOONRAKER_CFG": str(moonraker_cfg)}  # noqa: E501
 
-    packages.teardown({
-        "BESPOK3D": str(tmp_path),
-        "PRINTER_CFG": str(printer_cfg),
-        "MOONRAKER_CFG": str(moonraker_cfg),
-    })
+    packages.teardown({"BESPOK3D": str(tmp_path)})
 
     assert not plugin_dir.exists()
     assert "bespok3d/klipper" not in printer_cfg.read_text()
     assert "bespok3d/moonraker" not in moonraker_cfg.read_text()
 
 
-def test_deactivate_blocked_during_print(monkeypatch: MP, device_jinni: Jinni) -> None:
+def test_deactivate_blocked_during_print(monkeypatch: MP, device_jinni: FakeKlipperJinni) -> None:
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
     with pytest.raises(packages.BlockedActionError):
         packages.deactivate_all({"BESPOK3D": "/x"})
 
 
-def test_teardown_blocked_during_print(monkeypatch: MP, device_jinni: Jinni) -> None:
+def test_teardown_blocked_during_print(monkeypatch: MP, device_jinni: FakeKlipperJinni) -> None:
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "paused"))
     with pytest.raises(packages.BlockedActionError):
         packages.teardown({"BESPOK3D": "/x"})
 
 
-def test_recover_blocked_during_print(monkeypatch: MP, device_jinni: Jinni) -> None:
+def test_recover_blocked_during_print(monkeypatch: MP, device_jinni: FakeKlipperJinni) -> None:
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
     with pytest.raises(packages.BlockedActionError):
         packages.recover({"BESPOK3D": "/x"})
@@ -1373,7 +1370,7 @@ def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: 
 
 
 def test_update_batch_refused_during_print(
-    tmp_path: Path, monkeypatch: MP, device_jinni: Jinni,
+    tmp_path: Path, monkeypatch: MP, device_jinni: FakeKlipperJinni,
 ) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path / "plugins")
     monkeypatch.setattr(device_jinni, "print_active", lambda: (True, "printing"))
@@ -1464,42 +1461,14 @@ def test_install_rejects_both_dep_files(tmp_path: Path, monkeypatch: MP) -> None
         packages.install(zip_path, {"BESPOK3D": str(tmp_path / "b3")})
 
 
-class _MoonrakerStubbedBySymlink:
-    """A urllib double keyed to a config symlink: while the plugin's cfg is placed, Moonraker says
-    the notifier component failed; once the safety net deactivates the plugin (removing the link),
-    Moonraker reports healthy. Klipper always answers. Stubs only the external HTTP boundary."""
-
-    def __init__(self, cfg_link: Path) -> None:
-        self._cfg_link = cfg_link
-
-    def __call__(self, url: str, *_a: object, **_kw: object) -> "_MoonrakerStubbedBySymlink._Resp":
-        if "server/info" in url and self._cfg_link.is_symlink():
-            body = '{"result": {"klippy_state": "ready", "failed_components": ["notifier"]}}'
-        else:
-            body = '{"result": {"klippy_state": "ready", "failed_components": [], "warnings": []}}'
-        return self._Resp(body.encode())
-
-    class _Resp:
-        def __init__(self, data: bytes) -> None:
-            self._data = data
-
-        def __enter__(self) -> "_MoonrakerStubbedBySymlink._Resp":
-            return self
-
-        def __exit__(self, *_exc: object) -> None:
-            return None
-
-        def read(self) -> bytes:
-            return self._data
-
-
-def test_install_auto_deactivates_plugin_that_breaks_a_service(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+def test_install_auto_deactivates_plugin_that_breaks_a_service(
+    tmp_path: Path, monkeypatch: MP, device_jinni: FakeKlipperJinni,
+) -> None:
     """A FRESH install whose Moonraker component fails to import must auto-deactivate the culprit
-    and leave the printer working - the same safety net as recover/OTA. Moonraker stays REACHABLE (a
-    failed component, not a dead server), which the old reachability-only check missed. Stubs only
-    the HTTP/subprocess boundary; the stub flips healthy once deactivation removes the cfg."""
+    and leave the printer working, the same safety net as recover/OTA. The jinni reports Moonraker
+    REACHABLE but with a FAILED COMPONENT (not a dead server), which the old reachability-only check
+    missed; its verdict flips healthy once deactivation removes the broken cfg."""
     import subprocess as sp
-    import urllib.request as urlreq
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     moonraker_cfg = tmp_path / "config" / "bespok3d" / "moonraker"
@@ -1512,7 +1481,17 @@ def test_install_auto_deactivates_plugin_that_breaks_a_service(tmp_path: Path, m
         stderr = b""
 
     monkeypatch.setattr(sp, "run", lambda *_a, **_kw: FakeOk())
-    monkeypatch.setattr(urlreq, "urlopen", _MoonrakerStubbedBySymlink(cfg_link))
+
+    def health() -> DeviceHealth:
+        # While the broken plugin's cfg is in place the jinni reports a failed Moonraker component;
+        # once deactivation removes the cfg the device is healthy again.
+        failed = ("notifier",) if cfg_link.exists() else ()
+        return DeviceHealth(services={
+            "klipper": ServiceHealth(ready=True, detail="ready"),
+            "moonraker": ServiceHealth(ready=True, detail="up", failed_components=failed),
+        })
+
+    monkeypatch.setattr(device_jinni, "health", health)
     manifest = minimal_manifest("notifier-ish", extra={
         "install": {
             "place": [{"class": "moonraker-config", "src": "files/cfg/moonraker/notifier.cfg"}],

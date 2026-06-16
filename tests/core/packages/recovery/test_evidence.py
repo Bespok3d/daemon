@@ -5,10 +5,6 @@ from pathlib import Path
 from core.packages.recovery import evidence
 
 
-def test_log_tail_empty_when_key_absent() -> None:
-    assert evidence._log_tail({}, "KLIPPER_LOG") == ""
-
-
 def test_build_attribution_index_indexes_an_extra_module(tmp_path: Path) -> None:
     plugin_root = tmp_path / "plugins"
     (plugin_root / "foo-plugin").mkdir(parents=True)

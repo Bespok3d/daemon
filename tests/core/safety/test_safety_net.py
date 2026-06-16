@@ -14,12 +14,17 @@ from core.safety import (
     is_healthy,
 )
 from core.safety.decision import Decision
-from jinni.contracts import KLIPPER_SERVICE, MOONRAKER_SERVICE, DeviceHealth, ServiceHealth
+from protocol import DeviceHealth, FailureSignals, ServiceHealth
+
+# The daemon's safety net reads service names opaquely out of the health report; these stand in for
+# any jinni's vocabulary (here a klipper printer's).
+KLIPPER_SERVICE = "klipper"
+MOONRAKER_SERVICE = "moonraker"
 
 
 def _evidence(*, klipper_reachable: bool = True,  # noqa: PLR0913
               failed_components: list[str] | None = None,
-              warnings: list[str] | None = None, klipper_log: str = "", moonraker_log: str = "",
+              warnings: list[str] | None = None, signals: FailureSignals | None = None,
               diagnosis: str = "", index: AttributionIndex | None = None) -> FailureEvidence:
     return FailureEvidence(
         health=DeviceHealth(
@@ -32,9 +37,8 @@ def _evidence(*, klipper_reachable: bool = True,  # noqa: PLR0913
                 ),
             },
             diagnosis=diagnosis,
+            signals=signals or FailureSignals(),
         ),
-        klipper_log=klipper_log,
-        moonraker_log=moonraker_log,
         index=index or AttributionIndex(by_path={}, by_module={}, by_section={}),
     )
 
@@ -55,7 +59,7 @@ def test_decide_blames_failed_moonraker_component() -> None:
     index = AttributionIndex(by_path={}, by_module={}, by_section={"notifier phone": "moonraker-notify"})  # noqa: E501
     decision = decide(_evidence(failed_components=["notifier"], index=index), _ctx())
     assert decision.culprit == "moonraker-notify"
-    assert decision.fixer == "moonraker-component"
+    assert decision.fixer == "component-failure"
     assert decision.escaped is False
 
 
@@ -63,10 +67,10 @@ def test_recovery_result_reports_first_failure_traceback_not_clean_log() -> None
     """The reported log must be the FIRST-failure traceback, not a re-read of the live log after the
     recovery restart succeeded (which is clean). Health is still judged on the final evidence."""
     traceback = 'File "/home/lava/klipper/klippy/extras/foo.py"\nModuleNotFoundError: apprise'
-    failure = _evidence(klipper_reachable=False, klipper_log=traceback)
+    failure = _evidence(klipper_reachable=False, signals=FailureSignals(log_tails=traceback))
     final = _evidence()  # recovery worked: reachable, no failed components, empty log
     decision = Decision(culprit="moonraker-notify", signal="notifier failed to import apprise",
-                        fixer="moonraker-component")
+                        fixer="component-failure")
 
     result = restart._recovery_result(["moonraker-notify"], decision, final, failure)
 
@@ -76,16 +80,18 @@ def test_recovery_result_reports_first_failure_traceback_not_clean_log() -> None
     assert result["failure_log"] == output
 
 
-def test_decide_blames_klipper_config_section() -> None:
+def test_decide_blames_the_plugin_that_placed_a_failing_config_section() -> None:
+    # The jinni read the failing section out of the device log; the daemon maps it to the plugin
+    # that placed that section via its own index, naming no service.
     index = AttributionIndex(by_path={}, by_module={},
                              by_section={"temperature_sensor Rockchip": "cpu-temp"})
     evidence = _evidence(
         klipper_reachable=False, index=index,
-        klipper_log="Section 'temperature_sensor Rockchip' is not a valid config section",
+        signals=FailureSignals(sections=("temperature_sensor Rockchip",)),
     )
     decision = decide(evidence, _ctx("cpu-temp"))
     assert decision.culprit == "cpu-temp"
-    assert decision.fixer == "klipper-import"
+    assert decision.fixer == "placement-failure"
 
 
 def test_decide_reports_a_device_infrastructure_outage_as_not_a_plugin() -> None:

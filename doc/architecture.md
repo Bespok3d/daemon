@@ -62,14 +62,22 @@ an "update the adapter" error rather than misbehaving.
 ### The contract (the verbs)
 
 The verbs are the whole surface the daemon may call (`core/jinni_client/__init__.py`, closed set in
-`jinni/protocol.py CONTRACT_VERBS`): resolve a placement or instrument CLASS to a path
-(`placement_destination` / `instrument_destination`), resolve a restart HOOK to a command
+`protocol/wire.py CONTRACT_VERBS`). Read/resolve verbs: resolve a placement or instrument CLASS to a
+path (`placement_destination` / `instrument_destination`), resolve a restart HOOK to a command
 (`restart_command`), render a managed-service script (`render_service_script`), report capability flags
 and target facts (`capability_flags` / `paths` / `capabilities_report`), classify how each generated
 start command acts on the device (`classify_commands`), report the device's health verdict (`health`),
-report what is blocked right now (`blocked_actions`), and stream the blocked-action set on change
-(`subscribe_blocked_actions`). The daemon builds its logic ON these answers; it never reaches in for the
-device knowledge behind them.
+report what is blocked right now (`blocked_actions`), stream the blocked-action set on change
+(`subscribe_blocked_actions`), and fetch a stock file for the daemon to patch (`fetch`). ACTUATION
+verbs (ADR-0037: the daemon resolves and sequences, the jinni mutates the device): run a plugin's
+start/restart/stop commands (`run_actions`), symlink placed files and site-package links into the
+system (`wire`) and remove them (`unwire`), write a patched (or restored) source back (`write_files`),
+and the config-include unwire (`remove_bespok3d_includes` / `prune_bespok3d_config_dir` /
+`prune_dead_config_links`). Actuation verbs serialize through one queue on the jinni and run off its
+event loop, so a long restart never blocks the concurrent reads or streams; as it wires, the jinni
+records each reversion in the plugin's `wiring.json` (the escape-hatch record). The daemon builds its
+logic ON these answers and mutates only its own `$BESPOK3D` tree; it never reaches in for the device
+knowledge behind them, and it actuates no device file itself.
 
 ### Worked example: the print guard
 
@@ -95,37 +103,41 @@ a NON-plugin cause the jinni knows (the U1's stock MQTT broker is down, say), th
 token verbatim and deactivates nothing, and the app localizes it. The device fact (the broker, port
 1883) lives behind the jinni; the daemon carries only the token.
 
-### Where the device half lives now
+### Where the device half lives: a separate app over a socket
 
-The retired model had the daemon import and subclass a live device object (`as_klipper_printer`, a
-`ServiceActionVocabulary` the daemon string-matched, a `permissions()` snapshot). That is gone. The
-device implementation, including the shared Klipper/Moonraker actuation, lives in the jinni package
-(`jinni/`), which the adapter's device jinni extends and the daemon parents as a process. Inside that
-package the jinni still composes its concerns as a small class tier, faceted one room per concern:
-`Jinni` (`base.py`, a generic linux box) from `Layout` / `Realization` / `Facts` / `Probing`, then
-`KlipperPrinterJinni` (`klipper.py`) adding the klipper facets (`KlipperRealization` / `KlipperFacts` /
-`KlipperProbing` / `KlipperHealth`), with `inspection.py` and `health.py` holding the probe and
-health-verdict implementations, `contracts.py` the boundary shapes, `loader.py` the strict-output gate
-(it refuses a jinni that cannot resolve its path keys or, for a klipper jinni, its klipper/moonraker
-restart commands), and `protocol.py` / `service.py` / `printer_comms/` the process and wire. The device
-jinni (`bespok3d_jinni`, in the adapter repo) supplies only the concrete paths, restart commands,
-control scripts, and hardware specifics. That class tier is the JINNI's internal reuse; the daemon never
-sees it, it sees the socket.
+The daemon and the jinni are TWO separate apps that communicate over a Unix socket; they share NOTHING
+but the protocol. The daemon repo ships its orchestration (`core/`, `api/`) and the `protocol` package,
+and nothing else. The jinni runtime is its own app, `adapters/klipper-jinni/` (the `jinni` package: the
+generic `Jinni` base + the klipper tier `KlipperPrinterJinni` faceted one room per concern,
+`klippy`/`moonraker` comms, klipper health/probing, `KLIPPER_PATH_KEYS`, the port constants, the
+loader, and `service.py` / `__main__.py` / the `klipper_vocab` service-and-token vocabulary). A device
+adapter (`adapters/snapmaker-u1/`, `bespok3d_jinni`) extends it with concrete paths, restart commands,
+control scripts, and hardware specifics. The jinni imports `protocol` (the one allowed crossing); the
+daemon imports nothing of the jinni.
+
+The seam is `core/jinni_client`: it imports only `protocol` and reaches the jinni over the socket
+(`supervisor.py` spawns `python -m jinni`). For the in-process transport (dev / tests) the jinni is
+INJECTED, never imported, so the daemon process and its test suite are free of the jinni runtime. Each
+side has its own gate: `daemon/scripts/check.sh` (tests against duck-typed fakes that answer the
+protocol verbs), `adapters/klipper-jinni/scripts/check.sh` (the jinni alone, plus the daemon-with-jinni
+together tests under `tests/together/`), and `adapters/snapmaker-u1/scripts/check.sh`. The law is gated:
+`generic_daemon_guard.py` fails if any `core/` file imports `jinni.*`, or if the `protocol` contract
+defines a device-vocabulary string constant.
 
 Only the bespok3d-layout conventions stay in core (the `etc/init.d` autostart wiring and the `var/lib`
 data dir in `core/intent.py`), because they name the daemon's own `$BESPOK3D` tree, not a device. The
 daemon asks; the jinni answers.
 
-**OUTSTANDING (ADR-0037 not done): the Klipper jinni does not belong in the daemon repo.** The realm
-definition is absolute: the daemon's realm IS the bespok3d filesystem, and everything else, Klipper
-included, is the jinni's. The runtime boundary holds (the daemon process imports only the seam), but the
-daemon REPO still ships the generic Klipper jinni (`KlipperPrinterJinni` + the klipper facets,
-`klippy`/`moonraker` comms, klipper health/probing, the `KLIPPER_PATH_KEYS` and Moonraker/MQTT port
-constants), and `core/safety` still names `KLIPPER_SERVICE`/`MOONRAKER_SERVICE`. That is device knowledge
-living in the daemon, a violation. The fix (its own packet, owned by the next session): extract the
-generic Klipper jinni into a shared adapter-layer `klipper-jinni` library that device jinnis extend, and
-stop core naming any printer service, so the daemon repo carries the generic contract plus runtime only.
-Until then, ADR-0037 is open.
+**ADR-0037 realized (gate-green; not yet device-verified).** The two apps are separated, the executor's
+device actuation has moved behind the jinni's actuation verbs (the daemon mutates only its own
+`$BESPOK3D` tree), and a re-sweep finds no device token in `core`/`api`/`protocol` code beyond two
+documented keeps (`klipper_requirements.txt`, the ADR-0036 plugin-author file name, and
+`klipper_version`, an app-facing relay). Two follow-ups remain, both outside the Python gates:
+(1) DEPLOY: the daemon `.b3` ships `protocol` (not `jinni`), so the client's `uploadAdapterJinni` must
+deploy the `klipper-jinni` `jinni` package onto the device path alongside `bespok3d_jinni` (on the
+printer the daemon and jinni co-locate in one dir, so both import). (2) The patch path keeps the
+in-place write model (`fetch` + `write_files`) rather than ADR-0031's symlink-the-patched-copy; that
+conversion plus device verification of the moved actuation is a dedicated pass.
 
 ## The transport boundary: HTTP for commands, websockets for live state
 
@@ -166,9 +178,8 @@ core/                 install / recover / safety / intent / auth / capabilities 
   jinni_client/       the single seam to the jinni: the verbs, the socket transport, the supervisor
   live/               websocket push-on-change sources (install_progress, print_state, log_capture)
   safety/             attribution, fixers, decision, restart_batch: the self-heal family
-jinni/                the jinni as a parented PROCESS: the base/klipper tier faceted by concern
-                      (layout/realization/facts/probing/health, inspection, contracts), loader, plus
-                      protocol/service/printer_comms (the wire); device jinnis ship in the adapter repo
+protocol/             the ONE module the daemon and the jinni both import: contract dataclasses
+                      (contracts), the wire format (wire), the 0x03 framed transport (frame)
 S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
 wheels/               prebuilt offline runtime deps (pgpy)
@@ -179,21 +190,23 @@ doc/                  README + CHANGELOG (shipped in the .b3); this file + engin
 
 ## Decomposition (the concern-directory model)
 
-The daemon was reorganized from "split and jumbled" into directories named for their concern. One MAJOR
-ADR-0037 item is still outstanding (see "Where the device half lives now" in the central boundary above):
-the daemon repo still ships the generic Klipper jinni, which is device knowledge that does not belong in
-the daemon. The rule for new code is unchanged: land it in the right concern, not in a growing god file.
-Where the concern split landed (two small residual splits, `core/auth/` and `core/safety/fixers/`, are
-optional polish, both single files under the ceiling):
+The daemon was reorganized from "split and jumbled" into directories named for their concern. ADR-0037
+is realized (the jinni runtime lives in `adapters/klipper-jinni`, and the executor's device actuation
+moved behind the jinni's verbs); the rule for new code is unchanged: land it in the right concern, not
+in a growing god file, and never name a device fact in `core/`. Where the concern split landed (two
+small residual splits, `core/auth/` and `core/safety/fixers/`, are optional polish, both single files
+under the ceiling):
 
 - **`core/packages/` (from `core/packages.py`, 1441 lines).** The `__init__` keeps a thin public facade
   (the API the routes import) and owns the plugin root, injecting it into the worker modules; the rest
-  splits by concern: `errors`, `user_vars`, `placement` (the symlink/dir/mode family), `patches`,
-  `templates`, `services`, `installer` (the install/reconfigure/update-batch family + its shared phase
-  runner), `uninstaller` (the uninstall family), `lifecycle` (deactivate/teardown), `print_guard`,
-  `python_deps`, `archive`, `manifest`, `dependencies` (the dep graph and topo sort), `start_commands`
-  (run the start commands, defer core-service restarts to a batch off the jinni's `CommandEffect`),
-  `deactivation`, and `recovery` (pairs with `core/safety/`). The `__init__` is now essentially the
+  splits by concern: `errors`, `user_vars`, `placement` (resolves the symlink family for the jinni to
+  wire; dirs/modes), `patches` (fetch + patch a copy + write back via the jinni), `templates`,
+  `services`, `installer` (the install/reconfigure/update-batch family + its shared phase runner),
+  `uninstaller` (the uninstall family), `lifecycle` (deactivate/teardown; the include/config-dir unwire
+  is the jinni's), `print_guard`, `python_deps`, `archive`, `manifest`, `dependencies` (the dep graph
+  and topo sort), `start_commands` (resolve the start commands, defer core-service restarts to a batch
+  off the jinni's `CommandEffect`, run them via the jinni's `run_actions`), `deactivation`, and
+  `recovery` (pairs with `core/safety/`). The `__init__` is now essentially the
   facade: the four op wrappers plus `recover` (kept as facade wiring). Consolidate the duplicated
   deactivate/uninstall/guard helpers while extracting.
 - **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
@@ -227,10 +240,14 @@ optional polish, both single files under the ceiling):
   `probe_moonraker`) became `KlipperHealth` methods that assemble the boundary `DeviceHealth` /
   `ServiceHealth` report (`jinni/contracts.py`), with `MoonrakerInfo` an internal type in
   `jinni/health.py`; `core/safety/probe/` is deleted. The safety net asks for the report through the
-  seam, `jinni_client.health()` (ADR-0037), never an imported device object. What stays in
-  `core/safety/`: the brain (attribution / decision / fixers / net) plus `config_links.py` (the
-  dead-symlink self-heal on the bespok3d include dirs: `prune_dead_config_links` + `restart_moonraker`)
-  and `restart_batch.py` (the deferred-restart batch + verify cycle: `run_restart_batch`).
+  seam, `jinni_client.health()` (ADR-0037), never an imported device object. Reading and PARSING the
+  device's logs (which config section / import / file failed, and the user-facing tail) is device
+  knowledge and belongs to the jinni too: its `health()` report carries the structured failure
+  SIGNALS and the formatted `log_tails`. What stays in `core/safety/` is generic and names no
+  service: the daemon maps a jinni-reported failure signal to the culprit PLUGIN via its own
+  placement index (the bespok3d-filesystem record of which plugin placed which section/module/file),
+  decides to deactivate, and orchestrates the restart + re-verify (`decision`, `attribution`,
+  `fixers`, `restart_batch`). The daemon reads no device log and authors no Klipper/Moonraker text.
 - **`core/live/` DONE (absorbed `core/log_capture.py`).** The websocket push-on-change sources:
   `install_progress`, `print_state`, and `log_capture`. `print_state` stays device-free: `app_frame`
   shapes the jinni's blocked-action token set into the `/ws/print-state` frame, and the route

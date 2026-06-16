@@ -4,11 +4,10 @@ recovery-failure markers. Shared by the recovery safety net and the uninstall/te
 """
 
 import json
-import subprocess
 from pathlib import Path
 
+from .. import jinni_client
 from ..intent import normalize_install
-from ..shell import start_env
 from .manifest import manifest_at
 from .patches import restore_original_files
 from .placement import remove_plugin_symlinks
@@ -20,9 +19,12 @@ RECOVERY_FAILURE_MARKER = "recovery_failure.json"
 
 
 def run_stop_commands(cmds: list[str], vars: dict[str, str]) -> None:
-    env = start_env()
-    for cmd in cmds:
-        subprocess.run(expand(cmd, vars), shell=True, capture_output=True, check=False, env=env)
+    """Run a plugin's stop commands best-effort; the jinni executes them (ADR-0037), the daemon only
+    resolves and forwards. The outcome is ignored: a stop that fails (service already down) must not
+    block taking the plugin off the system."""
+    expanded = [expand(cmd, vars) for cmd in cmds]
+    if expanded:
+        jinni_client.run_actions(expanded)
 
 
 def clear_failure_markers(plugin_dir: Path) -> None:

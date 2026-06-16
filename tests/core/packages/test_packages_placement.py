@@ -1,8 +1,11 @@
-"""Placement (the symlink/dir/mode family) has a canonical home in core.packages.placement. These
-guard the stock-original backup/restore contract that lets teardown put the firmware back."""
+"""Placement in core.packages.placement: directories, file modes, and resolving the symlink family
+for the jinni to wire. The symlink IO and the stock-original backup/restore contract moved to the
+jinni's wiring facet (ADR-0037); these cover what the daemon still owns: dir/mode creation, the
+read-side ownership helpers, and that create_symlinks/remove delegate to the jinni's wire/unwire."""
 from pathlib import Path
 
 from core.packages import placement
+from tests.fakes import FakeKlipperJinni
 
 
 def test_create_dirs_expands_vars(tmp_path: Path) -> None:
@@ -17,34 +20,25 @@ def test_apply_modes_sets_file_mode(tmp_path: Path) -> None:
     assert (tmp_path / "run.sh").stat().st_mode & 0o777 == 0o755
 
 
-def test_symlink_install_backs_up_stock_original_and_restore_returns_it(tmp_path: Path) -> None:
+def test_create_symlinks_resolves_and_wires_through_the_jinni(
+    tmp_path: Path, device_jinni: FakeKlipperJinni,
+) -> None:
+    """The daemon resolves the (source, destination) and asks the jinni to wire it; the symlink
+    appears at the resolved destination."""
     plugin_dir = tmp_path / "plugin"
     (plugin_dir / "files").mkdir(parents=True)
     (plugin_dir / "files" / "new.cfg").write_text("plugin version\n")
     destination = tmp_path / "etc" / "thing.cfg"
-    destination.parent.mkdir()
-    destination.write_text("stock version\n")
     link = {"from": "files/new.cfg", "to": str(destination)}
 
-    placement.create_symlinks([link], plugin_dir, {})
+    phase = placement.create_symlinks([link], plugin_dir, {})
+
+    assert all(item["ok"] for item in phase["items"])
     assert destination.is_symlink()
-    backup = placement._symlink_backup_path(plugin_dir, destination)
-    assert backup.read_text() == "stock version\n"
+    assert destination.read_text() == "plugin version\n"
 
     placement.remove_plugin_symlinks([link], plugin_dir, {})
-    assert not destination.is_symlink()
-    assert destination.read_text() == "stock version\n"
-
-
-def test_replacing_a_symlink_does_not_capture_it_as_a_backup(tmp_path: Path) -> None:
-    plugin_dir = tmp_path / "plugin"
-    plugin_dir.mkdir()
-    destination = tmp_path / "link"
-    destination.symlink_to(tmp_path / "elsewhere")
-    backup = placement._symlink_backup_path(plugin_dir, destination)
-
-    placement.replace_with_symlink(tmp_path / "source", destination, backup)
-    assert not backup.exists()
+    assert not destination.exists()
 
 
 def test_points_into_true_when_symlink_resolves_into_target(tmp_path: Path) -> None:

@@ -13,7 +13,6 @@ from ...python_env import import_name
 from ...safety import FailureEvidence
 from ...safety.attribution import AttributionIndex, Placement
 from ...safety.attribution import build_index as build_attribution_index
-from ...safety.logs import read_log_tail
 from ..manifest import installed_manifest_dirs, manifest_at
 from ..python_deps import baked_top_level_names
 from ..user_vars import expand, load_user_vars
@@ -34,17 +33,11 @@ def _build_attribution_index(plugin_root: Path, vars: dict[str, str]) -> Attribu
     )
 
 
-def _log_tail(vars: dict[str, str], key: str) -> str:
-    path = vars.get(key)
-    return read_log_tail(Path(path)) if path else ""
-
-
 def gather_evidence(plugin_root: Path, vars: dict[str, str]) -> FailureEvidence:
-    """Probe the printer after a restart and build the attribution index: the data the brain judges.
-    The health report carries failed_components, so a reachable-but-broken component is caught."""
+    """Ask the jinni for the health verdict and build the attribution index: the data the brain
+    judges. The jinni's report carries the failed components AND the failure signals it read from
+    the device logs; the daemon opens no log, it only maps a signal to the plugin that placed it."""
     return FailureEvidence(
         health=jinni_client.health(),
-        klipper_log=_log_tail(vars, "KLIPPER_LOG"),
-        moonraker_log=_log_tail(vars, "MOONRAKER_LOG"),
         index=_build_attribution_index(plugin_root, vars),
     )

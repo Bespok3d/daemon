@@ -1,7 +1,8 @@
-"""The generic-daemon boundary guard: core/ reaches the jinni only through the seam.
+"""The generic-daemon boundary guard: no core/ code imports the jinni runtime (only the protocol
+crosses), and the protocol contract carries no device vocabulary.
 
-Driven end-to-end over a synthetic core/ tree so it exercises the real script: detection, the seam
-exemption, and the exit code the gate keys on.
+Driven end-to-end over a synthetic core/ tree so it exercises the real script: detection, the
+protocol exemption, the contract-purity check, and the exit code the gate keys on.
 """
 import subprocess
 import sys
@@ -36,18 +37,30 @@ def test_an_import_statement_reaching_the_jinni_is_flagged(tmp_path: Path) -> No
     assert result.returncode == 1
 
 
-def test_the_shared_contract_shapes_are_allowed(tmp_path: Path) -> None:
-    _write(tmp_path, "core/decision.py", "from jinni.contracts import MoonrakerInfo\n")
+def test_importing_the_protocol_is_allowed(tmp_path: Path) -> None:
+    _write(tmp_path, "core/decision.py", "from protocol import DeviceHealth\n")
     _write(tmp_path, "core/installer.py", "from core.intent import normalize_install\n")
     assert _run_guard(tmp_path).returncode == 0
 
 
-def test_the_seam_module_may_reach_the_jinni(tmp_path: Path) -> None:
-    _write(tmp_path, "core/jinni_client.py", "from jinni.loader import get_jinni\n")
-    assert _run_guard(tmp_path).returncode == 0
+def test_even_the_seam_may_not_import_the_jinni_runtime(tmp_path: Path) -> None:
+    # Only the protocol crosses: the seam talks to the jinni over the socket and injects its
+    # in-process jinni for tests; it never imports the jinni runtime either.
+    _write(tmp_path, "core/jinni_client/__init__.py", "from jinni.loader import get_jinni\n")
+    assert _run_guard(tmp_path).returncode == 1
 
 
-def test_the_seam_package_may_reach_the_jinni(tmp_path: Path) -> None:
-    source = "from jinni.klipper import KlipperPrinterJinni\n"
-    _write(tmp_path, "core/jinni_client/health.py", source)
+def test_a_device_string_constant_in_the_protocol_contract_is_flagged(tmp_path: Path) -> None:
+    _write(tmp_path, "protocol/contracts.py", 'KLIPPER_SERVICE = "klipper"\n')
+    result = _run_guard(tmp_path)
+    assert result.returncode == 1
+    assert "KLIPPER_SERVICE" in result.stdout
+
+
+def test_dataclass_shapes_in_the_protocol_contract_are_allowed(tmp_path: Path) -> None:
+    source = (
+        "from dataclasses import dataclass\n\n"
+        "@dataclass\nclass DeviceHealth:\n    diagnosis: str = \"\"\n"
+    )
+    _write(tmp_path, "protocol/contracts.py", source)
     assert _run_guard(tmp_path).returncode == 0

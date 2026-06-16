@@ -15,14 +15,14 @@ the receiving side; `blocked_actions` is a token set, sent as a sorted list. The
 `subscribe-blocked-actions` keeps the connection open and pushes a token-set frame on each change.
 """
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
-from .contracts import CommandEffect, DeviceHealth, ServiceHealth
-from .printer_comms import frame
+from . import frame
+from .decode import decode_result
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 HELLO = "hello"
 
 # The streaming verb: instead of one reply, the jinni keeps the connection open and pushes a frame
@@ -36,6 +36,9 @@ CONTRACT_VERBS = frozenset({
     "paths", "capabilities_report", "capability_flags",
     "placement_destination", "instrument_destination", "restart_command", "render_service_script",
     "classify_commands", "health", "blocked_actions",
+    "run_actions", "wire", "unwire",
+    "prune_dead_config_links", "remove_bespok3d_includes", "prune_bespok3d_config_dir",
+    "fetch", "write_files",
 })
 
 
@@ -51,35 +54,6 @@ def _to_json(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_to_json(item) for item in value]
     return value
-
-
-def _service_health(payload: dict) -> ServiceHealth:
-    return ServiceHealth(
-        ready=payload["ready"], detail=payload["detail"],
-        failed_components=tuple(payload["failed_components"]),
-        warnings=tuple(payload["warnings"]),
-    )
-
-
-def _device_health(payload: dict) -> DeviceHealth:
-    services = {name: _service_health(value) for name, value in payload["services"].items()}
-    return DeviceHealth(services=services, diagnosis=payload["diagnosis"])
-
-
-# Per-verb result decoders: rebuild the typed shape from its JSON form. A verb absent here returns a
-# JSON-native value (str / bool / dict / None) unchanged.
-_DECODERS: dict[str, Callable[[Any], Any]] = {
-    "health": _device_health,
-    "classify_commands": lambda payload: [CommandEffect(**effect) for effect in payload],
-    "blocked_actions": frozenset,
-    "capability_flags": set,
-}
-
-
-def _decode_result(verb: str, payload: Any) -> Any:
-    """Rebuild the typed shape a verb returns from its JSON form (strict output at the boundary)."""
-    decoder = _DECODERS.get(verb)
-    return decoder(payload) if decoder else payload
 
 
 def request_bytes(verb: str, args: list[Any]) -> bytes:
@@ -127,7 +101,7 @@ def parse_result(verb: str, raw: bytes | None) -> Any:
         raise ProtocolError(f"unreadable reply frame for {verb!r}: {exc}") from exc
     if not message.get("ok"):
         raise ProtocolError(message.get("error", "jinni reported an error"))
-    return _decode_result(verb, message.get("result"))
+    return decode_result(verb, message.get("result"))
 
 
 def call(socket_path: str, verb: str, args: list[Any], timeout: float = frame.DEFAULT_TIMEOUT_S) -> Any:  # noqa: E501

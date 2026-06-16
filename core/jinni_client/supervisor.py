@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from jinni import protocol
+import protocol
 
 from . import transport
 

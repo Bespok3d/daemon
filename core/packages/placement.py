@@ -1,18 +1,18 @@
-"""Placement: directories, file modes, and the symlink family.
+"""Placement: directories, file modes, and resolving the symlink family for the jinni to wire.
 
-A plugin integrates by symlink only (the isolation invariant). When a symlink would shadow a stock
-file or directory, the pristine original is moved into the plugin-owned `symlink_orig/` backup the
-first time, so teardown can restore the firmware exactly. A symlink or overlay whiteout in the way
-is just cleared, never saved.
+A plugin integrates by symlink only (the isolation invariant). The daemon resolves where each placed
+file belongs and asks the jinni to WIRE it: creating the device symlink, backing up any stock
+original, and recording the reversion is the jinni's actuation (ADR-0037). This module resolves the
+(source, destination) pairs from the manifest and the device paths, then delegates the IO. The
+stock-original backup contract that lets teardown restore the firmware lives with the actuation in
+the jinni (jinni/wiring.py).
 """
 
-import shutil
 from pathlib import Path
 
+from .. import jinni_client
 from ..results import item, phase
 from .user_vars import expand
-
-_SYMLINK_ORIG_DIR = "symlink_orig"
 
 
 def apply_modes(plugin_dir: Path, files: list[dict]) -> dict:
@@ -40,77 +40,33 @@ def create_dirs(dirs: list[str], vars: dict[str, str]) -> dict:
     return phase("dirs", "Directories", items)
 
 
-def _symlink_backup_path(plugin_dir: Path, destination: Path) -> Path:
-    key = destination.as_posix().strip("/").replace("/", "__") or "root"
-    return plugin_dir / _SYMLINK_ORIG_DIR / key
-
-
-def _clear_existing_destination(destination: Path) -> None:
-    if destination.is_symlink():
-        destination.unlink()
-        return
-    if destination.is_dir():
-        shutil.rmtree(destination)
-        return
-    if destination.exists():
-        destination.unlink()
-
-
-def _is_stock_original(path: Path) -> bool:
-    """A real dir/file (the stock original worth preserving), not a symlink or overlay whiteout."""
-    return (path.is_dir() or path.is_file()) and not path.is_symlink()
-
-
-def _displace_existing_destination(destination: Path, backup: Path) -> None:
-    """Make room for our symlink while preserving any stock original so teardown can restore it.
-    A real dir/file is MOVED to the plugin-owned backup the first time only (pristine original
-    wins over a regenerated copy); a symlink or overlay whiteout is just cleared, never saved."""
-    if not _is_stock_original(destination) or backup.exists():
-        _clear_existing_destination(destination)
-        return
-    backup.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(destination), str(backup))
-
-
-def replace_with_symlink(source: Path, destination: Path, backup: Path | None = None) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if backup is None:
-        _clear_existing_destination(destination)
-    else:
-        _displace_existing_destination(destination, backup)
-    destination.symlink_to(source)
-
-
-def _create_one_symlink(link: dict, plugin_dir: Path, vars: dict[str, str]) -> dict:
+def _resolved_link(
+    link: dict, plugin_dir: Path, vars: dict[str, str],
+) -> tuple[str, dict[str, str]]:
+    """The (label, wire request) for one manifest symlink: the source is the placed file in the
+    plugin tree, the destination the device path the daemon resolved from it."""
     source = (plugin_dir / link["from"]).resolve()
     destination = Path(expand(link["to"], vars))
-    backup = _symlink_backup_path(plugin_dir, destination)
-    label = f"{link['from']} → {destination}"
-    try:
-        replace_with_symlink(source, destination, backup)
-    except Exception as exc:
-        return item(f"{label}: {exc}", ok=False)
-    return item(label, ok=True)
+    return f"{link['from']} → {destination}", {"source": str(source), "destination": str(destination)}  # noqa: E501
 
 
 def create_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
-    items = [_create_one_symlink(link, plugin_dir, vars) for link in symlinks]
+    """Resolve each placed file's symlink and ask the jinni to wire it into the system. The jinni
+    creates the device symlink, backs up any stock original, and records the reversion; the daemon
+    pairs each result back to its label for the phase log."""
+    resolved = [_resolved_link(link, plugin_dir, vars) for link in symlinks]
+    results = jinni_client.wire(str(plugin_dir), [request for _label, request in resolved])
+    items = [item(label, ok=result.ok, output=result.output)
+             for (label, _request), result in zip(resolved, results)]
     return phase("symlinks", "Symlinks", items)
 
 
-def _restore_one_symlink(link: dict, plugin_dir: Path, vars: dict[str, str]) -> None:
-    destination = Path(expand(link["to"], vars))
-    backup = _symlink_backup_path(plugin_dir, destination)
-    if destination.is_symlink():
-        destination.unlink()
-    if backup.exists() and not destination.exists():
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(backup), str(destination))
-
-
 def remove_plugin_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> None:
-    for link in symlinks:
-        _restore_one_symlink(link, plugin_dir, vars)
+    """Resolve each symlink's destination and ask the jinni to unwire it (drop the symlink, restore
+    any backed-up stock original)."""
+    destinations = [str(Path(expand(link["to"], vars))) for link in symlinks]
+    if destinations:
+        jinni_client.unwire(str(plugin_dir), destinations)
 
 
 def points_into(link: Path, target_dir: Path) -> bool:
