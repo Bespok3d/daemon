@@ -1,9 +1,9 @@
-"""The plugin-install route: install a `.b3` and stream its progress.
+"""Single-plugin command routes: install (streaming), reconfigure, and uninstall.
 
-Install is the one command route with a live side channel: each phase is published to the
-install-progress hub as it finishes (so the app's /ws/install-progress feed shows it live), and the
-work runs off the event loop. The plain request/response package commands (reconfigure, recover,
-update-batch, uninstall) live in `packages.py`; this is kept apart because of the streaming concern.
+These act on ONE plugin and live under `/plugins/`; the pack/multi commands (recover, update-batch)
+live under `/packages/` in `packages.py`. Install is the one command route with a live side channel:
+each phase is published to the install-progress hub as it finishes (so the app's
+/ws/install-progress feed shows it live), and the work runs off the event loop.
 """
 import asyncio
 import json
@@ -14,7 +14,7 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile
 
 from core import jinni_client, packages
 
-from ..schemas import InstallResponse
+from ..schemas import InstallResponse, ReconfigureResponse, UninstallResponse
 from .feeds import install_hub
 
 router = APIRouter()
@@ -52,11 +52,11 @@ def _install_or_raise(
 
 
 @router.post(
-    "/packages/install",
+    "/plugins/install",
     response_model=InstallResponse,
-    summary="Install a plugin package",
+    summary="Install one plugin package",
 )
-async def install_package(
+async def install_plugin(
     file: UploadFile,
     vars_json: str = Form(""),
 ) -> InstallResponse:
@@ -83,3 +83,40 @@ async def install_package(
         raise
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+@router.post(
+    "/plugins/{plugin_id}/reconfigure",
+    response_model=ReconfigureResponse,
+    summary="Re-render one plugin's config from new values and restart it",
+)
+async def reconfigure_plugin(plugin_id: str, user_vars: dict[str, str]) -> ReconfigureResponse:
+    all_vars = {**jinni_client.paths(), **user_vars}
+    try:
+        packages.validate_user_vars(user_vars)
+        result_id, log = await asyncio.to_thread(packages.reconfigure, plugin_id, all_vars, user_vars)  # noqa: E501
+    except packages.BlockedActionError:
+        raise
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"{type(exc).__name__}: {exc}") from exc
+    return ReconfigureResponse(plugin_id=result_id, ok=True, log=log)
+
+
+@router.delete(
+    "/plugins/{plugin_id}",
+    response_model=UninstallResponse,
+    summary="Uninstall one plugin",
+)
+async def uninstall_plugin(plugin_id: str, cascade: bool = False) -> UninstallResponse:
+    try:
+        removed = await asyncio.to_thread(packages.uninstall, plugin_id, jinni_client.paths(), cascade)  # noqa: E501
+    except packages.DependentsError as exc:
+        detail = {"error": "dependents", "plugin_id": exc.plugin_id, "dependents": exc.dependents}
+        raise HTTPException(status_code=409, detail=detail) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return UninstallResponse(ok=True, removed=removed)

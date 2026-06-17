@@ -204,7 +204,8 @@ under the ceiling):
   (the API the routes import) and owns the plugin root, injecting it into the worker modules; the rest
   splits by concern: `errors`, `user_vars`, `placement` (resolves the symlink family for the jinni to
   wire; dirs/modes), `patches` (fetch + patch a copy + write back via the jinni), `templates`,
-  `services`, `installer` (the install/reconfigure/update-batch family + its shared phase runner),
+  `services`, `installer` (install + reconfigure + the shared `apply_install_deferred` phase runner),
+  `updater` (the batched multi-plugin update, which streams per-plugin and per-phase progress),
   `uninstaller` (the uninstall family), `lifecycle` (deactivate/teardown; the include/config-dir unwire
   is the jinni's), `print_guard`, `python_deps`, `archive`, `manifest`, `dependencies` (the dep graph
   and topo sort), `start_commands` (resolve the start commands, defer core-service restarts to a batch
@@ -214,9 +215,10 @@ under the ceiling):
   deactivate/uninstall/guard helpers while extracting.
 - **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
   core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck),
-  `feeds` (the three live websocket handlers and the `install_hub`), `packages` (install/reconfigure/
-  recover/update-batch/uninstall), `lifecycle` (deactivate/teardown), `access` (the request/grant/revoke
-  flow). `paths` holds the shared data-root constant. Handlers stay thin.
+  `feeds` (the three live websocket handlers and the `install_hub`), `plugins` (the single-plugin
+  commands under `/plugins/`: install/reconfigure/uninstall), `packages` (the pack commands under
+  `/packages/`: recover/update-batch), `lifecycle` (deactivate/teardown), `access` (the
+  request/grant/revoke flow). `paths` holds the shared data-root constant. Handlers stay thin.
 - **`core/auth/` (DEFERRED, optional). From `core/auth.py` (149 lines), under the ceiling.** When split,
   one security concern per file: keys, roles, labels, tokens, identity, and the request/grant/revoke cycle.
 - **`core/intent.py` DONE (ADR-0026, then ADR-0037).** It translates the intent-based install block

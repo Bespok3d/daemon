@@ -10,7 +10,7 @@ published. It runs on every operation that restarts a core service, not only rec
 from pathlib import Path
 
 from ... import jinni_client
-from ...results import item, phase
+from ...results import SERVICES_PLUGIN_ID, item, phase
 from ...safety import (
     Decision,
     FailureEvidence,
@@ -49,7 +49,7 @@ def _recovery_result(deactivated: list[str], decision: Decision,
         reason = decision.signal
     failure_log = failure.health.signals.log_tails
     log_item = item("captured service log for diagnosis", ok=ok, output=failure_log)
-    result = {"plugin_id": "(services)", "ok": ok, "skipped": False, "reason": reason,
+    result = {"plugin_id": SERVICES_PLUGIN_ID, "ok": ok, "skipped": False, "reason": reason,
               "failure_log": failure_log,
               "log": [phase("restart", "Restart services", [log_item])]}
     if deactivated:

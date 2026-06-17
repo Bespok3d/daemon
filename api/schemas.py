@@ -41,14 +41,12 @@ class PluginRecoveryResult(BaseModel):
     fix_detail: str = Field(default="", description="The log signal that attributed the failure")
 
 
-class RecoverResponse(BaseModel):
-    ok: bool = Field(description="True if all plugins recovered without hard failure")
-    results: list[PluginRecoveryResult] = Field(description="Per-plugin recovery results")
+class PackResultsResponse(BaseModel):
+    """The result of a pack operation (recover, update-batch, uninstall-batch): one entry per plugin
+    acted on, plus a final (services) entry for the single shared restart."""
 
-
-class UpdateBatchResponse(BaseModel):
-    ok: bool = Field(description="True if every plugin updated without hard failure")
-    results: list[PluginRecoveryResult] = Field(description="Per-plugin update results")
+    ok: bool = Field(description="True if every plugin in the batch succeeded without hard failure")
+    results: list[PluginRecoveryResult] = Field(description="Per-plugin results")
 
 
 class DeactivateResponse(BaseModel):

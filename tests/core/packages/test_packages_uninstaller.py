@@ -24,7 +24,7 @@ def test_removal_restart_commands_reads_manifests_and_dedupes_hooks(tmp_path: Pa
     _install_manifest(tmp_path, "alpha", ["klipper"])
     _install_manifest(tmp_path, "beta", ["klipper", "moonraker"])
 
-    commands = uninstaller._removal_restart_commands(tmp_path, ["alpha", "beta"], {})
+    commands = uninstaller.removal_restart_commands(tmp_path, ["alpha", "beta"], {})
 
     assert commands == [
         "/etc/init.d/S60klipper restart",
@@ -35,6 +35,6 @@ def test_removal_restart_commands_reads_manifests_and_dedupes_hooks(tmp_path: Pa
 def test_removal_restart_commands_skips_an_uninstalled_id(tmp_path: Path) -> None:
     _install_manifest(tmp_path, "alpha", ["moonraker"])
 
-    commands = uninstaller._removal_restart_commands(tmp_path, ["alpha", "ghost"], {})
+    commands = uninstaller.removal_restart_commands(tmp_path, ["alpha", "ghost"], {})
 
     assert commands == ["/etc/init.d/S61moonraker restart"]

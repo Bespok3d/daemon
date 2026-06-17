@@ -115,10 +115,10 @@ def _link_conflict(plugin_root: Path, label: str, owner: str, plugin_dir: Path, 
 
 
 def _site_link_precheck(plugin_root: Path, plugin_dir: Path, site_pkgs: Path, name: str) -> dict | None:  # noqa: E501
-    """A terminal item (refusal, or a same-version no-op) if we must not link, else None to link."""
+    """A terminal item if we must not link (a satisfied no-op or a refusal), else None to link."""
     module = python_env.import_name(name)
     if _already_importable(module):
-        return item(f"link {name}: refused, the base Python already provides {module!r}", ok=False)
+        return item(f"{name}: already provided by the system Python, not re-linked", ok=True)
     owner = symlink_owner(site_pkgs / name, plugin_root)
     if owner is not None and owner != plugin_dir.name:
         return _link_conflict(plugin_root, f"link {name}", owner, plugin_dir, name)

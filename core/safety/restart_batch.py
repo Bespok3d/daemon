@@ -10,7 +10,7 @@ giving up.
 from protocol import ServiceHealth
 
 from .. import jinni_client
-from ..results import MAX_OUTPUT_BYTES, item, phase
+from ..results import MAX_OUTPUT_BYTES, SERVICES_PLUGIN_ID, item, phase
 
 
 def _run_items(commands: list[str]) -> list[dict]:
@@ -65,5 +65,5 @@ def run_restart_batch(deferred_cmds: list[str]) -> dict:
         items.append(item("captured service log for diagnosis", ok=False, output=log_tails))
     restart_phase = phase("restart", "Restart services", items)
     reason = "" if restart_phase["ok"] else "a restarted service did not come back up"
-    return {"plugin_id": "(services)", "ok": restart_phase["ok"], "skipped": False,
+    return {"plugin_id": SERVICES_PLUGIN_ID, "ok": restart_phase["ok"], "skipped": False,
             "reason": reason, "log": [restart_phase]}

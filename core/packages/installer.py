@@ -1,11 +1,10 @@
-"""Install-shaped package operations: a fresh install, a config-only reconfigure, and a batched
-multi-plugin update.
+"""Install-shaped package operations: a fresh install and a config-only reconfigure.
 
-All three apply a plugin's install (modes, dirs, templates, service scripts, symlinks, patches,
-ownership, baked deps, start commands) through ONE shared phase runner. They differ only in how the
-core-service restart runs: install runs it immediately through the safety net and streams each phase
-live to a notify callback; reconfigure re-renders config and restarts; update_batch defers every
-restart so a batch runs them once at the end.
+Both apply a plugin's install (modes, dirs, templates, service scripts, symlinks, patches,
+ownership, baked deps, start commands) through ONE shared phase runner (`apply_install_deferred`,
+also used by the batched update in `updater.py`). They differ only in how the core-service restart
+runs: install runs it immediately through the safety net and streams each phase live to a notify
+callback; reconfigure re-renders config and restarts.
 
 The orchestrator (`core/packages/__init__.py`) owns the plugin root and passes it in, so these
 workers stay independent of where plugins live on disk.
@@ -17,17 +16,17 @@ from pathlib import Path
 
 from ..intent import normalize_install
 from ..results import item, phase
-from ..safety import OperationContext, OperationKind
-from .archive import fix_ownership, read_manifest, unpack_package
-from .deactivation import clear_failure_markers, finalize_install_outcome
+from ..safety import OperationKind
+from .archive import fix_ownership, unpack_package
+from .deactivation import finalize_install_outcome
 from .dependencies import installed_conflicts
 from .errors import ConflictError
 from .manifest import manifest_at
 from .patches import apply_patches
 from .placement import apply_modes, create_dirs, create_symlinks
-from .print_guard import guard_batch_no_print, guard_no_print_during_restart
+from .print_guard import guard_no_print_during_restart
 from .python_deps import provision_deps_phases
-from .recovery import op_context, restart_phases, restart_services
+from .recovery import op_context, restart_phases
 from .services import generate_service_scripts
 from .start_commands import run_plugin_start_commands
 from .templates import render_templates
@@ -47,7 +46,7 @@ def _emit(finished_phase: dict, notify: PhaseListener) -> dict:
     return finished_phase
 
 
-def _apply_install_deferred(
+def apply_install_deferred(
     plugin_root: Path,
     plugin_dir: Path,
     manifest: dict,
@@ -84,7 +83,7 @@ def _install_apply_phases(
     """Install's full phase run: apply the install live, then restart core services immediately
     through the safety net (a plugin that breaks Klipper/Moonraker is deactivated so the printer
     stays usable, the protection recover/OTA already had), announcing each restart phase live."""
-    phases, deferred = _apply_install_deferred(plugin_root, plugin_dir, manifest, full_vars, notify)
+    phases, deferred = apply_install_deferred(plugin_root, plugin_dir, manifest, full_vars, notify)
     ctx = op_context(OperationKind.INSTALL, manifest)
     phases.extend(_emit(restart_phase, notify) for restart_phase in restart_phases(plugin_root, deferred, full_vars, ctx))  # noqa: E501
     return phases
@@ -145,56 +144,3 @@ def run_reconfigure(
     ]
     phases.extend(restart_phases(plugin_root, deferred, full_vars, ctx))
     return plugin_id, phases
-
-
-def _update_one(
-    plugin_root: Path,
-    base_vars: dict[str, str],
-    package_path: Path,
-    user_vars: dict[str, str],
-) -> tuple[dict, list[str]]:
-    manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
-    plugin_id = manifest["name"]
-    full_vars = with_plugin_venv({**base_vars, **user_vars}, plugin_id)
-    persist_user_vars(plugin_dir, user_vars)
-    extract = phase("extract", "Unpack", [item(f"Extracted {file_count} files", ok=True)])
-    phases, deferred = _apply_install_deferred(plugin_root, plugin_dir, manifest, full_vars)
-    log = [extract, *phases]
-    ok = all(logged_phase["ok"] for logged_phase in log)
-    if ok:
-        clear_failure_markers(plugin_dir)
-    reason = "" if ok else "update phase failed"
-    result = {"plugin_id": plugin_id, "ok": ok, "skipped": False, "reason": reason, "log": log}
-    return result, (deferred if ok else [])
-
-
-def run_update_batch(
-    plugin_root: Path,
-    base_vars: dict[str, str],
-    package_paths: list[Path],
-    vars_by_id: dict[str, dict[str, str]],
-) -> list[dict]:
-    """Update several plugins, restarting affected services only once at the end.
-
-    Each package is unpacked and re-applied (templates, symlinks, patches, inline start commands);
-    init-script and nginx restarts are deferred, deduped, and run once, then Klipper and Moonraker
-    are awaited healthy. Mirrors recover's deferred-restart batching for the update path. Packages
-    are applied in the order given, so callers pass dependencies before their dependents.
-    """
-    if not package_paths:
-        return []
-    specs = [(package_path, read_manifest(package_path)) for package_path in package_paths]
-    guard_batch_no_print([manifest for _, manifest in specs])
-    results: list[dict] = []
-    deferred_restarts: list[str] = []
-    for package_path, manifest in specs:
-        user_vars = vars_by_id.get(manifest["name"], {})
-        result, deferred = _update_one(plugin_root, base_vars, package_path, user_vars)
-        results.append(result)
-        deferred_restarts.extend(deferred)
-    unique_restarts = list(dict.fromkeys(deferred_restarts))
-    if unique_restarts:
-        only = specs[0][1]["name"] if len(specs) == 1 else None
-        ctx = OperationContext(OperationKind.UPDATE, plugin_id=only)
-        results.append(restart_services(plugin_root, unique_restarts, base_vars, ctx))
-    return results

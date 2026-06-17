@@ -46,7 +46,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.7-dev"
+    assert body["version"] == "0.12.10-dev"
 
 
 async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClient) -> None:
@@ -195,7 +195,7 @@ async def test_install_route_returns_ok(
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "install", fake_install)
     response = await client.post(
-        "/packages/install",
+        "/plugins/install",
         files={"file": ("plugin.b3", _minimal_b3(), "application/octet-stream")},
         data={"vars_json": "{}"},
     )
@@ -209,7 +209,7 @@ async def test_install_route_returns_400_on_bad_vars(
 ) -> None:
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     response = await client.post(
-        "/packages/install",
+        "/plugins/install",
         files={"file": ("plugin.b3", b"", "application/octet-stream")},
         data={"vars_json": json.dumps({"NAME": "bad<value>"})},
     )
@@ -248,6 +248,7 @@ async def test_update_batch_route_returns_per_plugin_results(
 ) -> None:
     def fake_update_batch(
         _vars: dict[str, str], _paths: list[Path], _vars_by_id: dict[str, dict[str, str]],
+        _publish: object = None,
     ) -> list[dict]:
         return [
             {"plugin_id": "alpha", "ok": True, "skipped": False, "reason": "", "log": []},
@@ -291,7 +292,7 @@ async def test_uninstall_route_returns_ok(
 
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "uninstall", fake_uninstall)
-    response = await client.delete("/packages/my-plugin")
+    response = await client.delete("/plugins/my-plugin")
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert response.json()["removed"] == ["my-plugin"]
@@ -305,8 +306,47 @@ async def test_uninstall_route_returns_404_when_plugin_missing(
 
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "uninstall", raise_not_found)
-    response = await client.delete("/packages/missing-plugin")
+    response = await client.delete("/plugins/missing-plugin")
     assert response.status_code == 404
+
+
+async def test_uninstall_batch_route_returns_per_plugin_results(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_uninstall_batch(
+        _plugin_ids: list[str], _vars: dict[str, str], cascade: bool = False
+    ) -> list[dict]:
+        return [
+            {"plugin_id": "alpha", "ok": True, "skipped": False, "reason": "", "log": []},
+            {"plugin_id": "(services)", "ok": True, "skipped": False, "reason": "", "log": []},
+        ]
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "uninstall_batch", fake_uninstall_batch)
+    response = await client.post(
+        "/packages/uninstall-batch", json={"plugin_ids": ["alpha"], "cascade": False}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert [result["plugin_id"] for result in body["results"]] == ["alpha", "(services)"]
+
+
+async def test_uninstall_batch_route_returns_409_on_dependents(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def raise_dependents(_plugin_ids: list[str], _vars: dict[str, str], cascade: bool = False) -> None:  # noqa: E501
+        raise packages.DependentsError("rfid", ["spoolman"])
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "uninstall_batch", raise_dependents)
+    response = await client.post(
+        "/packages/uninstall-batch", json={"plugin_ids": ["rfid"], "cascade": False}
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "dependents"
+    assert detail["dependents"] == ["spoolman"]
 
 
 def _anon() -> httpx.AsyncClient:

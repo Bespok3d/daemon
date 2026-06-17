@@ -1,9 +1,10 @@
 """Package-operations facade.
 
 Re-exports the public package API the routes import and owns the plugin root, injecting it into the
-worker modules. The install-shaped operations live in `installer.py`, the uninstall family in
-`uninstaller.py`, and the deactivate/teardown lifecycle in `lifecycle.py`; recover still lives here
-pending its own decision (it currently stays as facade wiring, like the recover() precedent).
+worker modules. Install and reconfigure live in `installer.py`, the batched update in `updater.py`,
+the uninstall family in `uninstaller.py`, and the deactivate/teardown lifecycle in `lifecycle.py`;
+recover still lives here pending its own decision (it currently stays as facade wiring, like the
+recover() precedent).
 
 A .b3 package is a zip of manifest.json plus the plugin file tree. Signature verification is
 deferred until packages are signed.
@@ -13,6 +14,7 @@ import os
 from pathlib import Path
 
 from ..safety import OperationContext, OperationKind
+from .batch_uninstaller import run_uninstall_batch
 from .deactivation import DEACTIVATED_MARKER
 from .dependencies import provided_services, topo_sort
 from .errors import (
@@ -24,7 +26,6 @@ from .installer import (
     PhaseListener,  # noqa: F401  re-export for api.routes
     run_install,
     run_reconfigure,
-    run_update_batch,
 )
 from .lifecycle import (  # noqa: F401  re-export for api.routes
     deactivate_all,
@@ -34,6 +35,10 @@ from .manifest import manifest_at
 from .print_guard import guard_no_print
 from .recovery import recover_one, restart_services
 from .uninstaller import run_uninstall
+from .updater import (
+    ProgressSink,  # noqa: F401  re-export for api.routes
+    run_update_batch,
+)
 from .user_vars import (
     USER_VARS_FILE,  # noqa: F401  re-export for tests
     validate_user_vars,  # noqa: F401  re-export for api.routes
@@ -60,8 +65,9 @@ def update_batch(
     base_vars: dict[str, str],
     package_paths: list[Path],
     vars_by_id: dict[str, dict[str, str]],
+    publish: ProgressSink | None = None,
 ) -> list[dict]:
-    return run_update_batch(PLUGIN_ROOT, base_vars, package_paths, vars_by_id)
+    return run_update_batch(PLUGIN_ROOT, base_vars, package_paths, vars_by_id, publish)
 
 
 def recover(vars: dict[str, str]) -> list[dict]:
@@ -98,5 +104,11 @@ def recover(vars: dict[str, str]) -> list[dict]:
 
 def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> list[str]:
     return run_uninstall(PLUGIN_ROOT, plugin_id, vars, cascade)
+
+
+def uninstall_batch(
+    plugin_ids: list[str], vars: dict[str, str], cascade: bool = False
+) -> list[dict]:
+    return run_uninstall_batch(PLUGIN_ROOT, plugin_ids, vars, cascade)
 
 

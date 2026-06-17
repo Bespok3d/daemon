@@ -1,9 +1,8 @@
 {
   "pyCeiling": 150,
   "allowlist": {
-    "core/packages/installer.py": 200,
     "core/packages/python_deps.py": 176,
-    "api/schemas.py": 153
+    "api/schemas.py": 151
   },
-  "_note": "Per-file .py ceiling (150). The ratchet (scripts/size_ratchet.py) governs production source (core/api/protocol) and test INFRASTRUCTURE (conftest, fakes, fake_*); the test SUITES (test_*.py, append-only case collections) are out of scope. The allowlist holds reviewed, pre-existing exceptions FROZEN at their current count: a listed file may not grow, and a shrink must be banked by lowering its number (the ratchet click). A new or grown file over the ceiling fails: split it by concern, do not allowlist your own bloat. api/routes/packages.py was split (the streaming install route moved to install.py), dropping it under the ceiling; these three predate the ADR-0037 actuation move and are next in line to split by concern."
+  "_note": "Per-file .py ceiling (150). The ratchet (scripts/size_ratchet.py) governs production source (core/api/protocol) and test INFRASTRUCTURE (conftest, fakes, fake_*); the test SUITES (test_*.py, append-only case collections) are out of scope. The allowlist holds reviewed, pre-existing exceptions FROZEN at their current count: a listed file may not grow, and a shrink must be banked by lowering its number (the ratchet click). A new or grown file over the ceiling fails: split it by concern, do not allowlist your own bloat. core/packages/installer.py graduated under the ceiling when its batched update split out to updater.py (the live-progress work); the remaining two predate the ADR-0037 actuation move and are next in line to split by concern."
 }

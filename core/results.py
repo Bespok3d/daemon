@@ -6,6 +6,10 @@ from typing import Any
 
 MAX_OUTPUT_BYTES = 4096
 
+# The plugin_id a deferred core-service restart reports under: it is not a plugin, it is the one
+# shared restart step a batched op runs at the end. The app localizes this id in its results report.
+SERVICES_PLUGIN_ID = "(services)"
+
 
 def item(label: str, ok: bool, output: str = "") -> dict[str, Any]:
     return {"label": label, "ok": ok, "output": output}

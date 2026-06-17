@@ -45,10 +45,12 @@ def _remove_one(plugin_dir: Path, vars: dict[str, str]) -> None:
     shutil.rmtree(plugin_dir)
 
 
-def _remove_with_dependents(plugin_root: Path, plugin_id: str, vars: dict[str, str], removed: list[str]) -> None:  # noqa: E501
+def remove_with_dependents(plugin_root: Path, plugin_id: str, vars: dict[str, str], removed: list[str]) -> None:  # noqa: E501
+    """Remove a plugin and its installed dependents, dependents first, appending each removed id to
+    `removed` (which dedupes across calls). Public so the batch path reuses one removal walk."""
     for dependent in installed_dependents(plugin_root, plugin_id):
         if dependent not in removed:
-            _remove_with_dependents(plugin_root, dependent, vars, removed)
+            remove_with_dependents(plugin_root, dependent, vars, removed)
     plugin_dir = plugin_root / plugin_id
     if plugin_dir.exists() and plugin_id not in removed:
         _remove_one(plugin_dir, vars)
@@ -63,8 +65,10 @@ def _manifest_restart_commands(manifest: dict, vars: dict[str, str]) -> list[str
     return [expand(command, vars) for command in commands if command is not None]
 
 
-def _removal_restart_commands(plugin_root: Path, plugin_ids: list[str], vars: dict[str, str]) -> list[str]:  # noqa: E501
-    """The core-service restart hooks the plugins being removed declare, expanded and deduped."""
+def removal_restart_commands(plugin_root: Path, plugin_ids: list[str], vars: dict[str, str]) -> list[str]:  # noqa: E501
+    """The core-service restart hooks the plugins being removed declare, expanded and deduped.
+
+    Public so the batch path collects each plugin's restart hooks before any dir is gone."""
     commands: list[str] = []
     for plugin_id in plugin_ids:
         plugin_dir = plugin_root / plugin_id
@@ -83,7 +87,7 @@ def remove_all_plugins(plugin_root: Path, vars: dict[str, str]) -> list[str]:
     if not plugin_root.exists():
         return []
     plugin_ids = [plugin_dir.name for plugin_dir in plugin_root.iterdir() if plugin_dir.is_dir()]
-    restart_commands = _removal_restart_commands(plugin_root, plugin_ids, vars)
+    restart_commands = removal_restart_commands(plugin_root, plugin_ids, vars)
     for plugin_id in plugin_ids:
         try:
             _remove_one(plugin_root / plugin_id, vars)
@@ -104,9 +108,9 @@ def run_uninstall(plugin_root: Path, plugin_id: str, vars: dict[str, str], casca
     if dependents and not cascade:
         raise DependentsError(plugin_id, dependents)
     guard_no_print_for_removal(plugin_root, [plugin_id, *dependents])
-    restart_commands = _removal_restart_commands(plugin_root, [*dependents, plugin_id], vars)
+    restart_commands = removal_restart_commands(plugin_root, [*dependents, plugin_id], vars)
     removed: list[str] = []
-    _remove_with_dependents(plugin_root, plugin_id, vars, removed)
+    remove_with_dependents(plugin_root, plugin_id, vars, removed)
     if restart_commands:
         restart_services(plugin_root, restart_commands, vars, OperationContext(OperationKind.UNINSTALL, plugin_id))  # noqa: E501
     return removed

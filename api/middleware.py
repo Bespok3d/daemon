@@ -1,3 +1,4 @@
+import os
 from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -11,11 +12,17 @@ from core.auth import is_authorized_token
 _EXEMPT = frozenset({"/docs", "/redoc", "/openapi.json", "/access/request"})
 
 
+def _dev_open() -> bool:
+    """DEV ONLY: scripts/serve-local.sh sets BESPOK3D_DEV_OPEN=1 so the local Swagger run answers
+    with no token. A printer never sets it; tests never set it, so the 401 tests still pass."""
+    return os.environ.get("BESPOK3D_DEV_OPEN") == "1"
+
+
 class BearerTokenMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        if request.url.path in _EXEMPT:
+        if _dev_open() or request.url.path in _EXEMPT:
             return await call_next(request)
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):

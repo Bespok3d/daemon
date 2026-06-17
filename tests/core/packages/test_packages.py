@@ -1460,6 +1460,91 @@ def test_update_batch_defers_and_dedupes_restarts(tmp_path: Path, monkeypatch: M
     assert services["ok"] is True
 
 
+def test_update_batch_reports_progress(tmp_path: Path, monkeypatch: MP) -> None:
+    import subprocess as sp
+    import urllib.request as urlreq
+
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    alpha = make_package_file(tmp_path, "alpha", start=["echo a", "/etc/init.d/S60klipper restart"])
+    beta = make_package_file(tmp_path, "beta", start=["echo b", "/etc/init.d/S60klipper restart"])
+    monkeypatch.setattr(sp, "run", lambda *_a, **_kw: _FakeRunOk())
+    monkeypatch.setattr(urlreq, "urlopen", lambda *_a, **_kw: _FakeEmptyJsonResponse())
+
+    events: list[dict] = []
+    packages.update_batch({}, [alpha, beta], {}, publish=events.append)
+
+    starts = [
+        (event["plugin_id"], event["index"], event["total"])
+        for event in events if event["type"] == "plugin"
+    ]
+    assert starts == [("alpha", 0, 2), ("beta", 1, 2), ("(services)", 2, 2)]
+    extracts = [
+        event for event in events
+        if event["type"] == "phase" and event["phase"]["id"] == "extract"
+    ]
+    assert len(extracts) == 2
+
+
+def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) -> None:
+    """One plugin's failed phase must not sink the batch: it is deactivated (off the system, files
+    kept) while the others install. The install/recover safety net, now on the batch path too."""
+    from core.packages import updater
+
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    good = make_package_file(tmp_path, "good")
+    bad = make_package_file(tmp_path, "bad")
+    real_apply = updater.apply_install_deferred
+    failed = {"id": "patches", "label": "Patches", "ok": False,
+              "items": [{"label": "patch x", "ok": False, "output": "context mismatch"}]}
+
+    def apply(plugin_root_arg: Path, plugin_dir: Path, manifest: dict,
+              vars: dict[str, str], notify: object) -> tuple[list[dict], list[str]]:
+        if plugin_dir.name == "bad":
+            notify(failed)  # type: ignore[operator]
+            return [failed], []
+        return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(updater, "apply_install_deferred", apply)
+
+    results = packages.update_batch({}, [good, bad], {})
+
+    by_id = {entry["plugin_id"]: entry for entry in results}
+    assert by_id["good"]["ok"] is True
+    assert by_id["bad"]["ok"] is False
+    assert (plugin_root / "bad" / "deactivated.json").exists()
+    assert (plugin_root / "bad" / "manifest.json").exists()  # files kept for a fixed version
+
+
+def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> None:
+    """A plugin whose apply RAISES is contained like a failed phase: it is deactivated and the batch
+    still finishes for the rest, instead of a single fault aborting the whole POST."""
+    from core.packages import updater
+
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    good = make_package_file(tmp_path, "good")
+    boom = make_package_file(tmp_path, "boom")
+    real_apply = updater.apply_install_deferred
+
+    def flaky(plugin_root_arg: Path, plugin_dir: Path, manifest: dict,
+              vars: dict[str, str], notify: object) -> tuple[list[dict], list[str]]:
+        if plugin_dir.name == "boom":
+            raise RuntimeError("kaboom")
+        return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(updater, "apply_install_deferred", flaky)
+
+    results = packages.update_batch({}, [good, boom], {})
+
+    by_id = {entry["plugin_id"]: entry for entry in results}
+    assert by_id["good"]["ok"] is True
+    assert by_id["boom"]["ok"] is False
+    assert "kaboom" in by_id["boom"]["reason"]
+    assert (plugin_root / "boom" / "deactivated.json").exists()
+
+
 def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: MP) -> None:
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
@@ -1685,6 +1770,11 @@ def test_site_link_created_for_baked_top_level(tmp_path: Path, monkeypatch: MP) 
 
 
 def test_site_link_preserves_existing_base_package(tmp_path: Path, monkeypatch: MP) -> None:
+    """A baked dep the system Python already provides is left alone (we defer to the system copy, we
+    do not shadow it) AND that is a clean install, not a failure: the phase is ok and the plugin is
+    NOT deactivated. The moonraker-notify/apprise incident: certifi and idna are in the system
+    Python, so encoding the no-op as ok=False poisoned the phase and finalize deactivated a working
+    plugin."""
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     monkeypatch.setattr(python_deps, "_already_importable", lambda module: True)
     site_pkgs = tmp_path / "site-packages"
@@ -1695,7 +1785,9 @@ def test_site_link_preserves_existing_base_package(tmp_path: Path, monkeypatch: 
 
     assert not (site_pkgs / "humanize").exists()
     site_phase = next(phase for phase in log if phase["id"] == "site_packages")
-    assert site_phase["ok"] is False
+    assert site_phase["ok"] is True
+    assert all(phase["ok"] for phase in log)
+    assert not (tmp_path / "notifier" / "deactivated.json").exists()
 
 
 def test_site_link_conflict_refused_on_version_mismatch(tmp_path: Path, monkeypatch: MP) -> None:

@@ -42,6 +42,9 @@ sh scripts/pack.sh
 
 # Inspect the index atom that CI publishes (dry run, local download_url)
 node scripts/generate-atom.mjs
+
+# Browse the HTTP API locally: serves on http://localhost:4269/docs (dev mode, no auth, fake jinni)
+bash scripts/serve-local.sh
 ```
 
 `scripts/check.sh` pins Python 3.11 (the device runtime): it prefers a real `python3.11`, else
