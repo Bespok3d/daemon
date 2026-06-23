@@ -48,7 +48,11 @@ def _install_or_raise(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"{type(exc).__name__}: {exc}") from exc
     install_ok = all(logged_phase["ok"] for logged_phase in install_log)
-    return InstallResponse(plugin_id=plugin_id, ok=install_ok, log=install_log)
+    # model_validate coerces the executor's phase dicts into InstallLogPhase, keeping the strict
+    # typing at the API boundary without retyping core.results (which stays dict-based internally).
+    return InstallResponse.model_validate(
+        {"plugin_id": plugin_id, "ok": install_ok, "log": install_log}
+    )
 
 
 @router.post(
@@ -101,7 +105,7 @@ async def reconfigure_plugin(plugin_id: str, user_vars: dict[str, str]) -> Recon
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"{type(exc).__name__}: {exc}") from exc
-    return ReconfigureResponse(plugin_id=result_id, ok=True, log=log)
+    return ReconfigureResponse.model_validate({"plugin_id": result_id, "ok": True, "log": log})
 
 
 @router.delete(
