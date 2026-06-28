@@ -46,7 +46,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.10-dev"
+    assert body["version"] == "0.12.11-dev"
 
 
 async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClient) -> None:
@@ -282,6 +282,53 @@ async def test_update_batch_route_returns_400_on_bad_vars(
     )
     assert response.status_code == 400
     assert "allows only" in response.json()["detail"]
+
+
+async def test_install_batch_route_returns_per_plugin_results(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_install_batch(
+        _vars: dict[str, str], _paths: list[Path], _vars_by_id: dict[str, dict[str, str]],
+        _publish: object = None,
+    ) -> list[dict]:
+        return [
+            {"plugin_id": "camera", "ok": True, "skipped": False, "reason": "", "log": []},
+            {"plugin_id": "(services)", "ok": True, "skipped": False, "reason": "", "log": []},
+        ]
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "install_batch", fake_install_batch)
+    response = await client.post(
+        "/packages/install-batch",
+        files=[
+            ("files", ("camera.b3", _minimal_b3(), "application/octet-stream")),
+            ("files", ("screen.b3", _minimal_b3(), "application/octet-stream")),
+        ],
+        data={"vars_json": json.dumps({})},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert [result["plugin_id"] for result in body["results"]] == ["camera", "(services)"]
+
+
+async def test_install_batch_route_returns_409_on_conflict(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def raise_conflict(*_args: object, **_kwargs: object) -> list[dict]:
+        raise packages.ConflictError("force-bed-mesh", ["force-bed-mesh-adaptive"])
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "install_batch", raise_conflict)
+    response = await client.post(
+        "/packages/install-batch",
+        files=[("files", ("force-bed-mesh.b3", _minimal_b3(), "application/octet-stream"))],
+        data={"vars_json": json.dumps({})},
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "conflict"
+    assert detail["conflicts"] == ["force-bed-mesh-adaptive"]
 
 
 async def test_uninstall_route_returns_ok(

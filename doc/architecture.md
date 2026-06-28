@@ -164,8 +164,9 @@ Do not stream a command's result over a side channel, and do not poll for state 
   offline (its own venv) or symlinked into the target interpreter's site-packages (a Klipper/Moonraker
   extra), never installed live on the printer.
 - **Version single-source.** `version.py` `DAEMON_VERSION` is the source of truth. `manifest.json` mirrors
-  it (`pack.sh` enforces equality), and the app-side `EXPECTED_DAEMON_VERSION` plus `tests/api/test_api.py`
-  track it.
+  it (`pack.sh` enforces equality), and `tests/api/test_api.py` tracks it. The app derives its expected
+  version from `version.py` at build time (generated, not hand-mirrored), so there is no
+  `EXPECTED_DAEMON_VERSION` constant to keep in sync.
 - **Auth on every route** except the single unauthenticated `POST /access/request`. Token comparison is
   constant-time.
 

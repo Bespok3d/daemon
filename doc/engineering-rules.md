@@ -181,8 +181,10 @@ concern, so a reader has to hunt through unrelated code to find the part they ne
 
 - **Single source of truth across every boundary.** Any shape that crosses a boundary (app to daemon,
   TypeScript to Python, one process to another) is declared once and imported or generated, never
-  hand-mirrored. Where a mirror is unavoidable across languages (for example `DAEMON_VERSION` in
-  `version.py` and the app-side `EXPECTED_DAEMON_VERSION`), a test must fail when the two diverge.
+  hand-mirrored. The version is the worked example: `DAEMON_VERSION` in `version.py` is the source, and
+  the app derives its expected version from it at build time (generated, not hand-mirrored), so there is
+  nothing to drift. Where a mirror is genuinely unavoidable across languages, a test must fail when the
+  two diverge.
 
 - **Supporting files for low-value helpers.** Trivial one-line normalizers and adapters aid readability
   but add entropy in large, prominent, contributor-facing files. Relocate them into a context-chosen
@@ -273,7 +275,8 @@ build break, not a style note.
   unit test for pure logic, a fault-injection or integration test for wiring). The test fails on the old
   behavior and passes on the fix, in the same change.
 - **Versioning.** Bump `version.py` (`DAEMON_VERSION`) and `manifest.json` together (`pack.sh` refuses to
-  build if they disagree), and keep the app-side `EXPECTED_DAEMON_VERSION` and `tests/api/test_api.py` in sync.
+  build if they disagree), and update `tests/api/test_api.py`. The app's expected version is generated from
+  `version.py` at build time, so there is no `EXPECTED_DAEMON_VERSION` mirror to keep in sync.
 
 ---
 

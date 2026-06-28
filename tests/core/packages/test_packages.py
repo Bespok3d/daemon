@@ -1407,10 +1407,12 @@ class _FakeEmptyJsonResponse:
 
 def make_package_file(
     tmp_path: Path, name: str, start: list[str] | None = None, version: str = "0.2.0",
+    conflicts: list[str] | None = None,
 ) -> Path:
     manifest = json.dumps({
         "name": name,
         "version": version,
+        "conflicts": conflicts or [],
         "install": {"dirs": [], "symlinks": [], "patches": [], "start": start or []},
         "files": [],
     })
@@ -1489,13 +1491,13 @@ def test_update_batch_reports_progress(tmp_path: Path, monkeypatch: MP) -> None:
 def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) -> None:
     """One plugin's failed phase must not sink the batch: it is deactivated (off the system, files
     kept) while the others install. The install/recover safety net, now on the batch path too."""
-    from core.packages import updater
+    from core.packages import batch
 
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     good = make_package_file(tmp_path, "good")
     bad = make_package_file(tmp_path, "bad")
-    real_apply = updater.apply_install_deferred
+    real_apply = batch.apply_install_deferred
     failed = {"id": "patches", "label": "Patches", "ok": False,
               "items": [{"label": "patch x", "ok": False, "output": "context mismatch"}]}
 
@@ -1506,7 +1508,7 @@ def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) 
             return [failed], []
         return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(updater, "apply_install_deferred", apply)
+    monkeypatch.setattr(batch, "apply_install_deferred", apply)
 
     results = packages.update_batch({}, [good, bad], {})
 
@@ -1520,13 +1522,13 @@ def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) 
 def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> None:
     """A plugin whose apply RAISES is contained like a failed phase: it is deactivated and the batch
     still finishes for the rest, instead of a single fault aborting the whole POST."""
-    from core.packages import updater
+    from core.packages import batch
 
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     good = make_package_file(tmp_path, "good")
     boom = make_package_file(tmp_path, "boom")
-    real_apply = updater.apply_install_deferred
+    real_apply = batch.apply_install_deferred
 
     def flaky(plugin_root_arg: Path, plugin_dir: Path, manifest: dict,
               vars: dict[str, str], notify: object) -> tuple[list[dict], list[str]]:
@@ -1534,7 +1536,7 @@ def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> 
             raise RuntimeError("kaboom")
         return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(updater, "apply_install_deferred", flaky)
+    monkeypatch.setattr(batch, "apply_install_deferred", flaky)
 
     results = packages.update_batch({}, [good, boom], {})
 
@@ -1543,6 +1545,72 @@ def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> 
     assert by_id["boom"]["ok"] is False
     assert "kaboom" in by_id["boom"]["reason"]
     assert (plugin_root / "boom" / "deactivated.json").exists()
+
+
+def test_install_batch_empty_returns_empty(tmp_path: Path, monkeypatch: MP) -> None:
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path / "plugins")
+    assert packages.install_batch({}, [], {}) == []
+
+
+def test_install_batch_bounces_a_service_once(tmp_path: Path, monkeypatch: MP) -> None:
+    """Bug A: installing several plugins that each restart the same core service bounces it ONCE for
+    the batch, not once per plugin. On the U1 that service is the display compositor, so a one-shot
+    multi-install rolls the VOP2-wedge dice once instead of once per display plugin."""
+    import subprocess as sp
+    import urllib.request as urlreq
+
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    klipper_restart = "/etc/init.d/S60klipper restart"
+    camera = make_package_file(tmp_path, "camera", start=["echo cam", klipper_restart])
+    screen = make_package_file(tmp_path, "screen", start=["echo scr", klipper_restart])
+    ran: list[str] = []
+
+    def fake_run(cmd: object, **_kw: object) -> _FakeRunOk:
+        ran.append(cmd)  # type: ignore[arg-type]
+        return _FakeRunOk()
+
+    monkeypatch.setattr(sp, "run", fake_run)
+    monkeypatch.setattr(urlreq, "urlopen", lambda *_a, **_kw: _FakeEmptyJsonResponse())
+
+    results = packages.install_batch({}, [camera, screen], {})
+
+    assert (plugin_root / "camera" / "manifest.json").exists()
+    assert (plugin_root / "screen" / "manifest.json").exists()
+    assert ran.count(klipper_restart) == 1
+    services = next(result for result in results if result["plugin_id"] == "(services)")
+    assert services["ok"] is True
+
+
+def test_install_batch_rejects_conflicting_packages(tmp_path: Path, monkeypatch: MP) -> None:
+    """Installing two mutually-exclusive plugins together must be refused up front, the same gate a
+    one-at-a-time install enforces, before any package is unpacked."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    mesh = make_package_file(tmp_path, "force-bed-mesh", conflicts=["force-bed-mesh-adaptive"])
+    adaptive = make_package_file(tmp_path, "force-bed-mesh-adaptive", conflicts=["force-bed-mesh"])
+
+    with pytest.raises(packages.ConflictError):
+        packages.install_batch({}, [mesh, adaptive], {})
+
+    assert not (plugin_root / "force-bed-mesh").exists()
+    assert not (plugin_root / "force-bed-mesh-adaptive").exists()
+
+
+def test_install_batch_rejects_conflict_with_installed(tmp_path: Path, monkeypatch: MP) -> None:
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    incumbent = plugin_root / "incumbent"
+    incumbent.mkdir(parents=True)
+    (incumbent / "manifest.json").write_text(
+        json.dumps({"name": "incumbent", "version": "0.1.0", "conflicts": []})
+    )
+    challenger = make_package_file(tmp_path, "challenger", conflicts=["incumbent"])
+
+    with pytest.raises(packages.ConflictError):
+        packages.install_batch({}, [challenger], {})
+
+    assert not (plugin_root / "challenger").exists()
 
 
 def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: MP) -> None:
