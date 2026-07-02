@@ -96,7 +96,7 @@ def _sample_fixture() -> dict[str, Any]:
         "printer_uuid": "11111111-2222-3333-4444-555555555555",
     })
     plugin_config = PluginConfigResponse.model_validate(
-        {"vars": {"SPOOLMAN_SERVER": "10.6.9.248:8000"}}
+        {"vars": {"SPOOLMAN_SERVER": "http://spoolman.example:7912"}}
     )
     return {
         "install": install.model_dump(mode="json"),

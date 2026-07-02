@@ -389,10 +389,10 @@ async def test_plugin_config_returns_the_persisted_user_vars(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
-    _seed_installed_plugin(tmp_path, "spoolman", {"SPOOLMAN_SERVER": "10.6.9.248:8000"})
+    _seed_installed_plugin(tmp_path, "spoolman", {"SPOOLMAN_SERVER": "http://spoolman.example:7912"})
     response = await client.get("/plugins/spoolman/config")
     assert response.status_code == 200
-    assert response.json() == {"vars": {"SPOOLMAN_SERVER": "10.6.9.248:8000"}}
+    assert response.json() == {"vars": {"SPOOLMAN_SERVER": "http://spoolman.example:7912"}}
 
 
 async def test_plugin_config_is_empty_for_a_var_less_plugin(

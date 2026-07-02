@@ -148,7 +148,7 @@
   },
   "plugin_config": {
     "vars": {
-      "SPOOLMAN_SERVER": "10.6.9.248:8000"
+      "SPOOLMAN_SERVER": "http://spoolman.example:7912"
     }
   }
 }
