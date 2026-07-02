@@ -11,7 +11,7 @@ from starlette.websockets import WebSocketDisconnect
 from api import app
 from api.routes import feeds as routes_feeds
 from api.routes import health as routes_health
-from core import auth, jinni_client, packages
+from core import auth, jinni_client, packages, printer_identity
 
 
 class _MockAdapter:
@@ -46,7 +46,25 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.11-dev"
+    assert body["version"] == "0.12.12-dev"
+
+
+async def test_status_reports_the_persisted_printer_uuid(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    identity_path = tmp_path / "printer_uuid"
+    identity_path.write_text("11111111-2222-3333-4444-555555555555")
+    monkeypatch.setattr(printer_identity, "IDENTITY_PATH", identity_path)
+    response = await client.get("/status")
+    assert response.json()["printer_uuid"] == "11111111-2222-3333-4444-555555555555"
+
+
+async def test_status_printer_uuid_is_null_before_first_boot(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(printer_identity, "IDENTITY_PATH", tmp_path / "printer_uuid")
+    response = await client.get("/status")
+    assert response.json()["printer_uuid"] is None
 
 
 async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClient) -> None:
@@ -355,6 +373,49 @@ async def test_uninstall_route_returns_404_when_plugin_missing(
     monkeypatch.setattr(packages, "uninstall", raise_not_found)
     response = await client.delete("/plugins/missing-plugin")
     assert response.status_code == 404
+
+
+def _seed_installed_plugin(
+    plugin_root: Path, plugin_id: str, user_vars: dict[str, str] | None = None
+) -> None:
+    plugin_dir = plugin_root / plugin_id
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "manifest.json").write_text(json.dumps({"name": plugin_id}))
+    if user_vars:
+        (plugin_dir / packages.USER_VARS_FILE).write_text(json.dumps(user_vars))
+
+
+async def test_plugin_config_returns_the_persisted_user_vars(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    _seed_installed_plugin(tmp_path, "spoolman", {"SPOOLMAN_SERVER": "10.6.9.248:8000"})
+    response = await client.get("/plugins/spoolman/config")
+    assert response.status_code == 200
+    assert response.json() == {"vars": {"SPOOLMAN_SERVER": "10.6.9.248:8000"}}
+
+
+async def test_plugin_config_is_empty_for_a_var_less_plugin(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    _seed_installed_plugin(tmp_path, "cpu-temp")
+    response = await client.get("/plugins/cpu-temp/config")
+    assert response.status_code == 200
+    assert response.json() == {"vars": {}}
+
+
+async def test_plugin_config_returns_404_for_an_unknown_plugin(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    response = await client.get("/plugins/ghost/config")
+    assert response.status_code == 404
+
+
+async def test_plugin_config_requires_auth(unauthed_client: httpx.AsyncClient) -> None:
+    response = await unauthed_client.get("/plugins/spoolman/config")
+    assert response.status_code == 401
 
 
 async def test_uninstall_batch_route_returns_per_plugin_results(

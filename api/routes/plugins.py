@@ -1,4 +1,4 @@
-"""Single-plugin command routes: install (streaming), reconfigure, and uninstall.
+"""Single-plugin routes: install (streaming), reconfigure, uninstall, and the config read.
 
 These act on ONE plugin and live under `/plugins/`; the pack/multi commands (recover, update-batch)
 live under `/packages/` in `packages.py`. Install is the one command route with a live side channel:
@@ -14,7 +14,12 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile
 
 from core import jinni_client, packages
 
-from ..schemas import InstallResponse, ReconfigureResponse, UninstallResponse
+from ..schemas import (
+    InstallResponse,
+    PluginConfigResponse,
+    ReconfigureResponse,
+    UninstallResponse,
+)
 from .feeds import install_hub
 
 router = APIRouter()
@@ -106,6 +111,22 @@ async def reconfigure_plugin(plugin_id: str, user_vars: dict[str, str]) -> Recon
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"{type(exc).__name__}: {exc}") from exc
     return ReconfigureResponse.model_validate({"plugin_id": result_id, "ok": True, "log": log})
+
+
+@router.get(
+    "/plugins/{plugin_id}/config",
+    response_model=PluginConfigResponse,
+    summary="Read one plugin's persisted install-time user variables",
+    description=(
+        "Returns the user variables the plugin was installed or last reconfigured with, as "
+        "persisted next to the plugin on the printer. Empty for a plugin that took none."
+    ),
+)
+async def plugin_config(plugin_id: str) -> PluginConfigResponse:
+    plugin_dir = packages.PLUGIN_ROOT / plugin_id
+    if not plugin_dir.is_dir():
+        raise HTTPException(status_code=404, detail=plugin_id)
+    return PluginConfigResponse(vars=packages.load_user_vars(plugin_dir))
 
 
 @router.delete(

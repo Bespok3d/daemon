@@ -140,5 +140,15 @@
         "url": "http://{host}:7912"
       }
     ]
+  },
+  "status": {
+    "ok": true,
+    "version": "0.12.12-dev",
+    "printer_uuid": "11111111-2222-3333-4444-555555555555"
+  },
+  "plugin_config": {
+    "vars": {
+      "SPOOLMAN_SERVER": "10.6.9.248:8000"
+    }
   }
 }

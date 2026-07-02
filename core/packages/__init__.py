@@ -11,9 +11,9 @@ A .b3 package is a zip of manifest.json plus the plugin file tree. Signature ver
 deferred until packages are signed.
 """
 
-import os
 from pathlib import Path
 
+from ..data_root import DATA_ROOT
 from ..safety import OperationContext, OperationKind
 from .batch import ProgressSink  # noqa: F401  re-export for api.routes
 from .batch_uninstaller import run_uninstall_batch
@@ -41,11 +41,11 @@ from .uninstaller import run_uninstall
 from .updater import run_update_batch
 from .user_vars import (
     USER_VARS_FILE,  # noqa: F401  re-export for tests
+    load_user_vars,  # noqa: F401  re-export for api.routes
     validate_user_vars,  # noqa: F401  re-export for api.routes
 )
 
-_DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
-PLUGIN_ROOT = _DATA_ROOT / "usr/local/plugins"
+PLUGIN_ROOT = DATA_ROOT / "usr/local/plugins"
 
 
 def install(

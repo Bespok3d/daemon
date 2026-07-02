@@ -42,6 +42,13 @@ class UninstallResponse(BaseModel):
     )
 
 
+class PluginConfigResponse(BaseModel):
+    vars: dict[str, str] = Field(
+        default_factory=dict,
+        description="The plugin's persisted install-time user variables, empty if it took none",
+    )
+
+
 class PluginRecoveryResult(BaseModel):
     plugin_id: str = Field(description="Plugin that was recovered")
     ok: bool = Field(description="True if successfully recovered")

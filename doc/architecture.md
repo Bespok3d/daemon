@@ -217,9 +217,10 @@ under the ceiling):
 - **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
   core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck),
   `feeds` (the three live websocket handlers and the `install_hub`), `plugins` (the single-plugin
-  commands under `/plugins/`: install/reconfigure/uninstall), `packages` (the pack commands under
-  `/packages/`: recover/update-batch), `lifecycle` (deactivate/teardown), `access` (the
-  request/grant/revoke flow). `paths` holds the shared data-root constant. Handlers stay thin.
+  routes under `/plugins/`: install/reconfigure/uninstall plus the config read), `packages` (the pack
+  commands under `/packages/`: recover/update-batch), `lifecycle` (deactivate/teardown), `access` (the
+  request/grant/revoke flow). The shared data-root constant lives in `core/data_root.py` (the old
+  `routes/paths.py` retired into it). Handlers stay thin.
 - **`core/auth/` (DEFERRED, optional). From `core/auth.py` (149 lines), under the ceiling.** When split,
   one security concern per file: keys, roles, labels, tokens, identity, and the request/grant/revoke cycle.
 - **`core/intent.py` DONE (ADR-0026, then ADR-0037).** It translates the intent-based install block

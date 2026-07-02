@@ -20,15 +20,14 @@ it by appending it to the ACL. Mutations are read-modify-write so a grant never 
 
 import hmac
 import json
-import os
 import re
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-_DATA_ROOT = Path(os.environ.get("BESPOK3D_DATA_ROOT", "/userdata/bespok3d"))
-ACL_PATH = _DATA_ROOT / "auth/acl.json"
-PENDING_PATH = _DATA_ROOT / "auth/pending.json"
+from .data_root import DATA_ROOT
+
+ACL_PATH = DATA_ROOT / "auth/acl.json"
+PENDING_PATH = DATA_ROOT / "auth/pending.json"
 PENDING_CAP = 8
 
 # /access/request is unauthenticated, so its inputs are untrusted. Bound and charset-check them so a

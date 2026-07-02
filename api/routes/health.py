@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from core import jinni_client
 from core.capabilities import get_capabilities
+from core.printer_identity import stored_printer_uuid
 from core.selfcheck import run_selfcheck
 from version import DAEMON_VERSION
 
@@ -17,7 +18,9 @@ router = APIRouter()
 
 @router.get("/status", response_model=StatusResponse, summary="Daemon health check")
 async def status() -> StatusResponse:
-    return StatusResponse(ok=True, version=DAEMON_VERSION)
+    return StatusResponse(
+        ok=True, version=DAEMON_VERSION, printer_uuid=stored_printer_uuid(),
+    )
 
 
 @router.get(

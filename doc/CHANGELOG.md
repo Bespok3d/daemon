@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.12.12-dev
+
+The printer now has a stable identity, and a plugin's applied config is readable. Two additions for
+the app's printer-scoped plugin config work (alpha.31):
+
+- **Printer uuid.** At startup the daemon mints a uuid4 once and persists it at
+  `etc/daemon/printer_uuid` under the data root (survives OTA, never regenerated while a value
+  exists); `GET /status` now reports it as `printer_uuid` (null until a data root exists, so an old
+  record or a dev run degrades honestly). Every computer can key its per-printer state to the same
+  printer instead of its own app-local record id. New `core/printer_identity.py`.
+- **`GET /plugins/{plugin_id}/config`** returns `{"vars": {...}}`, the user variables persisted next
+  to the plugin at install/reconfigure time (empty for a var-less plugin, 404 for an unknown one).
+  This is the app's tier-1 truth source for the installed Config tab, replacing its global-map
+  re-derivation. Token-authed like every route.
+
+Housekeeping: the env-overridable data root (`BESPOK3D_DATA_ROOT`) was declared in four places; it
+is now the single `core/data_root.py` (`api/routes/paths.py` retired into it).
+
 ## 0.12.7-dev
 
 Multiple patch fragments targeting the same file now apply CUMULATIVELY. The ADR-0037 patch flow

@@ -23,8 +23,10 @@ from api.schemas import (
     CapabilitiesResponse,
     InstallResponse,
     PackResultsResponse,
+    PluginConfigResponse,
     PluginRecoveryResult,
     ReconfigureResponse,
+    StatusResponse,
 )
 
 FIXTURE_PATH = Path(__file__).parent / "contract_fixture.json"
@@ -86,11 +88,23 @@ def _sample_fixture() -> dict[str, Any]:
         {"plugin_id": "spoolman", "ok": True, "log": _sample_phases()}
     )
     recover = PackResultsResponse(ok=True, results=[_sample_recovery()])
+    # The version is a static representative value on purpose: the fixture pins SHAPE, and using the
+    # live DAEMON_VERSION would force a regen (and an app-side copy) on every routine bump.
+    status = StatusResponse.model_validate({
+        "ok": True,
+        "version": "0.12.12-dev",
+        "printer_uuid": "11111111-2222-3333-4444-555555555555",
+    })
+    plugin_config = PluginConfigResponse.model_validate(
+        {"vars": {"SPOOLMAN_SERVER": "10.6.9.248:8000"}}
+    )
     return {
         "install": install.model_dump(mode="json"),
         "reconfigure": reconfigure.model_dump(mode="json"),
         "recover": recover.model_dump(mode="json"),
         "capabilities": _sample_capabilities().model_dump(mode="json"),
+        "status": status.model_dump(mode="json"),
+        "plugin_config": plugin_config.model_dump(mode="json"),
     }
 
 

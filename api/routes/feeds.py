@@ -6,9 +6,8 @@ from pathlib import Path
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from core import auth, jinni_client, packages
+from core.data_root import DATA_ROOT
 from core.live import install_progress, log_capture, print_state
-
-from .paths import DATA_ROOT
 
 router = APIRouter()
 

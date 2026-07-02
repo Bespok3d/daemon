@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from core import auth
+from core.data_root import DATA_ROOT
 
 from ..schemas import (
     AccessActionResponse,
@@ -11,7 +12,6 @@ from ..schemas import (
     AccessRequestResponse,
     PendingClient,
 )
-from .paths import DATA_ROOT
 
 router = APIRouter()
 

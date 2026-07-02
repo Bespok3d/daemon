@@ -7,7 +7,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from core import jinni_client
+from core.data_root import DATA_ROOT
 from core.packages import BlockedActionError
+from core.printer_identity import ensure_printer_uuid
 
 from .middleware import BearerTokenMiddleware
 from .routes import router
@@ -18,6 +20,10 @@ _on_printer = _CERT_FILE.exists()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # The printer uuid is minted only where a persistent data root exists (a printer, the dev
+    # serve's temp root); a bare test run has nowhere durable to keep it, /status reports null.
+    if DATA_ROOT.is_dir():
+        await asyncio.to_thread(ensure_printer_uuid)
     # On the printer the daemon spawns and parents the jinni child, then talks to it over the socket
     # (ADR-0037); the child does its own startup scripts and background tasks. In dev the seam stays
     # in-process. The spawn blocks on the handshake, so it runs off the event loop.
