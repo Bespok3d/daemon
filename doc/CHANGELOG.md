@@ -18,6 +18,15 @@ the app's printer-scoped plugin config work (alpha.31):
 Housekeeping: the env-overridable data root (`BESPOK3D_DATA_ROOT`) was declared in four places; it
 is now the single `core/data_root.py` (`api/routes/paths.py` retired into it).
 
+## 0.12.11-dev
+
+Batch install and update were separated from the single-package path into their own modules: the batch
+route moved to `api/routes/batch.py` and its orchestration to `core/packages/batch.py` +
+`core/packages/installer_batch.py`, out of the packages route and the updater. A batch applies every
+package first and defers the service restarts to a single restart at the end, the same restart-storm
+protection a single install gets. This is the path the app's Collections "Install all" and "Update all"
+ride, so a whole set of plugins lands with one Klipper/Moonraker bounce instead of one per plugin.
+
 ## 0.12.7-dev
 
 Multiple patch fragments targeting the same file now apply CUMULATIVELY. The ADR-0037 patch flow
