@@ -50,6 +50,14 @@ def device_node_present(path: str) -> bool:
     return cast(bool, route("device_node_present", [path]))
 
 
+def classify_module_load(name: str) -> str:
+    """A machine token for why a kernel module failed to load (e.g. kernel-module:vermagic-mismatch
+    after an OTA kernel bump), or "" when the jinni sees no known cause. The daemon asks only after
+    a load reports failure; the jinni reads the device (the kernel ring buffer) and classifies, the
+    daemon relays the token and the app localizes it (ADR-0037)."""
+    return cast(str, route("classify_module_load", [name]))
+
+
 def capability_flags() -> set[str]:
     return cast(set[str], route("capability_flags", []))
 

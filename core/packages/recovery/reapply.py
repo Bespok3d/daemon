@@ -11,7 +11,13 @@ import json
 import shutil
 from pathlib import Path
 
-from ..deactivation import RECOVERY_FAILURE_MARKER, clear_failure_markers, deactivate_plugin
+from ...safety import OperationKind
+from ..deactivation import (
+    RECOVERY_FAILURE_MARKER,
+    clear_failure_markers,
+    deactivate_plugin,
+    load_failure_reason,
+)
 from ..dependencies import provided_services, required_services
 from ..user_vars import load_user_vars, missing_required_vars, with_plugin_venv
 
@@ -49,8 +55,8 @@ def recover_one(
         return _record_failure(plugin_dir, vars, f"recover error: {type(exc).__name__}: {exc}",
                                {"error": str(exc)}, []), []
     if not all(phase["ok"] for phase in phase_log):
-        return _record_failure(plugin_dir, vars, "install phase failed",
-                               {"phases": phase_log}, phase_log), []
+        reason = load_failure_reason(phase_log, OperationKind.RECOVER, plugin_id, "install phase failed")  # noqa: E501
+        return _record_failure(plugin_dir, vars, reason, {"phases": phase_log}, phase_log), []
 
     satisfied.update(provided_services(manifest))
     clear_failure_markers(plugin_dir)

@@ -14,9 +14,15 @@ class FailureEvidence:
     """A snapshot of the printer's state after a restart, plus the attribution index for blame. The
     device-health verdict (per-service readiness, failed components, the failure signals read from
     the device logs, the user-facing tail) is the jinni's `DeviceHealth`; the index, which plugin
-    placed what, is the daemon's own."""
+    placed what, is the daemon's own.
+
+    `module_diagnosis` is the jinni's token for a kernel-module load that failed in its own install
+    phase (never a core-service restart, so it does not surface in `health`): the OTA-kernel-bump
+    path fills it in and the kernel_module_failure fixer names the plugin from it. Empty on the
+    normal restart-health path."""
     health: DeviceHealth
     index: AttributionIndex
+    module_diagnosis: str = ""
 
 
 @dataclass

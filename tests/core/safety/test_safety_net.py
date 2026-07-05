@@ -11,6 +11,7 @@ from core.safety import (
     OperationContext,
     OperationKind,
     decide,
+    diagnose_module_failure,
     is_healthy,
 )
 from core.safety.decision import Decision
@@ -101,6 +102,43 @@ def test_decide_reports_a_device_infrastructure_outage_as_not_a_plugin() -> None
     assert decision.culprit is None
     assert decision.fixer == "device-infrastructure"
     assert decision.signal == "broker-down"
+
+
+def test_decide_blames_the_plugin_whose_kernel_module_failed_to_load() -> None:
+    # A kernel-module load fails in its own install phase (no service health), so the evidence
+    # carries only the jinni's classification token; the fixer names the plugin the op is applying
+    # and relays the token, unlike device-infrastructure it deactivates the plugin (its stale .ko).
+    evidence = FailureEvidence(
+        health=DeviceHealth(services={}),
+        index=AttributionIndex(by_path={}, by_module={}, by_section={}),
+        module_diagnosis="kernel-module:vermagic-mismatch",
+    )
+    decision = decide(evidence, _ctx("tun-module", OperationKind.RECOVER))
+    assert decision.culprit == "tun-module"
+    assert decision.fixer == "kernel-module-failure"
+    assert decision.signal == "kernel-module:vermagic-mismatch"
+
+
+def test_kernel_module_fixer_is_inert_on_the_restart_health_path() -> None:
+    # With no module_diagnosis (the normal core-service restart path), the new fixer never fires, so
+    # a broken restart still falls through to the existing attribution.
+    decision = decide(_evidence(klipper_reachable=False), _ctx("mystery"))
+    assert decision.fixer == "last-resort"
+
+
+def test_diagnose_module_failure_bridges_a_token_to_a_decision() -> None:
+    decision = diagnose_module_failure(
+        "kernel-module:vermagic-mismatch", _ctx("tun-module", OperationKind.RECOVER)
+    )
+    assert decision is not None
+    assert decision.culprit == "tun-module"
+    assert decision.signal == "kernel-module:vermagic-mismatch"
+
+
+def test_diagnose_module_failure_is_none_without_a_token() -> None:
+    # An empty token (a load that failed for no classified cause) leaves the caller its generic
+    # reason rather than inventing a kernel diagnosis.
+    assert diagnose_module_failure("", _ctx("tun-module", OperationKind.RECOVER)) is None
 
 
 def test_decide_last_resort_blames_the_operated_plugin() -> None:

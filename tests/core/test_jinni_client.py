@@ -54,7 +54,9 @@ def test_device_node_present_delegates(fake_jinni: FakeKlipperJinni, tmp_path: P
 def test_variant_facts_delegates(fake_jinni: FakeKlipperJinni) -> None:
     facts = jinni_client.variant_facts()
     assert facts == fake_jinni.variant_facts()
-    assert set(facts) == {"adapter", "firmware_version", "arch", "board_class", "kernel_release"}
+    assert set(facts) == {
+        "adapter", "firmware_version", "arch", "board_class", "kernel_release", "vermagic"
+    }
 
 
 def test_health_delegates_to_the_loaded_jinni(fake_jinni: FakeKlipperJinni) -> None:

@@ -29,6 +29,7 @@ from .verbs import (
     capabilities_report,
     capability_flags,
     classify_commands,
+    classify_module_load,
     device_node_present,
     fetch,
     health,
@@ -45,7 +46,7 @@ from .verbs import (
 __all__ = [
     "default_socket_path", "start_jinni", "stop_jinni", "use_in_process", "use_socket",
     "placement_destination", "instrument_destination", "restart_command", "render_service_script",
-    "render_module_script", "device_node_present",
+    "render_module_script", "device_node_present", "classify_module_load",
     "capability_flags", "variant_facts", "classify_commands", "paths", "capabilities_report",
     "health", "blocked_actions", "subscribe_blocked_actions", "run_actions", "wire", "unwire",
     "prune_dead_config_links", "remove_bespok3d_includes", "prune_bespok3d_config_dir",

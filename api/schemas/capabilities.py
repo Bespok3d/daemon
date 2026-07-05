@@ -8,6 +8,17 @@ class Endpoint(BaseModel):
     url: str = Field(description="Resolved URL with a {host} placeholder the app fills in")
 
 
+class KernelInfo(BaseModel):
+    """The running kernel's identity, read from a loaded module via modinfo: the ground truth a
+    kernel-module plugin builds a .ko against. Both fields are 'unknown' on a box reporting none."""
+
+    release: str = Field(default="unknown", description="Kernel release (e.g. 6.1.99)")
+    vermagic: str = Field(
+        default="unknown",
+        description="Version magic the kernel checks at insmod (release plus ABI config flags)",
+    )
+
+
 class CapabilitiesResponse(BaseModel):
     adapter: str = Field(description="Adapter ID identifying the printer model")
     hardware: list[str] = Field(description="Hardware capabilities of this printer")
@@ -24,6 +35,10 @@ class CapabilitiesResponse(BaseModel):
     board_class: str = Field(
         default="unknown",
         description="Board resource tier: 'standard', 'constrained' (memory-starved), or 'unknown'",
+    )
+    kernel: KernelInfo = Field(
+        default_factory=KernelInfo,
+        description="Running kernel release + version magic (modinfo ground truth for a .ko build)",
     )
     klipper_version: str = Field(
         default="unknown",

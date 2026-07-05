@@ -14,6 +14,7 @@ from protocol import ServiceHealth
 
 from .context import OperationContext
 from .decision import Decision, FailureEvidence
+from .kernel_fixer import kernel_module_failure
 
 Fixer = Callable[[FailureEvidence, OperationContext, list[str]], Decision | None]
 
@@ -136,6 +137,7 @@ def default_chain() -> list[Fixer]:
         component_failure,
         placement_failure,
         device_infrastructure,
+        kernel_module_failure,
         last_resort_target,
         catch_all,
     ]

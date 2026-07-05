@@ -16,10 +16,12 @@ Public surface:
 from .attribution import AttributionIndex, Placement, attribute, build_index
 from .context import OperationContext, OperationKind
 from .decision import Decision, FailureEvidence, is_healthy
+from .module_diagnosis import diagnose_module_failure
 from .net import decide
 
 __all__ = [
     "decide",
+    "diagnose_module_failure",
     "is_healthy",
     "OperationContext",
     "OperationKind",

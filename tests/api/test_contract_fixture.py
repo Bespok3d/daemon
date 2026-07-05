@@ -73,6 +73,7 @@ def _sample_capabilities() -> CapabilitiesResponse:
         "firmware_version": "1.4.1",
         "arch": "aarch64",
         "board_class": "standard",
+        "kernel": {"release": "6.1.99", "vermagic": "6.1.99 SMP preempt mod_unload aarch64"},
         "klipper_version": "0.12.0",
         "jinni_version": "0.1.1",
         "capability_flags": ["overlay", "managed-service"],

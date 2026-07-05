@@ -84,12 +84,17 @@ class FakeKlipperJinni:
     def device_node_present(self, path: str) -> bool:
         return Path(path).exists()
 
+    def classify_module_load(self, name: str) -> str:
+        """No known cause by default; a suite proving the vermagic-mismatch path overrides this."""
+        return ""
+
     def capability_flags(self) -> set[str]:
         return {"overlay", "managed-service"}
 
     def variant_facts(self) -> dict[str, str]:
-        return {"adapter": self.id, "firmware_version": "unknown",
-                "arch": "aarch64", "board_class": "standard", "kernel_release": "6.1.99"}
+        return {"adapter": self.id, "firmware_version": "unknown", "arch": "aarch64",
+                "board_class": "standard", "kernel_release": "6.1.99",
+                "vermagic": "6.1.99 SMP preempt mod_unload aarch64"}
 
     def startup_control_scripts(self, paths: dict[str, str]) -> list:
         return []
@@ -120,8 +125,10 @@ class FakeKlipperJinni:
         yield self.blocked_actions()
 
     def capabilities(self) -> dict:
+        magic = "6.1.99 SMP preempt mod_unload aarch64"
         return {"adapter": self.id, "hardware": [], "installed": {}, "deactivated": [],
                 "firmware_version": "unknown", "arch": "aarch64", "board_class": "standard",
+                "kernel": {"release": "6.1.99", "vermagic": magic},
                 "jinni_version": "fake", "capability_flags": [],
                 "preferred_registries": [], "endpoints": [], "klipper_version": "0.0-fake"}
 

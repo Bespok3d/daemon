@@ -46,7 +46,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.15-dev"
+    assert body["version"] == "0.12.16-dev"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -77,6 +77,7 @@ async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClien
     assert "installed" in body
     assert "arch" in body
     assert "board_class" in body
+    assert body["kernel"] == {"release": "6.1.99", "vermagic": "6.1.99 SMP preempt mod_unload aarch64"}  # noqa: E501
     assert "klipper_version" in body
     assert "preferred_registries" in body
     assert "endpoints" in body

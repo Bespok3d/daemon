@@ -7,7 +7,7 @@ import pytest
 
 from core import jinni_client, packages
 from core.packages import dependencies, python_deps
-from protocol import DeviceHealth, ServiceHealth
+from protocol import ActionResult, DeviceHealth, ServiceHealth
 from tests.fakes import FakeKlipperJinni
 
 MP = pytest.MonkeyPatch
@@ -1934,3 +1934,99 @@ def test_klipper_extra_with_deps_lifecycle(tmp_path: Path, monkeypatch: MP) -> N
 
     packages.uninstall("print-time-human", setup["vars"])
     assert not setup["plugin_dir"].exists()
+
+
+class _KernelModulesJinni(FakeKlipperJinni):
+    def capability_flags(self) -> set[str]:
+        return {"overlay", "managed-service", "kernel-modules"}
+
+
+class _StaleKoJinni(_KernelModulesJinni):
+    """The OTA-kernel-bump case: the placed tun.ko no longer matches the running kernel, so the s05
+    loader's insmod fails and the jinni classifies it a version-magic mismatch."""
+
+    def run_actions(self, commands: list[str]) -> list[ActionResult]:
+        return [ActionResult(ok="s05tun" not in command, output="") for command in commands]
+
+    def classify_module_load(self, name: str) -> str:
+        return "kernel-module:vermagic-mismatch" if name == "tun" else ""
+
+
+def _install_tun_module(plugin_dir: Path) -> None:
+    ko = plugin_dir / "files/modules/tun-6.1.99.ko"
+    ko.parent.mkdir(parents=True)
+    ko.write_bytes(b"\x7fELF fake ko")
+    manifest = {
+        "name": "tun-module", "version": "0.1.0",
+        "provides": [{"service": "tun"}], "require": [],
+        "requires": {"capabilities": ["kernel-modules"], "variables": []},
+        "install": {
+            "place": [{
+                "class": "kernel-module", "name": "tun.ko",
+                "variants": [
+                    {"when": {"kernel_release": "6.1.99"}, "src": "files/modules/tun-6.1.99.ko"}
+                ],
+            }],
+            "kmodule": [{
+                "name": "tun", "module": "tun.ko",
+                "device_nodes": ["/dev/net/tun c 10 200"], "autoload": True,
+            }],
+        },
+        "files": [],
+    }
+    (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+
+
+def _install_vpn_dependent(plugin_dir: Path) -> None:
+    plugin_dir.mkdir(parents=True)
+    manifest = {
+        "name": "zerotier", "version": "0.1.0",
+        "provides": [], "require": [{"service": "tun"}],
+        "install": {"dirs": [], "symlinks": [], "patches": [], "start": []},
+        "files": [],
+    }
+    (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+
+
+def test_recover_deactivates_a_stale_kernel_module_and_skips_its_dependents(
+    tmp_path: Path, monkeypatch: MP
+) -> None:
+    # Acceptance (VPN/kernel-module relay row 5): after an OTA kernel bump the placed tun.ko version
+    # magic no longer matches, so recover re-runs variant selection, the load fails, and the base
+    # module is deactivated (files kept, deactivated.json carries the jinni's token) while its VPN
+    # dependent is skipped, the printer never left broken.
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _StaleKoJinni)
+    _install_tun_module(tmp_path / "tun-module")
+    _install_vpn_dependent(tmp_path / "zerotier")
+
+    results = packages.recover({"BESPOK3D": str(tmp_path)})
+
+    by_id = {result["plugin_id"]: result for result in results}
+    assert by_id["tun-module"]["ok"] is False
+    assert by_id["tun-module"]["reason"] == "kernel-module:vermagic-mismatch"
+    marker = json.loads((tmp_path / "tun-module" / "deactivated.json").read_text())
+    assert marker["reason"] == "kernel-module:vermagic-mismatch"
+    assert (tmp_path / "tun-module" / "manifest.json").exists()  # files kept for a fixed version
+    assert by_id["zerotier"]["skipped"] is True
+    assert "tun" in by_id["zerotier"]["reason"]
+
+
+def test_recover_reloads_a_matching_variant_kernel_module(tmp_path: Path, monkeypatch: MP) -> None:
+    # The other half of the acceptance: a recover where the placed .ko matches the running kernel
+    # loads cleanly, so the base module and its dependent both come back.
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+
+    class _MatchingKoJinni(_KernelModulesJinni):
+        def run_actions(self, commands: list[str]) -> list[ActionResult]:
+            return [ActionResult(ok=True, output="OK") for _ in commands]
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MatchingKoJinni)
+    _install_tun_module(tmp_path / "tun-module")
+    _install_vpn_dependent(tmp_path / "zerotier")
+
+    results = packages.recover({"BESPOK3D": str(tmp_path)})
+
+    by_id = {result["plugin_id"]: result for result in results}
+    assert by_id["tun-module"]["ok"] is True
+    assert by_id["zerotier"]["ok"] is True

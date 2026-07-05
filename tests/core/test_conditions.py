@@ -39,6 +39,30 @@ def test_kernel_release_condition_matches_only_the_running_kernel() -> None:
     assert conditions.matches({"kernel_release": "6.1.99"}, _U1_FACTS) is False
 
 
+def test_vermagic_condition_matches_only_the_exact_version_magic() -> None:
+    # The finer key: two kernels can share a release but differ in ABI-affecting config flags, so a
+    # .ko variant can pin the exact version magic the kernel checks at insmod.
+    junior = {**_U1_FACTS, "vermagic": "6.1.99 SMP preempt mod_unload aarch64"}
+    assert conditions.matches({"vermagic": "6.1.99 SMP preempt mod_unload aarch64"}, junior) is True
+    assert conditions.matches({"vermagic": "6.1.99 SMP preempt aarch64"}, junior) is False
+    assert conditions.matches({"vermagic": "6.1.99 SMP preempt mod_unload aarch64"}, _U1_FACTS) is False  # noqa: E501
+
+
+def test_ko_variant_selected_by_vermagic_over_a_release_fallback() -> None:
+    variants: list[dict] = [
+        {"when": {"vermagic": "6.1.99 SMP preempt mod_unload aarch64"}, "src": "files/tun-exact.ko"},  # noqa: E501
+        {"when": {"kernel_release": "6.1.99"}, "src": "files/tun-release.ko"},
+    ]
+    exact = {**_U1_FACTS, "kernel_release": "6.1.99",
+             "vermagic": "6.1.99 SMP preempt mod_unload aarch64"}
+    exact_variant = conditions.select_variant(variants, exact)
+    assert exact_variant is not None and exact_variant["src"] == "files/tun-exact.ko"
+    # a kernel that shares the release but not the exact magic falls through to the release variant
+    release_only = {**_U1_FACTS, "kernel_release": "6.1.99", "vermagic": "6.1.99 SMP aarch64"}
+    release_variant = conditions.select_variant(variants, release_only)
+    assert release_variant is not None and release_variant["src"] == "files/tun-release.ko"
+
+
 def test_ko_variant_is_skipped_when_no_kernel_matches() -> None:
     tun_place = {
         "class": "kernel-module", "name": "tun.ko",

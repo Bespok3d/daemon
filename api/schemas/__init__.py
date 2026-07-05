@@ -12,7 +12,7 @@ from .access import (
     AccessRequestResponse,
     PendingClient,
 )
-from .capabilities import CapabilitiesResponse, Endpoint
+from .capabilities import CapabilitiesResponse, Endpoint, KernelInfo
 from .health import StatusResponse
 from .lifecycle import DeactivateResponse, TeardownResponse
 from .packages import (
@@ -40,6 +40,7 @@ __all__ = [
     "InstallLogItem",
     "InstallLogPhase",
     "InstallResponse",
+    "KernelInfo",
     "PackResultsResponse",
     "PendingClient",
     "PluginConfigResponse",

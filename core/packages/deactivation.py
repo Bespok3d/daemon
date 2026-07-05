@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .. import jinni_client
 from ..intent import normalize_install
+from ..safety import OperationContext, OperationKind, diagnose_module_failure
 from .manifest import manifest_at
 from .patches import restore_original_files
 from .placement import remove_plugin_symlinks
@@ -16,6 +17,26 @@ from .user_vars import expand, load_user_vars
 
 DEACTIVATED_MARKER = "deactivated.json"
 RECOVERY_FAILURE_MARKER = "recovery_failure.json"
+_KMODULE_LOAD_PHASE = "kmodule-load"
+
+
+def _kmodule_load_diagnosis(phase_log: list[dict]) -> str:
+    """The jinni token a failed kernel-module load tagged onto its phase, or "" if none failed."""
+    for logged_phase in phase_log:
+        if logged_phase.get("id") == _KMODULE_LOAD_PHASE and not logged_phase["ok"]:
+            return str(logged_phase.get("diagnosis", ""))
+    return ""
+
+
+def load_failure_reason(
+    phase_log: list[dict], kind: OperationKind, plugin_id: str, fallback: str
+) -> str:
+    """The deactivation reason for a failed install/recover phase run: the jinni's kernel-module
+    token when a module load failed with a known cause (so the app localizes e.g. a vermagic
+    mismatch after an OTA kernel bump), else the generic fallback."""
+    ctx = OperationContext(kind=kind, plugin_id=plugin_id)
+    decision = diagnose_module_failure(_kmodule_load_diagnosis(phase_log), ctx)
+    return decision.signal if decision else fallback
 
 
 def run_stop_commands(cmds: list[str], vars: dict[str, str]) -> None:
@@ -64,4 +85,6 @@ def finalize_install_outcome(plugin_dir: Path, vars: dict[str, str], log: list[d
         return
     if (plugin_dir / DEACTIVATED_MARKER).exists():
         return
-    deactivate_plugin(plugin_dir, vars, "install failed: a required phase did not apply")
+    reason = load_failure_reason(log, OperationKind.INSTALL, plugin_dir.name,
+                                 "install failed: a required phase did not apply")
+    deactivate_plugin(plugin_dir, vars, reason)

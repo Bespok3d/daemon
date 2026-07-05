@@ -9,9 +9,9 @@ matches). It names no device fact of its own and does no IO, so it is unit teste
 `jinni_client.variant_facts()`.
 
 The dimension set is small and closed on purpose. `kernel_release` (a `.ko` built per running
-kernel) is one exact dimension; the richer `vermagic` capability is packet 5. An unknown dimension
-fails closed, so a manifest authored for a dimension an older daemon does not know is skipped,
-never mis-selected.
+kernel) is one exact dimension; `vermagic` is the finer one for a module whose ABI differs between
+two kernels that share a release. An unknown dimension fails closed, so a manifest authored for a
+dimension an older daemon does not know is skipped, never mis-selected.
 """
 
 # The install sections whose entries may carry `variants`: a payload file (`place`) or a carried
@@ -20,9 +20,11 @@ never mis-selected.
 _VARIANT_SECTIONS = ("place", "instrument")
 
 # The dimensions matched by exact string equality against the same-named fact. `kernel_release` is
-# the running kernel's `uname -r`, which a cross-built `.ko` variant must match. Range dimensions
-# (fw_min / fw_max) are handled apart, since they compare a version rather than test equality.
-_EXACT_DIMENSIONS = frozenset({"adapter", "arch", "board_class", "kernel_release"})
+# the running kernel's `uname -r`, which a cross-built `.ko` variant must match; `vermagic` is the
+# exact version-magic string the kernel checks at insmod (release plus ABI-affecting config flags),
+# the finer key for a `.ko`. Range dimensions (fw_min / fw_max) are handled apart, since they
+# compare a version rather than test equality.
+_EXACT_DIMENSIONS = frozenset({"adapter", "arch", "board_class", "kernel_release", "vermagic"})
 
 
 def matches(condition: dict, facts: dict[str, str]) -> bool:

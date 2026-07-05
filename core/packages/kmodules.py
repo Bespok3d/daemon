@@ -14,6 +14,8 @@ the printer is never left with a half-loaded module.
 
 from pathlib import Path
 
+from protocol import ActionResult
+
 from .. import jinni_client
 from ..autostart import kmodule_script_name
 from ..results import item, phase
@@ -21,6 +23,7 @@ from .init_scripts import write_init_script
 from .user_vars import expand
 
 _CAPABILITY_FLAG = "kernel-modules"
+_LOAD_PHASE_ID = "kmodule-load"
 
 
 def _write_one_loader(kmodule: dict, plugin_dir: Path, vars: dict[str, str], flags: set[str]) -> dict:  # noqa: E501
@@ -40,11 +43,38 @@ def generate_module_loaders(kmodules: list[dict], plugin_dir: Path, vars: dict[s
     return phase("kmodules", "Kernel module loaders", items)
 
 
-def load_modules(loads: list[str], vars: dict[str, str]) -> dict:
+def load_modules(loads: list[str], names: list[str], vars: dict[str, str]) -> dict:
     """Run each module-load command now (the jinni mknods the device nodes and insmods the module).
-    Immediate, not deferred: a module must be loaded before the services that depend on it."""
+    Immediate, not deferred: a module must be loaded before the services that depend on it. `names`
+    is the in-kernel name per load command (parallel to `loads`), so a failed load can be classified
+    by the jinni; a `diagnosis` token tags the failed phase for the install/recover safety net."""
     expanded = [expand(command, vars) for command in loads]
     results = jinni_client.run_actions(expanded)
     items = [item(command, ok=result.ok, output=result.output)
              for command, result in zip(expanded, results)]
-    return phase("kmodule-load", "Load kernel modules", items)
+    loaded = phase(_LOAD_PHASE_ID, "Load kernel modules", items)
+    diagnosis = _classify_failure(names, results)
+    if diagnosis:
+        loaded["diagnosis"] = diagnosis
+    return loaded
+
+
+def _classify_failure(names: list[str], results: list[ActionResult]) -> str:
+    """The jinni's token for the first module whose load failed with a known cause (a version-magic
+    mismatch), or "" when none. Asked only on failure: a clean load reports nothing to classify."""
+    for name, result in zip(names, results):
+        if not result.ok:
+            token = _classify_one(name)
+            if token:
+                return token
+    return ""
+
+
+def _classify_one(name: str) -> str:
+    """Best-effort: classification is a diagnosis nicety, so a dead-jinni round-trip degrades to no
+    token (the plugin still deactivates with the generic reason), never a raised install that would
+    abort a single install before its safety net deactivates the half-applied plugin."""
+    try:
+        return jinni_client.classify_module_load(name)
+    except Exception:  # noqa: BLE001 - diagnosis is best-effort; never abort the deactivation path
+        return ""

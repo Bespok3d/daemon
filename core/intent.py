@@ -115,6 +115,10 @@ def normalize_install(install: dict, facts: dict[str, str] | None = None) -> dic
     module_symlinks, module_loads, module_unloads = autostart_additions(
         resolved.get("kmodule", []), kmodule_ops
     )
+    # Parallel to module_loads: autostart_additions emits one load per autoload kmodule, in order,
+    # so filtering the same list the same way gives the in-kernel name for each load command, which
+    # the load-failure classifier keys on.
+    module_load_names = [entry["name"] for entry in resolved.get("kmodule", []) if entry.get("autoload")]  # noqa: E501
     data_dirs = [DATA_DIR_TEMPLATE.format(name=name) for name in resolved.get("data", [])]
     patches = [_instrument_op(entry) for entry in resolved.get("instrument", [])]
     restart_commands = _restart_commands(resolved.get("restart", []))
@@ -128,4 +132,5 @@ def normalize_install(install: dict, facts: dict[str, str] | None = None) -> dic
         "start": [*resolved.get("start", []), *service_starts, *restart_commands],
         "stops": [*service_stops, *module_unloads],
         "module_loads": module_loads,
+        "module_load_names": module_load_names,
     }

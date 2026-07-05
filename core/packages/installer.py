@@ -69,7 +69,7 @@ def apply_install_deferred(
         _emit(create_symlinks(inst["symlinks"], plugin_dir, vars), notify),
         _emit(apply_patches(inst["patches"], plugin_dir, vars), notify),
         _emit(fix_ownership(plugin_dir, vars.get("RUNTIME_USER", "")), notify),
-        _emit(load_modules(inst["module_loads"], vars), notify),
+        _emit(load_modules(inst["module_loads"], inst["module_load_names"], vars), notify),
     ]
     phases.extend(_emit(dep_phase, notify) for dep_phase in provision_deps_phases(plugin_root, plugin_dir, vars))  # noqa: E501
     start_phase, deferred = run_plugin_start_commands(inst["start"], vars)
