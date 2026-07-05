@@ -33,8 +33,9 @@ SUBSCRIBE_BLOCKED_ACTIONS = "subscribe-blocked-actions"
 # methods of the same name on the loaded jinni. A verb outside this set is refused.
 CONTRACT_VERBS = frozenset({
     HELLO, SUBSCRIBE_BLOCKED_ACTIONS,
-    "paths", "capabilities_report", "capability_flags",
+    "paths", "capabilities_report", "capability_flags", "variant_facts",
     "placement_destination", "instrument_destination", "restart_command", "render_service_script",
+    "render_module_script", "device_node_present",
     "classify_commands", "health", "blocked_actions",
     "run_actions", "wire", "unwire",
     "prune_dead_config_links", "remove_bespok3d_includes", "prune_bespok3d_config_dir",

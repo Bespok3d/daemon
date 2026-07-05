@@ -26,7 +26,8 @@ def test_apply_install_deferred_runs_every_phase_and_defers_the_restart(tmp_path
     phases, deferred = installer.apply_install_deferred(tmp_path, plugin_dir, manifest, {})
 
     assert [phase["id"] for phase in phases] == [
-        "modes", "dirs", "templates", "services", "symlinks", "patches", "ownership", "start",
+        "modes", "dirs", "templates", "services", "kmodules", "symlinks", "patches", "ownership",
+        "kmodule-load", "start",
     ]
     assert deferred == []
 

@@ -13,6 +13,15 @@ test overrides), `verbs` (the typed contract surface), `supervisor` (the jinni c
 from . import (
     dispatch,  # noqa: F401  exposes jinni_client.dispatch.get_jinni as the test injection point
 )
+from .actuation import (
+    prune_bespok3d_config_dir,
+    prune_dead_config_links,
+    remove_bespok3d_includes,
+    run_actions,
+    unwire,
+    wire,
+    write_files,
+)
 from .supervisor import default_socket_path, start_jinni, stop_jinni
 from .transport import use_in_process, use_socket
 from .verbs import (
@@ -20,28 +29,25 @@ from .verbs import (
     capabilities_report,
     capability_flags,
     classify_commands,
+    device_node_present,
     fetch,
     health,
     instrument_destination,
     paths,
     placement_destination,
-    prune_bespok3d_config_dir,
-    prune_dead_config_links,
-    remove_bespok3d_includes,
+    render_module_script,
     render_service_script,
     restart_command,
-    run_actions,
     subscribe_blocked_actions,
-    unwire,
-    wire,
-    write_files,
+    variant_facts,
 )
 
 __all__ = [
     "default_socket_path", "start_jinni", "stop_jinni", "use_in_process", "use_socket",
     "placement_destination", "instrument_destination", "restart_command", "render_service_script",
-    "capability_flags", "classify_commands", "paths", "capabilities_report", "health",
-    "blocked_actions", "subscribe_blocked_actions", "run_actions", "wire", "unwire",
+    "render_module_script", "device_node_present",
+    "capability_flags", "variant_facts", "classify_commands", "paths", "capabilities_report",
+    "health", "blocked_actions", "subscribe_blocked_actions", "run_actions", "wire", "unwire",
     "prune_dead_config_links", "remove_bespok3d_includes", "prune_bespok3d_config_dir",
     "fetch", "write_files",
 ]

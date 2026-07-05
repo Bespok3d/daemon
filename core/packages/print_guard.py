@@ -22,6 +22,8 @@ def _required_tokens(manifest: dict) -> frozenset[str]:
     # services' stop hooks, and the teardown `stop` list (where a display-owning plugin like
     # camera-hw-accel declares the display restart its own init script performs). The jinni tags
     # each with the blocked-action token it would trigger; None means it touches no gated service.
+    # No facts: these commands come from `service`/`restart`, which carry no variants, so variant
+    # resolution cannot change the token set the guard checks.
     ops = normalize_install(manifest.get("install", {}))
     commands = [*ops["start"], *ops["stops"], *manifest.get("stop", [])]
     return frozenset(

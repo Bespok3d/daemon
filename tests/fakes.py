@@ -78,8 +78,18 @@ class FakeKlipperJinni:
     def render_service_script(self, service: dict, paths: dict[str, str]) -> str:
         return f"#gen {service['name']} {service['command']}"
 
+    def render_module_script(self, kmodule: dict, paths: dict[str, str]) -> str:
+        return f"#kmod {kmodule['name']} {kmodule['module']}"
+
+    def device_node_present(self, path: str) -> bool:
+        return Path(path).exists()
+
     def capability_flags(self) -> set[str]:
         return {"overlay", "managed-service"}
+
+    def variant_facts(self) -> dict[str, str]:
+        return {"adapter": self.id, "firmware_version": "unknown",
+                "arch": "aarch64", "board_class": "standard", "kernel_release": "6.1.99"}
 
     def startup_control_scripts(self, paths: dict[str, str]) -> list:
         return []
@@ -111,39 +121,9 @@ class FakeKlipperJinni:
 
     def capabilities(self) -> dict:
         return {"adapter": self.id, "hardware": [], "installed": {}, "deactivated": [],
-                "firmware_version": "unknown", "jinni_version": "fake", "capability_flags": [],
+                "firmware_version": "unknown", "arch": "aarch64", "board_class": "standard",
+                "jinni_version": "fake", "capability_flags": [],
                 "preferred_registries": [], "endpoints": [], "klipper_version": "0.0-fake"}
 
     def version(self) -> str:
         return "fake"
-
-
-class FakeGenericJinni(FakeKlipperJinni):
-    """A generic box: the bespok3d-layout placement classes only, no klipper services, vacuously
-    healthy. The daemon's generic install path is tested against this, exactly as the loader's
-    generic fallback would answer over the socket."""
-    id = "fake-generic"
-
-    def placement_destination(self, destination_class: str, name: str) -> str:
-        if destination_class not in ("system-bin", "web-location"):
-            raise ValueError(f"unsupported destination class: {destination_class}")
-        return fake_vocab.PLACEMENTS[destination_class].format(name=name)
-
-    def classify_commands(self, commands: list[str]) -> list[CommandEffect]:
-        return [CommandEffect(deferrable=False, restarts_services=(), blocking_token=None)
-                for _ in commands]
-
-    def restart_command(self, hook: str) -> str | None:
-        return None
-
-    def capability_flags(self) -> set[str]:
-        return set()
-
-    def health(self) -> DeviceHealth:
-        return DeviceHealth(services={})
-
-    def capabilities(self) -> dict:
-        report = super().capabilities()
-        report.update(adapter=self.id, capability_flags=[])
-        report.pop("klipper_version")
-        return report

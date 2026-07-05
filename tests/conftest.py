@@ -15,7 +15,7 @@ def in_process_jinni(monkeypatch: pytest.MonkeyPatch) -> None:
     real jinni answers over the wire. The default is a generic box; a suite that needs a device
     jinni overrides `jinni_client.dispatch.get_jinni` itself (e.g. tests/core/conftest)."""
     from core import jinni_client
-    from tests.fakes import FakeGenericJinni
+    from tests.fakes_generic import FakeGenericJinni
     fake = FakeGenericJinni()
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", lambda: fake)
 

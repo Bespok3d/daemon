@@ -38,7 +38,7 @@ def neutralize_plugin(plugin_dir: Path, vars: dict[str, str]) -> None:
     linked libs and venv. Files in the plugin dir stay, so recover/reactivate can rebuild it."""
     manifest = manifest_at(plugin_dir)
     full_vars = {**vars, **load_user_vars(plugin_dir)}
-    ops = normalize_install(manifest.get("install", {}))
+    ops = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
     run_stop_commands(ops["stops"] + manifest.get("stop", []), full_vars)
     remove_plugin_symlinks(ops["symlinks"], plugin_dir, full_vars)
     restore_original_files(ops["patches"], plugin_dir / "patches_orig", full_vars)

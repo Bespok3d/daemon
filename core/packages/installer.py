@@ -14,6 +14,7 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
+from .. import jinni_client
 from ..intent import normalize_install
 from ..results import item, phase
 from ..safety import OperationKind
@@ -21,6 +22,7 @@ from .archive import fix_ownership, unpack_package
 from .deactivation import finalize_install_outcome
 from .dependencies import installed_conflicts
 from .errors import ConflictError
+from .kmodules import generate_module_loaders, load_modules
 from .manifest import manifest_at
 from .patches import apply_patches
 from .placement import apply_modes, create_dirs, create_symlinks
@@ -57,15 +59,17 @@ def apply_install_deferred(
     restart by returning its commands for the caller to run. Shared by install (live, restart now)
     and update_batch (silent, restart batched)."""
     raw_inst = manifest.get("install", {})
-    inst = normalize_install(raw_inst)
+    inst = normalize_install(raw_inst, jinni_client.variant_facts())
     phases = [
         _emit(apply_modes(plugin_dir, manifest.get("files", [])), notify),
         _emit(create_dirs(inst["dirs"], vars), notify),
         _emit(render_templates(inst["templates"], plugin_dir, vars), notify),
         _emit(generate_service_scripts(raw_inst.get("service", []), plugin_dir, vars), notify),
+        _emit(generate_module_loaders(raw_inst.get("kmodule", []), plugin_dir, vars), notify),
         _emit(create_symlinks(inst["symlinks"], plugin_dir, vars), notify),
         _emit(apply_patches(inst["patches"], plugin_dir, vars), notify),
         _emit(fix_ownership(plugin_dir, vars.get("RUNTIME_USER", "")), notify),
+        _emit(load_modules(inst["module_loads"], vars), notify),
     ]
     phases.extend(_emit(dep_phase, notify) for dep_phase in provision_deps_phases(plugin_root, plugin_dir, vars))  # noqa: E501
     start_phase, deferred = run_plugin_start_commands(inst["start"], vars)
@@ -133,7 +137,7 @@ def run_reconfigure(
     guard_no_print_during_restart(manifest)
 
     full_vars = with_plugin_venv(vars, plugin_id)
-    inst = normalize_install(manifest.get("install", {}))
+    inst = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
     persist_user_vars(plugin_dir, user_vars)
     start_phase, deferred = run_plugin_start_commands(inst.get("start", []), full_vars)
     ctx = op_context(OperationKind.RECONFIGURE, manifest)

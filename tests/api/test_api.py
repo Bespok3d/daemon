@@ -46,7 +46,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.12-dev"
+    assert body["version"] == "0.12.15-dev"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -75,6 +75,8 @@ async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClien
     assert "adapter" in body
     assert "hardware" in body
     assert "installed" in body
+    assert "arch" in body
+    assert "board_class" in body
     assert "klipper_version" in body
     assert "preferred_registries" in body
     assert "endpoints" in body

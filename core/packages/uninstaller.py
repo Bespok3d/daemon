@@ -30,7 +30,7 @@ from .user_vars import expand, load_user_vars
 
 def _uninstall_from_manifest(plugin_dir: Path, vars: dict[str, str]) -> None:
     manifest = manifest_at(plugin_dir)
-    install_spec = normalize_install(manifest.get("install", {}))
+    install_spec = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
     full_vars = {**vars, **load_user_vars(plugin_dir)}
     run_stop_commands(install_spec["stops"] + manifest.get("stop", []), full_vars)
     remove_plugin_symlinks(install_spec["symlinks"], plugin_dir, full_vars)

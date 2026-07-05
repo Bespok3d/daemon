@@ -16,7 +16,7 @@ def test_build_attribution_index_indexes_an_extra_module(tmp_path: Path) -> None
     }))
 
     index = evidence._build_attribution_index(
-        plugin_root, {"KLIPPER_EXTRAS": "/home/lava/klipper/klippy/extras"}
+        plugin_root, {"KLIPPER_EXTRAS": "/home/lava/klipper/klippy/extras"}, {}
     )
 
     assert index.by_module["foo"] == "foo-plugin"

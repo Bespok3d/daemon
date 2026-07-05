@@ -17,6 +17,7 @@ PLACEMENTS = {
     "moonraker-component": "$MOONRAKER_COMPONENTS/{name}",
     "system-bin": "$BESPOK3D/bin/{name}",
     "web-location": "$BESPOK3D/etc/nginx/locations/{name}",
+    "kernel-module": "$BESPOK3D/lib/modules/{name}",
 }
 INSTRUMENTS = {"klipper-source": "$KLIPPER_SRC/{name}"}
 RESTART_COMMANDS = {

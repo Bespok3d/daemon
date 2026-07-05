@@ -71,6 +71,8 @@ def _sample_capabilities() -> CapabilitiesResponse:
         "installed": {"spoolman": "0.1.8"},
         "deactivated": [],
         "firmware_version": "1.4.1",
+        "arch": "aarch64",
+        "board_class": "standard",
         "klipper_version": "0.12.0",
         "jinni_version": "0.1.1",
         "capability_flags": ["overlay", "managed-service"],

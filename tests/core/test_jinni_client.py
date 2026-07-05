@@ -6,10 +6,13 @@ klipper, the same way). The seam never imports the jinni runtime, so these drive
 duck-typed fakes that answer the protocol verbs. The socket path is covered in the klipper-jinni
 app's together tests.
 """
+from pathlib import Path
+
 import pytest
 
 from core import jinni_client
-from tests.fakes import FakeGenericJinni, FakeKlipperJinni
+from tests.fakes import FakeKlipperJinni
+from tests.fakes_generic import FakeGenericJinni
 
 KLIPPER_SERVICE = "klipper"
 MOONRAKER_SERVICE = "moonraker"
@@ -33,6 +36,25 @@ def test_restart_command_delegates(fake_jinni: FakeKlipperJinni) -> None:
 
 def test_capability_flags_delegates(fake_jinni: FakeKlipperJinni) -> None:
     assert jinni_client.capability_flags() == fake_jinni.capability_flags()
+
+
+def test_render_module_script_delegates(fake_jinni: FakeKlipperJinni) -> None:
+    kmodule = {"name": "tun", "module": "tun.ko"}
+    rendered = jinni_client.render_module_script(kmodule, {})
+    assert rendered == fake_jinni.render_module_script(kmodule, {})
+
+
+def test_device_node_present_delegates(fake_jinni: FakeKlipperJinni, tmp_path: Path) -> None:
+    node = tmp_path / "tun"
+    node.write_text("")
+    assert jinni_client.device_node_present(str(node)) is True
+    assert jinni_client.device_node_present(str(tmp_path / "absent")) is False
+
+
+def test_variant_facts_delegates(fake_jinni: FakeKlipperJinni) -> None:
+    facts = jinni_client.variant_facts()
+    assert facts == fake_jinni.variant_facts()
+    assert set(facts) == {"adapter", "firmware_version", "arch", "board_class", "kernel_release"}
 
 
 def test_health_delegates_to_the_loaded_jinni(fake_jinni: FakeKlipperJinni) -> None:

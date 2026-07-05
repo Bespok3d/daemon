@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.12.15-dev
+
+The kernel-module mechanism gets its first real specimen (the `tun-module` plugin, packet 4 of the
+VPN relay), and two guards the specimen exposed.
+
+- **`kernel_release` variant dimension.** A `.ko` is cross-built per kernel, so a `kernel-module`
+  place entry now selects on `when.kernel_release` (the running kernel's `uname -r`, an exact-match
+  dimension in `conditions.py`). The jinni reports it via a new `kernel_release` fact (base tier
+  `unknown`; the U1 reads `uname -r`), kept in `variant_facts` only, not the capabilities report
+  (the richer `kernel`/`vermagic` capability is a later packet). A box whose kernel matches no
+  variant places no module, which fails closed.
+- **`install.kmodule` must load a placed `.ko`.** `normalize_install` now refuses a manifest whose
+  `install.kmodule.module` names no `kernel-module` place entry: the loader insmods only from
+  `$BESPOK3D/lib/modules/`, so an unplaced module would fail insmod (a safe deactivate). The name is
+  variant-stable, so the check holds regardless of which kernel a printer resolves.
+
+## 0.12.14-dev
+
+Kernel modules become a first-class plugin artifact (the mechanism; see ADR-0039). A plugin can now
+place a cross-built `.ko` and have the daemon load it, so a driver like `tun` (for the VPN plugins)
+ships the way any other file does.
+
+- **`kernel-module` destination class** places a `.ko` under `$BESPOK3D/lib/modules/`, and a new
+  **`install.kmodule`** section declares the module, its device nodes (`/dev/net/tun c 10 200`), and
+  whether to load it now. The daemon asks the jinni to render an s05 loader script (it owns
+  insmod/mknod/rmmod, ADR-0037) and wires it into the autostart dir BEFORE the s65 services, so a
+  service that needs the module finds it already loaded. The whole feature is gated on a new
+  `kernel-modules` capability flag; the U1 advertises it.
+- The module load runs immediately in its own install phase, not through the deferred core-service
+  restart batch: a kernel-module load restarts no core service and must precede any service that
+  needs it. A load that fails deactivates the plugin, so the printer is never left half-loaded.
+- New jinni verbs: `render_module_script` (the loader) and `device_node_present` (a cheap read that
+  checks a loaded module's outcome, e.g. `/dev/net/tun`). New `core/packages/kmodules.py`; the
+  init-script write mechanic is shared with managed services in `core/packages/init_scripts.py`.
+
+## 0.12.13-dev
+
+The variant engine: a manifest place/instrument entry may carry `variants: [{ when, src|diff }]`, and
+the daemon picks the one that fits this printer. `core/conditions.py` matches a `when` over the device
+facts (`adapter`, `fw_min`/`fw_max`, `arch`, `board_class`); an unknown dimension fails closed and no
+matching variant drops the entry. New `variant_facts()` read verb feeds the pre-pass; capabilities
+gain `arch` and `board_class` (the U1 reports `aarch64` and a memory-derived board class).
+
 ## 0.12.12-dev
 
 The printer now has a stable identity, and a plugin's applied config is readable. Two additions for

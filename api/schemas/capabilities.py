@@ -17,6 +17,14 @@ class CapabilitiesResponse(BaseModel):
         description="Installed plugins turned off (safety net or user); shown disabled, not active",
     )
     firmware_version: str = Field(description="Printer firmware version string, or 'unknown'")
+    arch: str = Field(
+        default="unknown",
+        description="CPU architecture native artifacts target (e.g. aarch64); a variant dimension",
+    )
+    board_class: str = Field(
+        default="unknown",
+        description="Board resource tier: 'standard', 'constrained' (memory-starved), or 'unknown'",
+    )
     klipper_version: str = Field(
         default="unknown",
         description="Klipper version string; absent for a non-klipper device, then 'unknown'",
