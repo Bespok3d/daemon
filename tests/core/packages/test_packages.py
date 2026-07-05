@@ -1388,6 +1388,44 @@ def test_install_conflict_is_detected_in_reverse(tmp_path: Path, monkeypatch: MP
     assert excinfo.value.conflicts == ["installed-two"]
 
 
+def make_service_package(tmp_path: Path, name: str, extra: dict) -> Path:
+    """A one-manifest .b3 carrying the given provides/require, for the requirement-gate tests."""
+    path = tmp_path / f"{name}.b3"
+    path.write_bytes(make_zip({"manifest.json": minimal_manifest(name, extra)}).getvalue())
+    return path
+
+
+def test_install_refuses_a_plugin_missing_a_required_service(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    zip_path = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+
+    with pytest.raises(packages.RequirementError) as excinfo:
+        packages.install(zip_path, {})
+    assert excinfo.value.missing == ["tun"]
+    assert not (tmp_path / "zerotier").exists()
+
+
+def test_install_allows_a_plugin_whose_requirement_an_installed_plugin_provides(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    write_plugin(tmp_path, "tun-module", provides=["tun"])
+    zip_path = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+
+    plugin_id, _log = packages.install(zip_path, {})
+    assert plugin_id == "zerotier"
+    assert (tmp_path / "zerotier" / "manifest.json").exists()
+
+
+def test_install_ignores_a_requirement_a_deactivated_plugin_provides(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
+    provider = write_plugin(tmp_path, "tun-module", provides=["tun"])
+    (provider / "deactivated.json").write_text(json.dumps({"reason": "stale kernel module"}))
+    zip_path = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+
+    with pytest.raises(packages.RequirementError):
+        packages.install(zip_path, {})
+    assert not (tmp_path / "zerotier").exists()
+
+
 class _FakeRunOk:
     returncode = 0
     stdout = b""
@@ -1611,6 +1649,49 @@ def test_install_batch_rejects_conflict_with_installed(tmp_path: Path, monkeypat
         packages.install_batch({}, [challenger], {})
 
     assert not (plugin_root / "challenger").exists()
+
+
+def test_install_batch_refuses_a_plugin_missing_a_required_service(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """The require gate the single install enforces also refuses a batch, before any unpack, when no
+    installed plugin and no sibling in the batch provides a required service."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+
+    with pytest.raises(packages.RequirementError):
+        packages.install_batch({}, [zerotier], {})
+
+    assert not (plugin_root / "zerotier").exists()
+
+
+def test_install_batch_satisfies_a_requirement_from_a_sibling_package(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A requirement met by a sibling in the same batch passes the gate: the app orders the provider
+    (tun-module) before its dependent (zerotier), so both install together."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    tun = make_service_package(tmp_path, "tun-module", {"provides": [{"service": "tun"}]})
+    zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+
+    results = packages.install_batch({}, [tun, zerotier], {})
+
+    assert (plugin_root / "tun-module" / "manifest.json").exists()
+    assert (plugin_root / "zerotier" / "manifest.json").exists()
+    assert all(result["ok"] for result in results)
+
+
+def test_install_batch_does_not_let_a_plugin_satisfy_its_own_requirement(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A plugin that both provides and requires the same service must be refused in a batch exactly
+    as on the single-install path: its own `provides` never satisfies its own `require` (only a
+    sibling or an installed plugin can)."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    both = {"provides": [{"service": "tun"}], "require": [{"service": "tun"}]}
+    self_serving = make_service_package(tmp_path, "self-serving", both)
+
+    with pytest.raises(packages.RequirementError):
+        packages.install_batch({}, [self_serving], {})
+
+    assert not (plugin_root / "self-serving").exists()
 
 
 def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: MP) -> None:

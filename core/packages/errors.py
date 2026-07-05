@@ -27,3 +27,13 @@ class ConflictError(Exception):
         self.plugin_id = plugin_id
         self.conflicts = conflicts
         super().__init__(f"{plugin_id} conflicts with installed: {', '.join(conflicts)}")
+
+
+class RequirementError(Exception):
+    """Install was refused because a service the package requires is provided by no installed,
+    non-deactivated plugin (nor, in a batch, by a sibling in the same batch)."""
+
+    def __init__(self, plugin_id: str, missing: list[str]) -> None:
+        self.plugin_id = plugin_id
+        self.missing = missing
+        super().__init__(f"{plugin_id} requires uninstalled service(s): {', '.join(missing)}")

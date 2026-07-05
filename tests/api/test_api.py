@@ -46,7 +46,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.16-dev"
+    assert body["version"] == "0.12.17-dev"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -225,6 +225,25 @@ async def test_install_route_returns_ok(
     assert response.json()["plugin_id"] == "test-plugin"
 
 
+async def test_install_route_returns_409_on_unmet_requirement(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def raise_requirement(*_args: object, **_kwargs: object) -> tuple[str, list]:
+        raise packages.RequirementError("zerotier", ["tun"])
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "install", raise_requirement)
+    response = await client.post(
+        "/plugins/install",
+        files={"file": ("zerotier.b3", _minimal_b3(), "application/octet-stream")},
+        data={"vars_json": "{}"},
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "requirement"
+    assert detail["missing"] == ["tun"]
+
+
 async def test_install_route_returns_400_on_bad_vars(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -350,6 +369,25 @@ async def test_install_batch_route_returns_409_on_conflict(
     detail = response.json()["detail"]
     assert detail["error"] == "conflict"
     assert detail["conflicts"] == ["force-bed-mesh-adaptive"]
+
+
+async def test_install_batch_route_returns_409_on_unmet_requirement(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def raise_requirement(*_args: object, **_kwargs: object) -> list[dict]:
+        raise packages.RequirementError("zerotier", ["tun"])
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "install_batch", raise_requirement)
+    response = await client.post(
+        "/packages/install-batch",
+        files=[("files", ("zerotier.b3", _minimal_b3(), "application/octet-stream"))],
+        data={"vars_json": json.dumps({})},
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "requirement"
+    assert detail["missing"] == ["tun"]
 
 
 async def test_uninstall_route_returns_ok(

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.17-dev
+
+Install-time `require` enforcement (Gap A of the VPN relay). Installing a plugin whose `require`d
+service is provided by no installed, non-deactivated plugin is now refused up front with a clear
+`RequirementError` (mapped to a 409 the app localizes), instead of half-applying and failing later.
+The check runs on both the single install and the batched "install selected"; in a batch a sibling
+package can satisfy the requirement (providers are applied before their dependents), mirroring the
+existing conflict gate. OTA recover's own precondition skip is unchanged. Every shipping plugin
+declares `require: []`, so the gate is inert for them and fires only for the VPN plugins that need
+`tun`.
+
 ## 0.12.16-dev
 
 The kernel-module OTA autofixer (packet 5 of the VPN relay). After a firmware update bumps the

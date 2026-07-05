@@ -53,6 +53,35 @@ def test_installed_conflicts_is_symmetric(tmp_path: Path) -> None:
     assert dependencies.installed_conflicts(tmp_path, "incoming", incoming_manifest) == ["existing"]
 
 
+def test_installed_provided_services_unions_active_providers(tmp_path: Path) -> None:
+    write_plugin(tmp_path, "tun-module", provides=["tun"])
+    write_plugin(tmp_path, "spoolman", provides=["spoolman"])
+    assert dependencies.installed_provided_services(tmp_path, "zerotier") == {"tun", "spoolman"}
+
+
+def test_installed_provided_services_excludes_self_and_deactivated(tmp_path: Path) -> None:
+    write_plugin(tmp_path, "zerotier", provides=["zerotier"])
+    deactivated = write_plugin(tmp_path, "tun-module", provides=["tun"])
+    (deactivated / "deactivated.json").write_text(json.dumps({"reason": "stale kernel module"}))
+    assert dependencies.installed_provided_services(tmp_path, "zerotier") == set()
+
+
+def test_unsatisfied_requirements_flags_a_missing_service(tmp_path: Path) -> None:
+    manifest = {"name": "zerotier", "require": [{"service": "tun"}]}
+    assert dependencies.unsatisfied_requirements(tmp_path, "zerotier", manifest) == ["tun"]
+
+
+def test_unsatisfied_requirements_is_empty_when_an_installed_plugin_provides_it(tmp_path: Path) -> None:  # noqa: E501
+    write_plugin(tmp_path, "tun-module", provides=["tun"])
+    manifest = {"name": "zerotier", "require": [{"service": "tun"}]}
+    assert dependencies.unsatisfied_requirements(tmp_path, "zerotier", manifest) == []
+
+
+def test_unsatisfied_requirements_honors_also_provided_for_the_batch_case(tmp_path: Path) -> None:
+    manifest = {"name": "zerotier", "require": [{"service": "tun"}]}
+    assert dependencies.unsatisfied_requirements(tmp_path, "zerotier", manifest, frozenset({"tun"})) == []  # noqa: E501
+
+
 def test_topo_sort_places_providers_before_requirers(tmp_path: Path) -> None:
     consumer = write_plugin(tmp_path, "consumer", depends=["svc@>=1.0"])
     provider = write_plugin(tmp_path, "provider", provides=["svc"])

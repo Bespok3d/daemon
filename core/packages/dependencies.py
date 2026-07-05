@@ -7,6 +7,7 @@ Reads the service model out of each manifest; the manifest IO itself lives in `.
 from pathlib import Path
 from typing import Any
 
+from .deactivation import DEACTIVATED_MARKER
 from .manifest import installed_manifest_dirs, manifest_at
 
 
@@ -43,6 +44,26 @@ def installed_dependents(plugin_root: Path, plugin_id: str) -> list[str]:
         return []
     others = [plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root) if plugin_dir != target_dir]  # noqa: E501
     return [plugin_dir.name for plugin_dir in others if _depends_on_any(plugin_dir, provided)]
+
+
+def installed_provided_services(plugin_root: Path, exclude_id: str) -> set[str]:
+    """Every service provided by an installed, non-deactivated plugin other than `exclude_id` (the
+    package being installed, whose freshly-unpacked dir is already present and must not count as its
+    own provider)."""
+    active = [
+        plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root)
+        if plugin_dir.name != exclude_id and not (plugin_dir / DEACTIVATED_MARKER).exists()
+    ]
+    return {service for plugin_dir in active for service in provided_services(manifest_at(plugin_dir))}  # noqa: E501
+
+
+def unsatisfied_requirements(
+    plugin_root: Path, plugin_id: str, manifest: dict, also_provided: frozenset[str] = frozenset(),
+) -> list[str]:
+    """The services a package requires that no installed, non-deactivated plugin provides.
+    `also_provided` covers the batch case, where a sibling package supplies a required service."""
+    available = installed_provided_services(plugin_root, plugin_id) | also_provided
+    return sorted(service for service in required_services(manifest) if service not in available)
 
 
 def installed_conflicts(plugin_root: Path, plugin_id: str, manifest: dict) -> list[str]:

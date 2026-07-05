@@ -8,6 +8,7 @@ from core.packages import errors
 def test_errors_reexported_from_package_namespace() -> None:
     assert errors.ConflictError is packages.ConflictError
     assert errors.DependentsError is packages.DependentsError
+    assert errors.RequirementError is packages.RequirementError
 
 
 def test_conflict_error_carries_plugin_and_conflicts() -> None:
@@ -22,3 +23,10 @@ def test_dependents_error_carries_plugin_and_dependents() -> None:
     assert error.plugin_id == "rfid"
     assert error.dependents == ["spoolman"]
     assert "is required by" in str(error)
+
+
+def test_requirement_error_carries_plugin_and_missing_services() -> None:
+    error = errors.RequirementError("zerotier", ["tun"])
+    assert error.plugin_id == "zerotier"
+    assert error.missing == ["tun"]
+    assert "requires uninstalled service" in str(error)

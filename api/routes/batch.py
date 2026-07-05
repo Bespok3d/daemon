@@ -48,7 +48,7 @@ async def _serve_batch(files: list[UploadFile], vars_json: str, runner: BatchRun
         results = await asyncio.to_thread(
             runner, jinni_client.paths(), tmp_paths, vars_by_id, install_hub.publish,
         )
-    except (packages.BlockedActionError, packages.ConflictError, HTTPException):
+    except (packages.BlockedActionError, packages.ConflictError, packages.RequirementError, HTTPException):  # noqa: E501
         install_hub.publish({"type": "done", "ok": False})
         raise
     finally:
@@ -96,7 +96,7 @@ def _install_batch_or_raise(
         for user_vars in vars_by_id.values():
             packages.validate_user_vars(user_vars)
         return packages.install_batch(base_vars, tmp_paths, vars_by_id, publish)
-    except (packages.BlockedActionError, packages.ConflictError):
+    except (packages.BlockedActionError, packages.ConflictError, packages.RequirementError):
         raise
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -114,4 +114,7 @@ async def install_batch_packages(files: list[UploadFile], vars_json: str = Form(
         return await _serve_batch(files, vars_json, _install_batch_or_raise)
     except packages.ConflictError as exc:
         detail = {"error": "conflict", "plugin_id": exc.plugin_id, "conflicts": exc.conflicts}
+        raise HTTPException(status_code=409, detail=detail) from exc
+    except packages.RequirementError as exc:
+        detail = {"error": "requirement", "plugin_id": exc.plugin_id, "missing": exc.missing}
         raise HTTPException(status_code=409, detail=detail) from exc

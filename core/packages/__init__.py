@@ -23,11 +23,11 @@ from .errors import (
     BlockedActionError,  # noqa: F401  re-export for api.routes
     ConflictError,  # noqa: F401  re-export for api.routes
     DependentsError,  # noqa: F401  re-export for api.routes
+    RequirementError,  # noqa: F401  re-export for api.routes
 )
 from .installer import (
     PhaseListener,  # noqa: F401  re-export for api.routes
     run_install,
-    run_reconfigure,
 )
 from .installer_batch import run_install_batch
 from .lifecycle import (  # noqa: F401  re-export for api.routes
@@ -36,6 +36,7 @@ from .lifecycle import (  # noqa: F401  re-export for api.routes
 )
 from .manifest import manifest_at
 from .print_guard import guard_no_print
+from .reconfigurer import run_reconfigure
 from .recovery import recover_one, restart_services
 from .uninstaller import run_uninstall
 from .updater import run_update_batch

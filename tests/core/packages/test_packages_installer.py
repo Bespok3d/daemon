@@ -1,16 +1,17 @@
-"""Install and reconfigure live in core/packages/installer.py and the batched update in updater.py;
-both install-shaped paths share ONE phase runner (`apply_install_deferred`), which install drives
-live (a notify callback) and the batched update drives silently (the default no-op)."""
+"""A fresh install lives in core/packages/installer.py, the config-only reconfigure in
+reconfigurer.py, and the batched update in updater.py; the two install-shaped paths (install and
+batched update) share ONE phase runner (`apply_install_deferred`), which install drives live (a
+notify callback) and the batched update drives silently (the default no-op)."""
 
 from pathlib import Path
 
 from core import packages
-from core.packages import installer, updater
+from core.packages import installer, reconfigurer, updater
 
 
 def test_installer_module_exposes_the_op_workers() -> None:
     assert callable(installer.run_install)
-    assert callable(installer.run_reconfigure)
+    assert callable(reconfigurer.run_reconfigure)
     assert callable(updater.run_update_batch)
 
 

@@ -9,8 +9,8 @@ from pathlib import Path
 
 from ..safety import OperationKind
 from .batch import ProgressSink, Spec, make_progress, plan_batch, run_batch
-from .dependencies import installed_conflicts
-from .errors import ConflictError
+from .dependencies import installed_conflicts, provided_services, unsatisfied_requirements
+from .errors import ConflictError, RequirementError
 
 
 def reject_conflicting_installs(plugin_root: Path, specs: list[Spec]) -> None:
@@ -28,6 +28,24 @@ def reject_conflicting_installs(plugin_root: Path, specs: list[Spec]) -> None:
         clashes = sorted(set(installed_conflicts(plugin_root, plugin_id, manifest)) | within)
         if clashes:
             raise ConflictError(plugin_id, clashes)
+
+
+def reject_unsatisfied_requirements(plugin_root: Path, specs: list[Spec]) -> None:
+    """Refuse the whole batch before touching the disk if any package requires a service that no
+    installed, non-deactivated plugin AND no OTHER package in the batch provides. Mirrors the single
+    install's require gate: a plugin never satisfies its own requirement (self excluded, as in
+    `reject_conflicting_installs`), but a sibling in the same batch can (the app orders providers
+    before their dependents)."""
+    for _, manifest in specs:
+        plugin_id = manifest["name"]
+        siblings_provide = frozenset(
+            service for _, other in specs
+            if other["name"] != plugin_id
+            for service in provided_services(other)
+        )
+        missing = unsatisfied_requirements(plugin_root, plugin_id, manifest, siblings_provide)
+        if missing:
+            raise RequirementError(plugin_id, missing)
 
 
 def run_install_batch(
@@ -49,4 +67,5 @@ def run_install_batch(
     progress = make_progress(publish)
     plan = plan_batch(base_vars, package_paths, vars_by_id)
     reject_conflicting_installs(plugin_root, plan.specs)
+    reject_unsatisfied_requirements(plugin_root, plan.specs)
     return run_batch(plugin_root, plan, progress, OperationKind.INSTALL)

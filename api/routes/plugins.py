@@ -48,6 +48,9 @@ def _install_or_raise(
     except packages.ConflictError as exc:
         detail = {"error": "conflict", "plugin_id": exc.plugin_id, "conflicts": exc.conflicts}
         raise HTTPException(status_code=409, detail=detail) from exc
+    except packages.RequirementError as exc:
+        detail = {"error": "requirement", "plugin_id": exc.plugin_id, "missing": exc.missing}
+        raise HTTPException(status_code=409, detail=detail) from exc
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

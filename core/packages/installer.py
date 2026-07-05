@@ -1,13 +1,12 @@
-"""Install-shaped package operations: a fresh install and a config-only reconfigure.
+"""A fresh single-plugin install: unpack a .b3, refuse it up front if it conflicts with or lacks a
+required service, then apply its install (modes, dirs, templates, service scripts, symlinks,
+patches, ownership, baked deps, start commands) through the shared phase runner
+(`apply_install_deferred`, also used by the batched update in `updater.py`) and restart core
+services live through the safety net. The config-only reconfigure is its sibling in
+`reconfigurer.py`.
 
-Both apply a plugin's install (modes, dirs, templates, service scripts, symlinks, patches,
-ownership, baked deps, start commands) through ONE shared phase runner (`apply_install_deferred`,
-also used by the batched update in `updater.py`). They differ only in how the core-service restart
-runs: install runs it immediately through the safety net and streams each phase live to a notify
-callback; reconfigure re-renders config and restarts.
-
-The orchestrator (`core/packages/__init__.py`) owns the plugin root and passes it in, so these
-workers stay independent of where plugins live on disk.
+The orchestrator (`core/packages/__init__.py`) owns the plugin root and passes it in, so this
+worker stays independent of where plugins live on disk.
 """
 
 import shutil
@@ -20,13 +19,11 @@ from ..results import item, phase
 from ..safety import OperationKind
 from .archive import fix_ownership, unpack_package
 from .deactivation import finalize_install_outcome
-from .dependencies import installed_conflicts
-from .errors import ConflictError
+from .dependencies import installed_conflicts, unsatisfied_requirements
+from .errors import ConflictError, RequirementError
 from .kmodules import generate_module_loaders, load_modules
-from .manifest import manifest_at
 from .patches import apply_patches
 from .placement import apply_modes, create_dirs, create_symlinks
-from .print_guard import guard_no_print_during_restart
 from .python_deps import provision_deps_phases
 from .recovery import op_context, restart_phases
 from .services import generate_service_scripts
@@ -108,6 +105,11 @@ def run_install(
         shutil.rmtree(plugin_dir, ignore_errors=True)
         raise ConflictError(plugin_id, conflicts)
 
+    missing = unsatisfied_requirements(plugin_root, plugin_id, manifest)
+    if missing:
+        shutil.rmtree(plugin_dir, ignore_errors=True)
+        raise RequirementError(plugin_id, missing)
+
     notify = on_phase or _noop_phase
     extract_items = [item(f"Extracted {file_count} files", ok=True)]
     log: list[dict] = [_emit(phase("extract", "Unpack", extract_items), notify)]
@@ -117,34 +119,3 @@ def run_install(
     log.extend(_install_apply_phases(plugin_root, plugin_dir, manifest, full_vars, notify))
     finalize_install_outcome(plugin_dir, full_vars, log)
     return plugin_id, log
-
-
-def run_reconfigure(
-    plugin_root: Path,
-    plugin_id: str,
-    vars: dict[str, str],
-    user_vars: dict[str, str],
-) -> tuple[str, list[dict]]:
-    """Re-render a plugin's config templates from new values and restart its services.
-
-    Lighter than a reinstall: files, symlinks, and patches are left untouched; only the
-    rendered config files change. Relies on installs being idempotent.
-    """
-    plugin_dir = plugin_root / plugin_id
-    if not (plugin_dir / "manifest.json").exists():
-        raise ValueError(f"plugin {plugin_id!r} is not installed")
-    manifest = manifest_at(plugin_dir)
-    guard_no_print_during_restart(manifest)
-
-    full_vars = with_plugin_venv(vars, plugin_id)
-    inst = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
-    persist_user_vars(plugin_dir, user_vars)
-    start_phase, deferred = run_plugin_start_commands(inst.get("start", []), full_vars)
-    ctx = op_context(OperationKind.RECONFIGURE, manifest)
-    phases = [
-        render_templates(inst.get("templates", []), plugin_dir, full_vars),
-        fix_ownership(plugin_dir, full_vars.get("RUNTIME_USER", "")),
-        start_phase,
-    ]
-    phases.extend(restart_phases(plugin_root, deferred, full_vars, ctx))
-    return plugin_id, phases
