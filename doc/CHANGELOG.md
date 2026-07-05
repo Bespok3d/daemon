@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.12.16-dev
+
+The kernel-module OTA autofixer (packet 5 of the VPN relay). After a firmware update bumps the
+kernel, a plugin's `.ko` no longer matches, and the daemon now names that failure precisely instead
+of a generic "install phase failed", so a stale module deactivates cleanly and the printer keeps
+working.
+
+- **`kernel` capability fact + `vermagic` variant dimension.** The jinni reports the running kernel's
+  release and version magic (the `kernel` fact, read from a loaded module via `modinfo`: the ground
+  truth a `.ko` is built against, richer than `uname -r`), and `vermagic` joins the variant
+  dimensions in `conditions.py` as the finer key for a module whose ABI differs between two kernels
+  that share a release. Full contract dance: the `KernelInfo` schema, the TS wire mirror, the
+  regenerated contract fixture, and the fakes.
+- **Load-failure classifier + `kernel_module_failure` fixer (ADR-0039).** When a kernel-module load
+  fails, the jinni classifies it from the kernel ring buffer and emits a
+  `kernel-module:vermagic-mismatch` token; the daemon relays it through the safety net's one
+  attribution brain (a new `kernel_module_failure` fixer) so the plugin deactivates with that token
+  as its reason and its dependents skip, exactly as the OTA recover path already deactivated a broken
+  plugin. The classifier keys on the kernel's actual version-magic verdict, never a bare non-zero
+  load (a module that loads then misbehaves is a different cause, ADR-0039's three-gate honest
+  limit); classification is best-effort, so a dead-jinni round-trip degrades to the generic reason
+  rather than aborting the install.
+
 ## 0.12.15-dev
 
 The kernel-module mechanism gets its first real specimen (the `tun-module` plugin, packet 4 of the
