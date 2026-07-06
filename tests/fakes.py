@@ -7,7 +7,7 @@ classes that wire those into the contract surface.
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from protocol import ActionResult, CommandEffect, DeviceHealth, ServiceHealth
+from protocol import ActionResult, CommandEffect, DeviceHealth, OomReport, ServiceHealth
 from tests import fake_actuation, fake_integration, fake_vocab
 
 
@@ -107,6 +107,10 @@ class FakeKlipperJinni:
             fake_vocab.KLIPPER: ServiceHealth(ready=True, detail="ready"),
             fake_vocab.MOONRAKER: ServiceHealth(ready=True, detail="up"),
         })
+
+    def oom_report(self) -> OomReport:
+        """No out-of-memory kill by default; a suite proving the report path overrides this."""
+        return OomReport(kills=0)
 
     def print_active(self) -> tuple[bool, str]:
         return False, ""

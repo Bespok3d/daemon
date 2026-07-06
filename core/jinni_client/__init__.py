@@ -34,6 +34,7 @@ from .verbs import (
     fetch,
     health,
     instrument_destination,
+    oom_report,
     paths,
     placement_destination,
     render_module_script,
@@ -48,7 +49,8 @@ __all__ = [
     "placement_destination", "instrument_destination", "restart_command", "render_service_script",
     "render_module_script", "device_node_present", "classify_module_load",
     "capability_flags", "variant_facts", "classify_commands", "paths", "capabilities_report",
-    "health", "blocked_actions", "subscribe_blocked_actions", "run_actions", "wire", "unwire",
+    "health", "blocked_actions", "subscribe_blocked_actions", "oom_report",
+    "run_actions", "wire", "unwire",
     "prune_dead_config_links", "remove_bespok3d_includes", "prune_bespok3d_config_dir",
     "fetch", "write_files",
 ]

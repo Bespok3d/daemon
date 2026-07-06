@@ -8,7 +8,14 @@ each verb carries.
 from collections.abc import Callable
 from typing import Any
 
-from .contracts import ActionResult, CommandEffect, DeviceHealth, FailureSignals, ServiceHealth
+from .contracts import (
+    ActionResult,
+    CommandEffect,
+    DeviceHealth,
+    FailureSignals,
+    OomReport,
+    ServiceHealth,
+)
 
 
 def _service_health(payload: dict) -> ServiceHealth:
@@ -49,6 +56,10 @@ def _action_result(payload: dict) -> ActionResult:
     return ActionResult(ok=payload["ok"], output=payload["output"])
 
 
+def _oom_report(payload: dict) -> OomReport:
+    return OomReport(kills=payload["kills"], token=payload["token"], detail=payload["detail"])
+
+
 # The actuation verbs all answer with one ActionResult per item the daemon sent (a command, a wired
 # link), in order; the daemon pairs each back to its input to build the phase log.
 def _action_results(payload: Any) -> list[ActionResult]:
@@ -64,6 +75,7 @@ _DECODERS: dict[str, Callable[[Any], Any]] = {
     "write_files": _action_results,
     "blocked_actions": frozenset,
     "capability_flags": set,
+    "oom_report": _oom_report,
 }
 
 

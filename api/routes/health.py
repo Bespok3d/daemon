@@ -8,6 +8,7 @@ from version import DAEMON_VERSION
 
 from ..schemas import (
     CapabilitiesResponse,
+    OomReportResponse,
     PluginDrift,
     SelfCheckResponse,
     StatusResponse,
@@ -47,3 +48,18 @@ async def selfcheck() -> SelfCheckResponse:
     drift_raw = run_selfcheck(jinni_client.paths())
     drift = [PluginDrift(**report) for report in drift_raw]
     return SelfCheckResponse(ok=len(drift) == 0, drift=drift)
+
+
+@router.get(
+    "/oom",
+    response_model=OomReportResponse,
+    summary="Out-of-memory safety-net report",
+    description=(
+        "Read-only. Reports whether the kernel's out-of-memory killer has fired and, if so, the "
+        "most recent victim it took. The constrained-board safety net: a client polls it and "
+        "dedupes a repeat by the kill count. Detection only; the daemon prevents no OOM here."
+    ),
+)
+async def oom() -> OomReportResponse:
+    report = jinni_client.oom_report()
+    return OomReportResponse(kills=report.kills, token=report.token, detail=report.detail)

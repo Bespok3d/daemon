@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator
 from typing import cast
 
 import protocol
-from protocol import CommandEffect, DeviceHealth
+from protocol import CommandEffect, DeviceHealth, OomReport
 
 from . import dispatch, transport
 from .dispatch import route
@@ -99,6 +99,14 @@ def blocked_actions() -> frozenset[str]:
     the live device state and decides; the daemon relays the tokens and never names a service or a
     state. The print guard checks an op's required tokens against this set."""
     return cast(frozenset[str], route("blocked_actions", []))
+
+
+def oom_report() -> OomReport:
+    """The kernel's out-of-memory evidence: the cumulative oom_kill count and, when the killer has
+    fired, the most recent victim it took. The constrained-board safety net surfaces it; the jinni
+    reads /proc/vmstat and the ring buffer (ADR-0037); the daemon relays it, a consumer dedupes on
+    the count."""
+    return cast(OomReport, route("oom_report", []))
 
 
 async def subscribe_blocked_actions() -> AsyncGenerator[frozenset[str], None]:

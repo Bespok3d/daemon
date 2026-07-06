@@ -46,7 +46,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.17-dev"
+    assert body["version"] == "0.12.18-dev"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -65,6 +65,30 @@ async def test_status_printer_uuid_is_null_before_first_boot(
     monkeypatch.setattr(printer_identity, "IDENTITY_PATH", tmp_path / "printer_uuid")
     response = await client.get("/status")
     assert response.json()["printer_uuid"] is None
+
+
+async def test_oom_reports_no_kill_by_default(client: httpx.AsyncClient) -> None:
+    response = await client.get("/oom")
+    assert response.status_code == 200
+    assert response.json() == {"kills": 0, "token": "", "detail": ""}
+
+
+async def test_oom_relays_a_kill_for_the_app_to_localize(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from protocol import OomReport
+    from tests.fakes_generic import FakeGenericJinni
+
+    class _OomJinni(FakeGenericJinni):
+        def oom_report(self) -> OomReport:
+            return OomReport(kills=1, token="oom-kill",
+                             detail="the kernel killed process (python3)")
+    oom_jinni = _OomJinni()
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", lambda: oom_jinni)
+    body = (await client.get("/oom")).json()
+    assert body["kills"] == 1
+    assert body["token"] == "oom-kill"
+    assert "python3" in body["detail"]
 
 
 async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClient) -> None:

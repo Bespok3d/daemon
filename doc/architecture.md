@@ -68,7 +68,8 @@ path (`placement_destination` / `instrument_destination`), resolve a restart HOO
 and target facts (`capability_flags` / `paths` / `capabilities_report`), classify how each generated
 start command acts on the device (`classify_commands`), report the device's health verdict (`health`),
 report what is blocked right now (`blocked_actions`), stream the blocked-action set on change
-(`subscribe_blocked_actions`), and fetch a stock file for the daemon to patch (`fetch`). ACTUATION
+(`subscribe_blocked_actions`), report the kernel's out-of-memory evidence for the constrained-board
+safety net (`oom_report`, ADR-0040), and fetch a stock file for the daemon to patch (`fetch`). ACTUATION
 verbs (ADR-0037: the daemon resolves and sequences, the jinni mutates the device): run a plugin's
 start/restart/stop commands (`run_actions`), symlink placed files and site-package links into the
 system (`wire`) and remove them (`unwire`), write a patched (or restored) source back (`write_files`),
@@ -215,7 +216,7 @@ under the ceiling):
   facade: the four op wrappers plus `recover` (kept as facade wiring). Consolidate the duplicated
   deactivate/uninstall/guard helpers while extracting.
 - **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
-  core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck),
+  core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck/oom),
   `feeds` (the three live websocket handlers and the `install_hub`), `plugins` (the single-plugin
   routes under `/plugins/`: install/reconfigure/uninstall plus the config read), `packages` (the pack
   commands under `/packages/`: recover/update-batch), `lifecycle` (deactivate/teardown), `access` (the

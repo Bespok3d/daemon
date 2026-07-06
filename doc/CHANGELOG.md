@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.18-dev
+
+Out-of-memory detection for the constrained-board safety net (packet 8 of the VPN relay). A new
+read-only `GET /oom` reports whether the kernel's OOM killer has fired, its most recent victim, and
+the cumulative kill count a client dedupes on. The jinni reads /proc/vmstat and the kernel ring
+buffer (ADR-0037); the daemon relays a machine token (`oom-kill`) the app localizes plus the victim
+line. Detection only: the daemon prevents no OOM here. Whether the victim was a core print service or
+a plugin is NOT classified (the victim comm is `python3` for the python services, so a comm match
+cannot tell them apart; that verdict is a follow-up for when real hardware exists). Preventing OOM
+(an oom_score floor, a print-versus-plugin coexistence policy) is deferred until the real 512MB board
+and firmware exist to measure against; see ADR-0040 for the reasoning. Device-unverified (no 512MB
+hardware yet); logic is unit-tested on both sides.
+
 ## 0.12.17-dev
 
 Install-time `require` enforcement (Gap A of the VPN relay). Installing a plugin whose `require`d

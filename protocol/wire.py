@@ -36,7 +36,7 @@ CONTRACT_VERBS = frozenset({
     "paths", "capabilities_report", "capability_flags", "variant_facts",
     "placement_destination", "instrument_destination", "restart_command", "render_service_script",
     "render_module_script", "device_node_present", "classify_module_load",
-    "classify_commands", "health", "blocked_actions",
+    "classify_commands", "health", "blocked_actions", "oom_report",
     "run_actions", "wire", "unwire",
     "prune_dead_config_links", "remove_bespok3d_includes", "prune_bespok3d_config_dir",
     "fetch", "write_files",

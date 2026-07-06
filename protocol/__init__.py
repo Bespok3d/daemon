@@ -14,6 +14,7 @@ from .contracts import (
     ControlScript,
     DeviceHealth,
     FailureSignals,
+    OomReport,
     ServiceHealth,
 )
 from .wire import (
@@ -52,6 +53,7 @@ __all__ = [
     "ControlScript",
     "DeviceHealth",
     "FailureSignals",
+    "OomReport",
     "ProtocolError",
     "ServiceHealth",
     "call",

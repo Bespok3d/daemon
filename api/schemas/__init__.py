@@ -13,7 +13,7 @@ from .access import (
     PendingClient,
 )
 from .capabilities import CapabilitiesResponse, Endpoint, KernelInfo
-from .health import StatusResponse
+from .health import OomReportResponse, StatusResponse
 from .lifecycle import DeactivateResponse, TeardownResponse
 from .packages import (
     InstallLogItem,
@@ -41,6 +41,7 @@ __all__ = [
     "InstallLogPhase",
     "InstallResponse",
     "KernelInfo",
+    "OomReportResponse",
     "PackResultsResponse",
     "PendingClient",
     "PluginConfigResponse",

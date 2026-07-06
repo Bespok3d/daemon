@@ -81,6 +81,25 @@ class ControlScript:
 
 
 @dataclass(frozen=True)
+class OomReport:
+    """What the jinni read from the kernel's out-of-memory evidence (ADR-0037: reading the kernel
+    counters and ring buffer is the jinni's; the daemon relays this and authors no device prose).
+
+    `kills` is the kernel's cumulative oom_kill counter (from /proc/vmstat), 0 when the killer has
+    not fired this boot; a consumer dedupes a repeat by the delta against the count it last saw.
+    `token` is the jinni's machine token the app localizes ("oom-kill" when the killer fired, or ""
+    when nothing was killed). `detail` is the jinni-formatted victim line for the user, "" when the
+    ring buffer holds no victim line. Whether the victim was a core print service or a sacrificed
+    plugin is NOT reported: the victim comm is unreliable for that (Klipper runs as `python3`), so
+    it is a documented follow-up (ADR-0040). Detection for the constrained-board safety net; the
+    daemon prevents no OOM from this report.
+    """
+    kills: int
+    token: str = ""
+    detail: str = ""
+
+
+@dataclass(frozen=True)
 class CommandEffect:
     """How one expanded start command acts on the device's services, judged by the jinni that
     produced it. The daemon reads these flags and orchestrates; it never inspects the command string
