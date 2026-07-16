@@ -118,40 +118,9 @@ def test_bake_deps_targets_printer_architecture() -> None:
         assert "--only-binary=:all:" in text
 
 
-def _have(*cmds: str) -> bool:
-    return all(shutil.which(cmd) for cmd in cmds)
-
-
-def test_pack_plugins_never_ships_an_unbakeable_python_plugin(tmp_path: Path) -> None:
-    """The monorepo bundler used to only VALIDATE baked deps: a bundled Python plugin with no baked
-    artifacts (and no reachable baker) failed its check but the build proceeded and any prior .b3
-    stayed in dist, so a broken archive shipped (the moonraker-notify report). The bundler must now
-    bake or, when it cannot, drop the stale archive and fail the build. Hermetic: a fixture plugin
-    declaring a Python dep, empty artifacts, and no scripts/bake-deps.sh in its tree."""
-    packer = _WORKSPACE_ROOT / "Bespok3d" / "scripts" / "pack-plugins.sh"
-    if not packer.exists() or not _have("zip", "shasum", "jq", "node"):
-        pytest.skip("monorepo packer or its tools not present")
-
-    repo = tmp_path / "Bespok3d"
-    (repo / "scripts").mkdir(parents=True)
-    shutil.copy(packer, repo / "scripts" / "pack-plugins.sh")
-    (repo / "scripts" / "bundle.json").write_text('{"bundle": ["widget"]}\n')
-
-    widget = tmp_path / "plugins" / "co" / "widget"
-    (widget / "files").mkdir(parents=True)
-    (widget / "klipper_requirements.txt").write_text("humanize>=4.9.0\n")
-    (widget / "manifest.json").write_text(
-        '{"name": "widget", "version": "0.1.0", "install": {}, "files": []}\n'
-    )
-
-    dist = repo / "dist" / "plugins"
-    dist.mkdir(parents=True)
-    stale = dist / "widget-0.1.0.b3"
-    stale.write_text("stale archive from a previous build\n")
-
-    result = subprocess.run(
-        ["sh", "scripts/pack-plugins.sh"], cwd=repo, capture_output=True, check=False,
-    )
-
-    assert result.returncode != 0
-    assert not stale.exists()
+# The pack-plugins.sh refuse-to-pack invariant (a plugin declaring Python deps must ship baked
+# artifacts) was rehomed into b3-builder's class-aware gate in the build-system-consolidation relay
+# (packet 6): the gate is now the one class-aware assertBaked, tested per class in
+# b3-builder/test/bake/assert-baked.test.ts, and pack-plugins.sh no longer carries the gate logic. A
+# packaging invariant that assumes one packer shape does not belong in the daemon suite; it belongs in
+# the one build core.
