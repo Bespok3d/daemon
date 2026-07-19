@@ -12,6 +12,7 @@ worker stays independent of where plugins live on disk.
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 from .. import jinni_client
 from ..intent import normalize_install
@@ -94,6 +95,30 @@ def _install_apply_phases(
     return phases
 
 
+def _refuse(plugin_dir: Path, refusal: Exception) -> NoReturn:
+    """A refused install takes its own extraction with it. Kept, the unpacked tree would make
+    /capabilities report a plugin the daemon never applied."""
+    shutil.rmtree(plugin_dir, ignore_errors=True)
+    raise refusal
+
+
+def _refuse_unmet_dependencies(
+    plugin_root: Path,
+    plugin_dir: Path,
+    plugin_id: str,
+    manifest: dict,
+) -> None:
+    """Up-front refusals, before a single file is placed: a plugin that collides with an installed
+    one, or one whose required service is absent."""
+    conflicts = installed_conflicts(plugin_root, plugin_id, manifest)
+    if conflicts:
+        _refuse(plugin_dir, ConflictError(plugin_id, conflicts))
+
+    missing = unsatisfied_requirements(plugin_root, plugin_id, manifest)
+    if missing:
+        _refuse(plugin_dir, RequirementError(plugin_id, missing))
+
+
 def run_install(
     plugin_root: Path,
     package_path: Path,
@@ -103,16 +128,7 @@ def run_install(
 ) -> tuple[str, list[dict]]:
     manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
     plugin_id: str = manifest["name"]
-
-    conflicts = installed_conflicts(plugin_root, plugin_id, manifest)
-    if conflicts:
-        shutil.rmtree(plugin_dir, ignore_errors=True)
-        raise ConflictError(plugin_id, conflicts)
-
-    missing = unsatisfied_requirements(plugin_root, plugin_id, manifest)
-    if missing:
-        shutil.rmtree(plugin_dir, ignore_errors=True)
-        raise RequirementError(plugin_id, missing)
+    _refuse_unmet_dependencies(plugin_root, plugin_dir, plugin_id, manifest)
 
     notify = on_phase or _noop_phase
     extract_items = [item(f"Extracted {file_count} files", ok=True)]
@@ -120,6 +136,9 @@ def run_install(
 
     persist_user_vars(plugin_dir, user_vars or {})
     full_vars = with_plugin_venv(vars, plugin_id)
-    log.extend(_install_apply_phases(plugin_root, plugin_dir, manifest, full_vars, notify))
+    try:
+        log.extend(_install_apply_phases(plugin_root, plugin_dir, manifest, full_vars, notify))
+    except IntegrityError as tampered_package:
+        _refuse(plugin_dir, tampered_package)
     finalize_install_outcome(plugin_dir, full_vars, log)
     return plugin_id, log

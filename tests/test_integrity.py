@@ -3,6 +3,8 @@ manifest, and apply_install_deferred must refuse a mismatch before its phase lis
 (tmp_path-based style, no custom fixture, per tests/test_generic_daemon_guard.py)."""
 
 import hashlib
+import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -64,3 +66,30 @@ def test_apply_install_deferred_refuses_a_corrupted_file_before_any_phase_runs(
 
     assert excinfo.value.mismatched == ["a.txt"]
     assert seen == []
+
+
+def _pack_tampered_package(package_path: Path) -> None:
+    """A .b3 whose manifest advertises the packer's sha256 while the payload underneath it differs:
+    what a package altered in transit or at rest looks like."""
+    manifest = {
+        "name": "plug",
+        "install": {},
+        "files": [{"path": "files/a.txt", "sha256": _digest(b"as packed"), "mode": "644"}],
+    }
+    with zipfile.ZipFile(package_path, "w") as package:
+        package.writestr("manifest.json", json.dumps(manifest))
+        package.writestr("files/a.txt", b"tampered after packing")
+
+
+def test_a_refused_install_leaves_no_unpacked_tree_behind(tmp_path: Path) -> None:
+    """A refusal that kept the unpacked tree would make /capabilities report a plugin the daemon
+    never applied, so the refused install must take its own extraction with it."""
+    plugin_root = tmp_path / "plugins"
+    plugin_root.mkdir()
+    package_path = tmp_path / "plug.b3"
+    _pack_tampered_package(package_path)
+
+    with pytest.raises(IntegrityError):
+        installer.run_install(plugin_root, package_path, {})
+
+    assert not (plugin_root / "plug").exists()
