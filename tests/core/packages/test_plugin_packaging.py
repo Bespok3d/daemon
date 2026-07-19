@@ -122,5 +122,5 @@ def test_bake_deps_targets_printer_architecture() -> None:
 # artifacts) was rehomed into b3-builder's class-aware gate in the build-system-consolidation relay
 # (packet 6): the gate is now the one class-aware assertBaked, tested per class in
 # b3-builder/test/bake/assert-baked.test.ts, and pack-plugins.sh no longer carries the gate logic. A
-# packaging invariant that assumes one packer shape does not belong in the daemon suite; it belongs in
-# the one build core.
+# packaging invariant that assumes one packer shape does not belong in the daemon suite; it belongs
+# in the one build core.

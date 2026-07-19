@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import zipfile
@@ -40,6 +41,13 @@ def make_zip(entries: dict[str, bytes | str]) -> io.BytesIO:
             data = content if isinstance(content, bytes) else content.encode()
             zf.writestr(name, data)
     return buffer
+
+
+def packed_file_entry(path: str, content: bytes | str) -> dict:
+    """The manifest `files` entry a real pack would record for `content`: the installer verifies
+    every entry's sha256 before any phase runs, so a fixture must carry the true digest."""
+    data = content if isinstance(content, bytes) else content.encode()
+    return {"path": path, "sha256": hashlib.sha256(data).hexdigest(), "mode": "644"}
 
 
 def minimal_manifest(name: str = "test-plugin", extra: dict | None = None) -> str:
@@ -151,6 +159,7 @@ def test_install_creates_symlinks(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     src_rel = "files/myscript.py"
     dst = tmp_path / "link-target.py"
+    script_body = "# script"
     manifest = minimal_manifest(
         extra={
             "install": {
@@ -158,12 +167,12 @@ def test_install_creates_symlinks(tmp_path: Path, monkeypatch: MP) -> None:
                 "symlinks": [{"from": src_rel, "to": str(dst)}],
                 "patches": [],
             },
-            "files": [{"path": src_rel, "sha256": "", "mode": "644"}],
+            "files": [packed_file_entry(src_rel, script_body)],
         }
     )
     zip_path = tmp_path / "p.b3"
     zip_path.write_bytes(
-        make_zip({"manifest.json": manifest, src_rel: "# script"}).getvalue()
+        make_zip({"manifest.json": manifest, src_rel: script_body}).getvalue()
     )
 
     packages.install(zip_path, {})
@@ -176,6 +185,7 @@ def test_install_expands_vars_in_symlink_dst(tmp_path: Path, monkeypatch: MP) ->
     extras_dir = tmp_path / "extras"
     extras_dir.mkdir()
     src_rel = "files/mod.py"
+    module_body = "# mod"
     manifest = minimal_manifest(
         extra={
             "install": {
@@ -183,12 +193,12 @@ def test_install_expands_vars_in_symlink_dst(tmp_path: Path, monkeypatch: MP) ->
                 "symlinks": [{"from": src_rel, "to": "$EXTRAS/mod.py"}],
                 "patches": [],
             },
-            "files": [{"path": src_rel, "sha256": "", "mode": "644"}],
+            "files": [packed_file_entry(src_rel, module_body)],
         }
     )
     zip_path = tmp_path / "p.b3"
     zip_path.write_bytes(
-        make_zip({"manifest.json": manifest, src_rel: "# mod"}).getvalue()
+        make_zip({"manifest.json": manifest, src_rel: module_body}).getvalue()
     )
 
     packages.install(zip_path, {"EXTRAS": str(extras_dir)})
@@ -398,17 +408,18 @@ def test_install_intent_place_and_restart(tmp_path: Path, monkeypatch: MP) -> No
     klipper_cfg_dir = tmp_path / "config" / "bespok3d" / "klipper"
     klipper_cfg_dir.mkdir(parents=True)
     src_rel = "files/cfg/klipper/cpu-temp.cfg"
+    config_body = "[temperature_sensor]"
     manifest = minimal_manifest(
         extra={
             "install": {
                 "place": [{"class": "klipper-config", "src": src_rel}],
                 "restart": ["klipper"],
             },
-            "files": [{"path": src_rel, "sha256": "", "mode": "644"}],
+            "files": [packed_file_entry(src_rel, config_body)],
         }
     )
     zip_path = tmp_path / "p.b3"
-    entries: dict[str, bytes | str] = {"manifest.json": manifest, src_rel: "[temperature_sensor]"}
+    entries: dict[str, bytes | str] = {"manifest.json": manifest, src_rel: config_body}
     zip_path.write_bytes(make_zip(entries).getvalue())
 
     packages.install(zip_path, {"BESPOK3D_KLIPPER": str(klipper_cfg_dir)})
@@ -648,17 +659,18 @@ def test_uninstall_runs_declared_restart_hooks(tmp_path: Path, monkeypatch: MP) 
     klipper_cfg_dir = tmp_path / "config" / "bespok3d" / "klipper"
     klipper_cfg_dir.mkdir(parents=True)
     src_rel = "files/cfg/klipper/demo.cfg"
+    config_body = "[demo]"
     manifest = minimal_manifest(
         extra={
             "install": {
                 "place": [{"class": "klipper-config", "src": src_rel}],
                 "restart": ["klipper"],
             },
-            "files": [{"path": src_rel, "sha256": "", "mode": "644"}],
+            "files": [packed_file_entry(src_rel, config_body)],
         }
     )
     zip_path = tmp_path / "p.b3"
-    zip_path.write_bytes(make_zip({"manifest.json": manifest, src_rel: "[demo]"}).getvalue())
+    zip_path.write_bytes(make_zip({"manifest.json": manifest, src_rel: config_body}).getvalue())
     packages.install(zip_path, {"BESPOK3D_KLIPPER": str(klipper_cfg_dir)})
 
     ran.clear()
@@ -900,6 +912,7 @@ def test_install_returns_structured_log(tmp_path: Path, monkeypatch: MP) -> None
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     target_dir = tmp_path / "somedir"
     src_rel = "files/mod.py"
+    module_body = "# mod"
     manifest = minimal_manifest(
         extra={
             "install": {
@@ -908,11 +921,11 @@ def test_install_returns_structured_log(tmp_path: Path, monkeypatch: MP) -> None
                 "patches": [],
                 "start": [],
             },
-            "files": [{"path": src_rel, "sha256": "", "mode": "644"}],
+            "files": [packed_file_entry(src_rel, module_body)],
         }
     )
     zip_path = tmp_path / "p.b3"
-    zip_path.write_bytes(make_zip({"manifest.json": manifest, src_rel: "# mod"}).getvalue())
+    zip_path.write_bytes(make_zip({"manifest.json": manifest, src_rel: module_body}).getvalue())
 
     _plugin_id, log = packages.install(zip_path, {})
 
@@ -931,6 +944,7 @@ def test_install_returns_structured_log(tmp_path: Path, monkeypatch: MP) -> None
 def test_install_renders_template_to_plugin_local_path(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     template_rel = "files/webcam.conf.tmpl"
+    template_body = "[webcam $WEBCAM_NAME]\nservice: webrtc-camerastreamer\n"
     manifest = minimal_manifest(
         extra={
             "install": {
@@ -939,10 +953,9 @@ def test_install_renders_template_to_plugin_local_path(tmp_path: Path, monkeypat
                 "patches": [],
                 "templates": [{"from": template_rel, "to": "files/webcam.conf"}],
             },
-            "files": [{"path": template_rel, "sha256": "", "mode": "644"}],
+            "files": [packed_file_entry(template_rel, template_body)],
         }
     )
-    template_body = "[webcam $WEBCAM_NAME]\nservice: webrtc-camerastreamer\n"
     zip_path = tmp_path / "p.b3"
     zip_path.write_bytes(
         make_zip({"manifest.json": manifest, template_rel: template_body}).getvalue()
@@ -961,6 +974,7 @@ def test_install_renders_template_to_plugin_local_path(tmp_path: Path, monkeypat
 def test_install_template_rejects_absolute_target(tmp_path: Path, monkeypatch: MP) -> None:
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     template_rel = "files/x.tmpl"
+    template_body = "hi"
     manifest = minimal_manifest(
         extra={
             "install": {
@@ -969,11 +983,13 @@ def test_install_template_rejects_absolute_target(tmp_path: Path, monkeypatch: M
                 "patches": [],
                 "templates": [{"from": template_rel, "to": "/etc/passwd"}],
             },
-            "files": [{"path": template_rel, "sha256": "", "mode": "644"}],
+            "files": [packed_file_entry(template_rel, template_body)],
         }
     )
     zip_path = tmp_path / "p.b3"
-    zip_path.write_bytes(make_zip({"manifest.json": manifest, template_rel: "hi"}).getvalue())
+    zip_path.write_bytes(
+        make_zip({"manifest.json": manifest, template_rel: template_body}).getvalue()
+    )
 
     _plugin_id, log = packages.install(zip_path, {})
 
@@ -987,6 +1003,7 @@ def test_install_renders_template_before_symlink_so_symlink_target_exists(
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     template_rel = "files/cfg.tmpl"
     dst = tmp_path / "linked.conf"
+    template_body = "value = $V\n"
     manifest = minimal_manifest(
         extra={
             "install": {
@@ -995,10 +1012,9 @@ def test_install_renders_template_before_symlink_so_symlink_target_exists(
                 "symlinks": [{"from": "files/cfg.conf", "to": str(dst)}],
                 "patches": [],
             },
-            "files": [{"path": template_rel, "sha256": "", "mode": "644"}],
+            "files": [packed_file_entry(template_rel, template_body)],
         }
     )
-    template_body = "value = $V\n"
     zip_path = tmp_path / "p.b3"
     zip_path.write_bytes(
         make_zip({"manifest.json": manifest, template_rel: template_body}).getvalue()
@@ -1797,6 +1813,10 @@ def test_install_rejects_both_dep_files(tmp_path: Path, monkeypatch: MP) -> None
         packages.install(zip_path, {"BESPOK3D": str(tmp_path / "b3")})
 
 
+_NOTIFIER_REL = "files/cfg/moonraker/notifier.cfg"
+_NOTIFIER_BODY = "[notifier phone]\n"
+
+
 def test_install_auto_deactivates_plugin_that_breaks_a_service(
     tmp_path: Path, monkeypatch: MP, device_jinni: FakeKlipperJinni,
 ) -> None:
@@ -1830,15 +1850,15 @@ def test_install_auto_deactivates_plugin_that_breaks_a_service(
     monkeypatch.setattr(device_jinni, "health", health)
     manifest = minimal_manifest("notifier-ish", extra={
         "install": {
-            "place": [{"class": "moonraker-config", "src": "files/cfg/moonraker/notifier.cfg"}],
+            "place": [{"class": "moonraker-config", "src": _NOTIFIER_REL}],
             "restart": ["moonraker"],
         },
-        "files": [{"path": "files/cfg/moonraker/notifier.cfg", "sha256": "", "mode": "644"}],
+        "files": [packed_file_entry(_NOTIFIER_REL, _NOTIFIER_BODY)],
     })
     zip_path = tmp_path / "p.b3"
     zip_path.write_bytes(make_zip({
         "manifest.json": manifest,
-        "files/cfg/moonraker/notifier.cfg": "[notifier phone]\n",
+        _NOTIFIER_REL: _NOTIFIER_BODY,
     }).getvalue())
 
     _plugin_id, log = packages.install(
@@ -1974,14 +1994,15 @@ def _arrange_extra_install(tmp_path: Path, monkeypatch: MP) -> dict:
     # Stub the HTTP boundary healthy so the post-restart safety check sees a working printer.
     monkeypatch.setattr(urlreq, "urlopen", lambda *_a, **_kw: _HealthyServerInfo())
     monkeypatch.setattr(sp, "run", _RecordingRun())
+    extra_body = "import humanize\nload_config = lambda config: None"
     manifest = minimal_manifest("print-time-human", extra={
         "install": {"place": [{"class": "klipper-extra", "src": _EXTRA_REL}], "restart": ["klipper"]},  # noqa: E501
-        "files": [{"path": _EXTRA_REL, "sha256": "", "mode": "644"}],
+        "files": [packed_file_entry(_EXTRA_REL, extra_body)],
     })
     zip_path = tmp_path / "p.b3"
     zip_path.write_bytes(make_zip({
         "manifest.json": manifest,
-        _EXTRA_REL: "import humanize\nload_config = lambda config: None",
+        _EXTRA_REL: extra_body,
         "klipper_requirements.txt": "humanize>=4.9.0",
         "files/site-packages/humanize/__init__.py": "def naturaldelta(seconds): return 'a while'",
         "files/site-packages/humanize-4.15.0.dist-info/METADATA": "Name: humanize",
