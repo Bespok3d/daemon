@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import cast
 
 from .. import python_env
+from .plugin_dir import contained_plugin_dir
 
 # The comma is allowed for list-valued config (e.g. NOTIFY_EVENTS="complete,error,cancelled"). It is
 # safe in the shell-interpolated `install.start` commands: a bare comma is not a metacharacter, and
@@ -48,9 +49,10 @@ def load_user_vars(plugin_dir: Path) -> dict[str, str]:
 
 
 def with_plugin_venv(vars: dict[str, str], plugin_id: str) -> dict[str, str]:
-    """Expose the deterministic per-plugin venv path as $PLUGIN_VENV for service commands."""
-    venv_path = python_env.plugin_venv_path(vars.get("BESPOK3D", ""), plugin_id)
-    return {**vars, python_env.PLUGIN_VENV_VAR: str(venv_path)}
+    """Expose the deterministic per-plugin venv path as $PLUGIN_VENV for service commands. The id is
+    contained first: this value is expanded into commands the printer runs as root."""
+    venv_root = python_env.plugin_venv_root(vars.get("BESPOK3D", ""))
+    return {**vars, python_env.PLUGIN_VENV_VAR: str(contained_plugin_dir(venv_root, plugin_id))}
 
 
 def missing_required_vars(manifest: dict, available: dict[str, str]) -> list[str]:

@@ -15,6 +15,7 @@ from ..schemas import (
     PackResultsResponse,
     PluginRecoveryResult,
 )
+from .refusals import refusal_detail
 
 router = APIRouter()
 
@@ -62,6 +63,8 @@ async def uninstall_batch_packages(body: UninstallBatchBody) -> PackResultsRespo
     except packages.DependentsError as exc:
         detail = {"error": "dependents", "plugin_id": exc.plugin_id, "dependents": exc.dependents}
         raise HTTPException(status_code=409, detail=detail) from exc
+    except packages.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail=refusal_detail(exc)) from exc
     except packages.BlockedActionError:
         raise
     except ValueError as exc:

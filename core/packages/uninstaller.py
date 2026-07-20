@@ -22,8 +22,10 @@ from .errors import DependentsError
 from .manifest import manifest_at
 from .patches import restore_original_files
 from .placement import remove_plugin_symlinks
+from .plugin_dir import contained_plugin_dir
+from .plugin_venv import remove_plugin_venv
 from .print_guard import guard_no_print_for_removal
-from .python_deps import remove_plugin_site_links, remove_plugin_venv
+from .python_deps import remove_plugin_site_links
 from .recovery import restart_services
 from .user_vars import expand, load_user_vars
 
@@ -48,10 +50,10 @@ def _remove_one(plugin_dir: Path, vars: dict[str, str]) -> None:
 def remove_with_dependents(plugin_root: Path, plugin_id: str, vars: dict[str, str], removed: list[str]) -> None:  # noqa: E501
     """Remove a plugin and its installed dependents, dependents first, appending each removed id to
     `removed` (which dedupes across calls). Public so the batch path reuses one removal walk."""
+    plugin_dir = contained_plugin_dir(plugin_root, plugin_id)
     for dependent in installed_dependents(plugin_root, plugin_id):
         if dependent not in removed:
             remove_with_dependents(plugin_root, dependent, vars, removed)
-    plugin_dir = plugin_root / plugin_id
     if plugin_dir.exists() and plugin_id not in removed:
         _remove_one(plugin_dir, vars)
         removed.append(plugin_id)
@@ -71,7 +73,7 @@ def removal_restart_commands(plugin_root: Path, plugin_ids: list[str], vars: dic
     Public so the batch path collects each plugin's restart hooks before any dir is gone."""
     commands: list[str] = []
     for plugin_id in plugin_ids:
-        plugin_dir = plugin_root / plugin_id
+        plugin_dir = contained_plugin_dir(plugin_root, plugin_id)
         if (plugin_dir / "manifest.json").exists():
             commands.extend(_manifest_restart_commands(manifest_at(plugin_dir), vars))
     return list(dict.fromkeys(commands))
@@ -101,7 +103,7 @@ def run_uninstall(plugin_root: Path, plugin_id: str, vars: dict[str, str], casca
 
     Returns the ids removed, dependents first, target last.
     """
-    plugin_dir = plugin_root / plugin_id
+    plugin_dir = contained_plugin_dir(plugin_root, plugin_id)
     if not plugin_dir.exists():
         raise FileNotFoundError(plugin_id)
     dependents = installed_dependents(plugin_root, plugin_id)

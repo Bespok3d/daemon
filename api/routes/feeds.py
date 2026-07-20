@@ -83,8 +83,9 @@ async def install_progress_feed(websocket: WebSocket, token: str = Query(default
 
 def _plugin_log_source(plugin_id: str, pattern: str) -> tuple[Path, re.Pattern[str]] | None:
     """Resolve the installed plugin's log file and the capture pattern, or None if there is nothing
-    to tail (plugin not installed, or it declares neither a service nor a log path)."""
-    plugin_dir = packages.PLUGIN_ROOT / plugin_id
+    to tail (plugin not installed, or it declares neither a service nor a log path). Refuses an id
+    that names anything but its own directory before reading anything under the plugin root."""
+    plugin_dir = packages.contained_plugin_dir(packages.PLUGIN_ROOT, plugin_id)
     if not (plugin_dir / "manifest.json").exists():
         return None
     manifest = packages.manifest_at(plugin_dir)
@@ -92,6 +93,15 @@ def _plugin_log_source(plugin_id: str, pattern: str) -> tuple[Path, re.Pattern[s
     if log_path is None:
         return None
     return log_path, log_capture.resolve_pattern(manifest, pattern or None)
+
+
+def _tailable_log_source(plugin_id: str, pattern: str) -> tuple[Path, re.Pattern[str]] | None:
+    """A websocket has one refusal channel, so a refused id yields the same None as an id with
+    nothing to tail: the client gets no feed either way."""
+    try:
+        return _plugin_log_source(plugin_id, pattern)
+    except packages.IntegrityError:
+        return None
 
 
 async def _relay_plugin_log(
@@ -114,7 +124,7 @@ async def plugin_log_feed(
     if not auth.is_authorized_token(token):
         await websocket.close(code=1008)
         return
-    source = _plugin_log_source(plugin_id, pattern)
+    source = _tailable_log_source(plugin_id, pattern)
     if source is None:
         await websocket.close(code=1008)
         return

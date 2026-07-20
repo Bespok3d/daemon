@@ -12,6 +12,7 @@ from ..intent import normalize_install
 from ..safety import OperationKind
 from .archive import fix_ownership
 from .manifest import manifest_at
+from .plugin_dir import contained_plugin_dir
 from .print_guard import guard_no_print_during_restart
 from .recovery import op_context, restart_phases
 from .start_commands import run_plugin_start_commands
@@ -30,7 +31,7 @@ def run_reconfigure(
     Lighter than a reinstall: files, symlinks, and patches are left untouched; only the
     rendered config files change. Relies on installs being idempotent.
     """
-    plugin_dir = plugin_root / plugin_id
+    plugin_dir = contained_plugin_dir(plugin_root, plugin_id)
     if not (plugin_dir / "manifest.json").exists():
         raise ValueError(f"plugin {plugin_id!r} is not installed")
     manifest = manifest_at(plugin_dir)

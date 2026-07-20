@@ -10,6 +10,7 @@ from core import jinni_client, packages
 from core.packages import dependencies, python_deps
 from protocol import ActionResult, DeviceHealth, ServiceHealth
 from tests.fakes import FakeKlipperJinni
+from tests.package_fixtures import with_declared_files
 
 MP = pytest.MonkeyPatch
 
@@ -35,12 +36,24 @@ class _HealthyServerInfo:
 
 
 def make_zip(entries: dict[str, bytes | str]) -> io.BytesIO:
+    """A .b3 from its members, with the manifest's files[] filled in when the caller left it empty.
+    The daemon refuses an archive carrying a member the manifest never listed, so an entry dict that
+    skipped that step would not describe any package a printer can be handed."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as zf:
-        for name, content in entries.items():
+        for name, content in _declaring_members(entries).items():
             data = content if isinstance(content, bytes) else content.encode()
             zf.writestr(name, data)
     return buffer
+
+
+def _declaring_members(entries: dict[str, bytes | str]) -> dict[str, bytes | str]:
+    raw_manifest = entries.get("manifest.json")
+    if raw_manifest is None:
+        return entries
+    members = {name: content for name, content in entries.items() if name != "manifest.json"}
+    manifest = with_declared_files(json.loads(raw_manifest), members)
+    return {"manifest.json": json.dumps(manifest), **members}
 
 
 def packed_file_entry(path: str, content: bytes | str) -> dict:
@@ -1995,9 +2008,10 @@ def _arrange_extra_install(tmp_path: Path, monkeypatch: MP) -> dict:
     monkeypatch.setattr(urlreq, "urlopen", lambda *_a, **_kw: _HealthyServerInfo())
     monkeypatch.setattr(sp, "run", _RecordingRun())
     extra_body = "import humanize\nload_config = lambda config: None"
+    # files[] is left to make_zip: a package baking deps must list the baked tree and its dep
+    # declaration too, or the daemon refuses them as members the manifest never signed.
     manifest = minimal_manifest("print-time-human", extra={
         "install": {"place": [{"class": "klipper-extra", "src": _EXTRA_REL}], "restart": ["klipper"]},  # noqa: E501
-        "files": [packed_file_entry(_EXTRA_REL, extra_body)],
     })
     zip_path = tmp_path / "p.b3"
     zip_path.write_bytes(make_zip({

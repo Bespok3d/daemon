@@ -30,11 +30,13 @@ from .installer import (
     run_install,
 )
 from .installer_batch import run_install_batch
+from .integrity import IntegrityError  # noqa: F401  re-export for api.routes
 from .lifecycle import (  # noqa: F401  re-export for api.routes
     deactivate_all,
     teardown,
 )
 from .manifest import manifest_at
+from .plugin_dir import contained_plugin_dir  # noqa: F401  re-export for api.routes
 from .print_guard import guard_no_print
 from .reconfigurer import run_reconfigure
 from .recovery import recover_one, restart_services

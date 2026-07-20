@@ -27,6 +27,11 @@ class CapabilitiesResponse(BaseModel):
         default_factory=list,
         description="Installed plugins turned off (safety net or user); shown disabled, not active",
     )
+    stored_signatures: list[str] = Field(
+        default_factory=list,
+        description="Installed plugins still holding the manifest signature their package shipped; "
+                    "presence on disk only, never a verification result",
+    )
     firmware_version: str = Field(description="Printer firmware version string, or 'unknown'")
     arch: str = Field(
         default="unknown",

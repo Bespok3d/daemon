@@ -6,15 +6,14 @@ end to end against a real directory tree, with no device and no services: every 
 `start: []`, so nothing touches Klipper/Moonraker. The printer remains the judge of device fidelity;
 this is the logical-coherence net below it.
 """
-import io
-import json
-import zipfile
 from pathlib import Path
 
 import pytest
 
 from core import packages
+from core.packages.signatures import plugins_with_stored_signature
 from core.selfcheck import run_selfcheck
+from tests.package_fixtures import package_bytes
 
 MP = pytest.MonkeyPatch
 
@@ -28,14 +27,9 @@ def workspace(tmp_path: Path, monkeypatch: MP) -> Path:
 
 
 def build_b3(base: Path, name: str, install: dict, files: dict[str, str]) -> Path:
-    manifest = {"name": name, "version": "1.0.0", "install": install, "files": []}
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr("manifest.json", json.dumps(manifest))
-        for relative_path, content in files.items():
-            archive.writestr(relative_path, content)
+    manifest = {"name": name, "version": "1.0.0", "install": install}
     package_path = base / f"{name}.b3"
-    package_path.write_bytes(buffer.getvalue())
+    package_path.write_bytes(package_bytes(manifest, files))
     return package_path
 
 
@@ -97,3 +91,21 @@ def test_recover_reapplies_a_removed_symlink(workspace: Path) -> None:
     packages.recover(vars)
 
     assert (klipper / "x.cfg").is_symlink()
+
+
+def test_the_shipped_signature_survives_install_and_recover(workspace: Path) -> None:
+    # The detached signature is kept on disk so a package installed while the GPG leg was waived can
+    # still be checked against a key later. Recover re-applies an install, so it must not lose it.
+    klipper = workspace / "klipper"
+    klipper.mkdir()
+    vars = {"BESPOK3D_KLIPPER": str(klipper)}
+    members = {"files/x.cfg": "DATA", "manifest.json.sig": "-----BEGIN PGP SIGNATURE-----"}
+    package_path = build_b3(workspace, "demo", config_symlink_install(), members)
+    plugin_root = workspace / "plugins"
+
+    packages.install(package_path, vars)
+    assert plugins_with_stored_signature(plugin_root) == ["demo"]
+
+    packages.recover(vars)
+    assert (plugin_root / "demo" / "manifest.json.sig").read_text().startswith("-----BEGIN PGP")
+    assert plugins_with_stored_signature(plugin_root) == ["demo"]

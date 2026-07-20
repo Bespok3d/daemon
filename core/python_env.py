@@ -17,13 +17,21 @@ from pathlib import Path
 
 PLUGIN_VENV_DIRNAME = "venv-plugins"
 PLUGIN_VENV_VAR = "PLUGIN_VENV"
+REQUIREMENTS_FILE = "requirements.txt"
+KLIPPER_REQUIREMENTS_FILE = "klipper_requirements.txt"
 _WHEELS_SUBDIR = "files/wheels"
 _SITE_PACKAGES_SUBDIR = "files/site-packages"
 _SITE_PACKAGES_VAR = "PYTHON_SITE_PACKAGES"
 
 
+def plugin_venv_root(bespok3d_root: str) -> Path:
+    """The tree holding one venv directory per plugin. Public so a caller that must contain an
+    untrusted plugin id has the root to contain it against."""
+    return Path(bespok3d_root) / PLUGIN_VENV_DIRNAME
+
+
 def plugin_venv_path(bespok3d_root: str, plugin_id: str) -> Path:
-    return Path(bespok3d_root) / PLUGIN_VENV_DIRNAME / plugin_id
+    return plugin_venv_root(bespok3d_root) / plugin_id
 
 
 def venv_create_command(venv_path: Path) -> list[str]:

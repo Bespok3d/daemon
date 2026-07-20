@@ -2,16 +2,20 @@ import io
 import json
 import zipfile
 from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
+from fastapi import HTTPException, WebSocket
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from api import app
 from api.routes import feeds as routes_feeds
 from api.routes import health as routes_health
-from core import auth, jinni_client, packages, printer_identity
+from api.routes.plugins import plugin_config
+from core import auth, capabilities, jinni_client, packages, printer_identity
+from core.packages.integrity import ESCAPING_PLUGIN_ID, UNDECLARED_MEMBER
 
 
 class _MockAdapter:
@@ -19,6 +23,20 @@ class _MockAdapter:
         return {}
 
 TEST_TOKEN = "test-bearer-token-1234"
+
+
+class _RecordingWebSocket:
+    """Stands in for the app's socket on the refusal path, where a close code is the whole reply."""
+
+    def __init__(self) -> None:
+        self.close_code: int | None = None
+        self.accepted = False
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def close(self, code: int = 1000) -> None:
+        self.close_code = code
 
 
 @pytest.fixture(autouse=True)
@@ -105,6 +123,20 @@ async def test_capabilities_returns_all_required_fields(client: httpx.AsyncClien
     assert "klipper_version" in body
     assert "preferred_registries" in body
     assert "endpoints" in body
+
+
+async def test_capabilities_reports_which_plugins_kept_their_signature(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Presence on disk only: it says the package carried a signature, never that it verified.
+    signed = tmp_path / "plugins" / "spoolman"
+    signed.mkdir(parents=True)
+    (signed / "manifest.json.sig").write_text("-----BEGIN PGP SIGNATURE-----")
+    (tmp_path / "plugins" / "camera").mkdir()
+    monkeypatch.setattr(capabilities, "PLUGIN_ROOT", tmp_path / "plugins")
+
+    body = (await client.get("/capabilities")).json()
+    assert body["stored_signatures"] == ["spoolman"]
 
 
 async def test_capabilities_installed_is_a_dict(client: httpx.AsyncClient) -> None:
@@ -266,6 +298,29 @@ async def test_install_route_returns_409_on_unmet_requirement(
     detail = response.json()["detail"]
     assert detail["error"] == "requirement"
     assert detail["missing"] == ["tun"]
+
+
+async def test_install_route_returns_409_naming_the_refused_members(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A refused package is not a malformed request: it gets the same 409 refusal family the app
+    # already discriminates on, carrying the reason token and the members that earned it.
+    def raise_integrity(*_args: object, **_kwargs: object) -> tuple[str, list]:
+        raise packages.IntegrityError("stowaway", UNDECLARED_MEMBER, ["files/extra.sh"])
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "install", raise_integrity)
+    response = await client.post(
+        "/plugins/install",
+        files={"file": ("stowaway.b3", _minimal_b3(), "application/octet-stream")},
+        data={"vars_json": "{}"},
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "integrity"
+    assert detail["plugin_id"] == "stowaway"
+    assert detail["reason"] == UNDECLARED_MEMBER
+    assert detail["paths"] == ["files/extra.sh"]
 
 
 async def test_install_route_returns_400_on_bad_vars(
@@ -478,6 +533,23 @@ async def test_plugin_config_returns_404_for_an_unknown_plugin(
     assert response.status_code == 404
 
 
+async def test_plugin_config_refuses_an_id_that_climbs_out_of_the_plugin_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Driven at the handler because the route's `[^/]+` param accepts an id whose separators arrived
+    # percent-encoded, and the test client decodes them before routing sees them.
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path / "plugins")
+
+    with pytest.raises(HTTPException) as refusal:
+        await plugin_config("../../etc")
+
+    assert refusal.value.status_code == 409
+    assert refusal.value.detail == {
+        "error": "integrity", "plugin_id": "../../etc",
+        "reason": "escaping_plugin_id", "paths": ["../../etc"],
+    }
+
+
 async def test_plugin_config_requires_auth(unauthed_client: httpx.AsyncClient) -> None:
     response = await unauthed_client.get("/plugins/spoolman/config")
     assert response.status_code == 401
@@ -627,6 +699,42 @@ def test_plugin_log_ws_unknown_plugin_closes(
     with pytest.raises(WebSocketDisconnect):
         with TestClient(app).websocket_connect(url) as ws:
             ws.receive_json()
+
+
+def test_the_plugin_log_source_refuses_an_id_that_climbs_out_of_the_plugin_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    # A real tailable plugin sits at the escaped location, so an unguarded resolver would hand back
+    # its log instead of refusing: the refusal is what this asserts, not the absence of a target.
+    plugin_root = tmp_path / "plugins"
+    plugin_root.mkdir()
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    _seed_plugin_with_log(tmp_path, "link https://oe.example/x\n")
+
+    with pytest.raises(packages.IntegrityError) as refusal:
+        routes_feeds._plugin_log_source("../octoeverywhere", "")
+
+    assert refusal.value.reason == ESCAPING_PLUGIN_ID
+
+
+async def test_plugin_log_ws_closes_on_an_id_that_climbs_out_of_the_plugin_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    # Driven at the handler because the route's `[^/]+` param accepts an id whose separators arrived
+    # percent-encoded, and the test client decodes them before routing sees them. The escaped
+    # location holds a tailable plugin, so an unguarded handler would accept and start streaming it.
+    plugin_root = tmp_path / "plugins"
+    plugin_root.mkdir()
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    _seed_plugin_with_log(tmp_path, "link https://oe.example/x\n")
+    refused = _RecordingWebSocket()
+
+    await routes_feeds.plugin_log_feed(
+        cast(WebSocket, refused), "../octoeverywhere", token=TEST_TOKEN,
+    )
+
+    assert refused.close_code == 1008
+    assert not refused.accepted
 
 
 def test_plugin_log_ws_streams_snapshot_url(

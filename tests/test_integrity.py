@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from core.packages import installer
-from core.packages.integrity import IntegrityError, verify_files
+from core.packages.integrity import CHECKSUM_MISMATCH, IntegrityError, verify_files
 
 
 def _digest(data: bytes) -> str:
@@ -64,8 +64,25 @@ def test_apply_install_deferred_refuses_a_corrupted_file_before_any_phase_runs(
     with pytest.raises(IntegrityError) as excinfo:
         installer.apply_install_deferred(tmp_path, plugin_dir, manifest, {}, seen.append)
 
-    assert excinfo.value.mismatched == ["a.txt"]
+    assert excinfo.value.reason == CHECKSUM_MISMATCH
+    assert excinfo.value.paths == ["a.txt"]
     assert seen == []
+
+
+def test_apply_install_deferred_accepts_a_manifest_that_lists_the_doc_tree(
+    tmp_path: Path,
+) -> None:
+    """b3-builder lists doc/ in files[] and unpack_package deletes it, so hashing every listed entry
+    would call every doc-carrying package tampered and let no such plugin install at all."""
+    plugin_dir = tmp_path / "plug"
+    manifest_files = _write_plugin(plugin_dir)
+    unwritten_doc = {"path": "doc/guide.md", "sha256": _digest(b"never unpacked"), "mode": "644"}
+    manifest = {"name": "plug", "install": {}, "files": [*manifest_files, unwritten_doc]}
+    seen: list[dict] = []
+
+    phases, _ = installer.apply_install_deferred(tmp_path, plugin_dir, manifest, {}, seen.append)
+
+    assert phases
 
 
 def _pack_tampered_package(package_path: Path) -> None:

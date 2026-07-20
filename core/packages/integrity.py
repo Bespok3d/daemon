@@ -8,14 +8,24 @@ into the printer.
 import hashlib
 from pathlib import Path
 
+# Why the archive did not match its signed manifest. Relayed as TOKENS the client localizes
+# (ADR-0037); the exception message spells them out for the daemon's own logs, never for the user.
+CHECKSUM_MISMATCH = "checksum_mismatch"
+UNDECLARED_MEMBER = "undeclared_member"
+ESCAPING_MEMBER = "escaping_member"
+ESCAPING_PLUGIN_ID = "escaping_plugin_id"
+
 
 class IntegrityError(Exception):
-    """Install was refused because one or more files failed the manifest's sha256 check."""
+    """Install was refused because the package did not match its signed manifest: a file whose
+    sha256 differs, a member the manifest never listed, a member aimed outside the plugin dir, or a
+    plugin name that is not a plain directory name."""
 
-    def __init__(self, plugin_id: str, mismatched: list[str]) -> None:
+    def __init__(self, plugin_id: str, reason: str, paths: list[str]) -> None:
         self.plugin_id = plugin_id
-        self.mismatched = mismatched
-        super().__init__(f"{plugin_id} failed integrity check: {', '.join(mismatched)}")
+        self.reason = reason
+        self.paths = paths
+        super().__init__(f"{plugin_id} failed integrity check ({reason}): {', '.join(paths)}")
 
 
 def verify_files(plugin_dir: Path, manifest_files: list[dict]) -> list[str]:

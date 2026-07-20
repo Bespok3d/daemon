@@ -2,10 +2,11 @@
 system site-packages, then tear them down. CI bakes the deps into the .b3, so no pip runs on the
 printer.
 
-This module owns the dep POLICY and the IO orchestration: which file a plugin declared, version
-coexistence across plugins that share the system interpreter, and the subprocess/symlink actions.
-The pure path/name builders live in core/python_env.py; the generic symlink mechanics (placing a
-link, finding its owner, testing where it points) live in core/packages/placement.py.
+This module owns the dep POLICY and the system site-packages side of the IO: which file a plugin
+declared, version coexistence across plugins that share the system interpreter, and the symlink
+actions. The per-plugin venv side lives in core/packages/plugin_venv.py; the pure path/name builders
+in core/python_env.py; the generic symlink mechanics (placing a link, finding its owner, testing
+where it points) in core/packages/placement.py.
 
 A plugin declares its deps as a plain file, never a manifest field, and the two are mutually
 exclusive: requirements.txt -> a per-plugin venv for the plugin's own service;
@@ -13,29 +14,19 @@ klipper_requirements.txt -> baked packages symlinked into the system site-packag
 Moonraker can import them.
 """
 
-import shutil
 import subprocess
 from pathlib import Path
 
 from protocol import ActionResult
 
 from .. import jinni_client, python_env
-from ..results import MAX_OUTPUT_BYTES, item, phase
+from ..results import item, phase
 from .placement import points_into, symlink_owner
-
-_REQUIREMENTS_FILE = "requirements.txt"
-_KLIPPER_REQUIREMENTS_FILE = "klipper_requirements.txt"
-
-
-def _run_python_command(command: list[str], label: str) -> dict:
-    result = subprocess.run(command, capture_output=True, check=False)
-    raw = (result.stdout + result.stderr).decode(errors="replace")
-    output = raw[:MAX_OUTPUT_BYTES] + ("…" if len(raw) > MAX_OUTPUT_BYTES else "")
-    return item(label, ok=result.returncode == 0, output=output.strip())
+from .plugin_venv import provision_venv_phase
 
 
 def reject_conflicting_dep_files(plugin_dir: Path) -> None:
-    if (plugin_dir / _REQUIREMENTS_FILE).is_file() and (plugin_dir / _KLIPPER_REQUIREMENTS_FILE).is_file():  # noqa: E501
+    if (plugin_dir / python_env.REQUIREMENTS_FILE).is_file() and (plugin_dir / python_env.KLIPPER_REQUIREMENTS_FILE).is_file():  # noqa: E501
         raise ValueError(
             "a plugin ships requirements.txt OR klipper_requirements.txt, not both: the first goes "
             "in the plugin's own venv, the second into the system Python for Klipper/Moonraker"
@@ -47,8 +38,8 @@ def reject_unbaked_deps(plugin_dir: Path) -> None:
     the printer). An unbaked declaration is a broken build: fail loudly here instead of provisioning
     nothing and letting the dependent component fail to import at runtime."""
     declarations = [
-        (_REQUIREMENTS_FILE, python_env.plugin_wheels_dir(plugin_dir)),
-        (_KLIPPER_REQUIREMENTS_FILE, python_env.baked_site_packages_dir(plugin_dir)),
+        (python_env.REQUIREMENTS_FILE, python_env.plugin_wheels_dir(plugin_dir)),
+        (python_env.KLIPPER_REQUIREMENTS_FILE, python_env.baked_site_packages_dir(plugin_dir)),
     ]
     for declaration, baked in declarations:
         if (plugin_dir / declaration).is_file() and not (baked.is_dir() and any(baked.iterdir())):
@@ -56,20 +47,6 @@ def reject_unbaked_deps(plugin_dir: Path) -> None:
                 f"{declaration} is present but nothing was baked into {baked.relative_to(plugin_dir)}/; "  # noqa: E501
                 "rebuild so the deps ship with it (CI bakes them; the printer never pips)"
             )
-
-
-def _provision_venv(plugin_dir: Path, vars: dict[str, str]) -> dict | None:
-    """Per-plugin venv from requirements.txt, installed offline from the baked wheels. None if absent."""  # noqa: E501
-    if not (plugin_dir / _REQUIREMENTS_FILE).is_file():
-        return None
-    venv_path = python_env.plugin_venv_path(vars["BESPOK3D"], plugin_dir.name)
-    items: list[dict] = []
-    if not venv_path.exists():
-        items.append(_run_python_command(python_env.venv_create_command(venv_path), f"create venv {venv_path.name}"))  # noqa: E501
-    wheels = sorted(python_env.plugin_wheels_dir(plugin_dir).glob("*.whl"))
-    install = python_env.requirements_install_command(venv_path, wheels)
-    items.append(_run_python_command(install, "install requirements (offline)"))
-    return phase("python", "Python environment", items)
 
 
 def _is_importable_entry(entry: Path) -> bool:
@@ -136,7 +113,7 @@ def _link_site_packages(plugin_root: Path, plugin_dir: Path, vars: dict[str, str
     """Symlink baked packages into the system site-packages for a Klipper/Moonraker extra. None if
     absent. The precheck (already-importable, cross-plugin version coexistence, real-file-in-the-
     way) is a read the daemon owns; the symlink IO is the jinni's wire actuation (ADR-0037)."""
-    if not (plugin_dir / _KLIPPER_REQUIREMENTS_FILE).is_file():
+    if not (plugin_dir / python_env.KLIPPER_REQUIREMENTS_FILE).is_file():
         return None
     site_pkgs = python_env.system_site_packages(vars)
     if site_pkgs is None:
@@ -153,7 +130,7 @@ def _link_site_packages(plugin_root: Path, plugin_dir: Path, vars: dict[str, str
 
 def provision_deps_phases(plugin_root: Path, plugin_dir: Path, vars: dict[str, str]) -> list[dict]:
     """The venv phase and the site-packages-link phase, whichever applies (mutually exclusive)."""
-    return [dep_phase for dep_phase in (_provision_venv(plugin_dir, vars), _link_site_packages(plugin_root, plugin_dir, vars)) if dep_phase is not None]  # noqa: E501
+    return [dep_phase for dep_phase in (provision_venv_phase(plugin_dir, vars), _link_site_packages(plugin_root, plugin_dir, vars)) if dep_phase is not None]  # noqa: E501
 
 
 def remove_plugin_site_links(plugin_dir: Path, vars: dict[str, str]) -> list[str]:
@@ -168,9 +145,3 @@ def remove_plugin_site_links(plugin_dir: Path, vars: dict[str, str]) -> list[str
     if destinations:
         jinni_client.unwire(str(plugin_dir), [str(entry) for entry in destinations])
     return [entry.name for entry in destinations]
-
-
-def remove_plugin_venv(plugin_id: str, vars: dict[str, str]) -> None:
-    bespok3d_root = vars.get("BESPOK3D", "")
-    if bespok3d_root:
-        shutil.rmtree(python_env.plugin_venv_path(bespok3d_root, plugin_id), ignore_errors=True)

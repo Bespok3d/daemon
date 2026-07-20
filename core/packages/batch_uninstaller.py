@@ -12,6 +12,7 @@ from pathlib import Path
 from ..safety import OperationContext, OperationKind
 from .dependencies import installed_dependents
 from .errors import DependentsError
+from .plugin_dir import contained_plugin_dir
 from .print_guard import guard_no_print_for_removal
 from .recovery import restart_services
 from .uninstaller import removal_restart_commands, remove_with_dependents
@@ -30,7 +31,7 @@ def _collect_removal_closure(plugin_root: Path, plugin_id: str, closure: list[st
 def _uninstall_one(plugin_root: Path, plugin_id: str, vars: dict[str, str], removed: list[str]) -> dict:  # noqa: E501
     """Remove one selected plugin (and any not-yet-removed dependents) WITHOUT restarting, contained
     so one plugin's failure does not abort the batch. Returns the per-plugin result."""
-    if not (plugin_root / plugin_id).exists():
+    if not contained_plugin_dir(plugin_root, plugin_id).exists():
         return {"plugin_id": plugin_id, "ok": True, "skipped": True, "reason": "not installed", "log": []}  # noqa: E501
     try:
         remove_with_dependents(plugin_root, plugin_id, vars, removed)
@@ -41,7 +42,8 @@ def _uninstall_one(plugin_root: Path, plugin_id: str, vars: dict[str, str], remo
 
 def run_uninstall_batch(plugin_root: Path, plugin_ids: list[str], vars: dict[str, str], cascade: bool = False) -> list[dict]:  # noqa: E501
     """Remove the given plugins: per-plugin results then a final (services) restart result."""
-    present = [plugin_id for plugin_id in plugin_ids if (plugin_root / plugin_id).exists()]
+    present = [plugin_id for plugin_id in plugin_ids
+               if contained_plugin_dir(plugin_root, plugin_id).exists()]
     if not present:
         return []
     closure: list[str] = []

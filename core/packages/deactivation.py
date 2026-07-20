@@ -12,7 +12,8 @@ from ..safety import OperationContext, OperationKind, diagnose_module_failure
 from .manifest import manifest_at
 from .patches import restore_original_files
 from .placement import remove_plugin_symlinks
-from .python_deps import remove_plugin_site_links, remove_plugin_venv
+from .plugin_venv import remove_plugin_venv
+from .python_deps import remove_plugin_site_links
 from .user_vars import expand, load_user_vars
 
 DEACTIVATED_MARKER = "deactivated.json"

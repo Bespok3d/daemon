@@ -21,16 +21,9 @@ from ..schemas import (
     UninstallResponse,
 )
 from .feeds import install_hub
+from .refusals import REFUSALS, detail_text, refusal_detail
 
 router = APIRouter()
-
-
-def _detail_text(detail: object) -> str:
-    """A failed install's HTTPException detail is a plain string for most errors and a dict for a
-    conflict; flatten either into a single line for the progress feed's terminal event."""
-    if isinstance(detail, dict):
-        return str(detail.get("error", detail))
-    return str(detail)
 
 
 def _install_or_raise(
@@ -42,15 +35,8 @@ def _install_or_raise(
         plugin_id, install_log = packages.install(
             tmp_path, all_vars, user_vars=user_vars, on_phase=on_phase,
         )
-    except packages.BlockedActionError as exc:
-        detail = {"error": "blocked", "blocked_actions": exc.blocked}
-        raise HTTPException(status_code=409, detail=detail) from exc
-    except packages.ConflictError as exc:
-        detail = {"error": "conflict", "plugin_id": exc.plugin_id, "conflicts": exc.conflicts}
-        raise HTTPException(status_code=409, detail=detail) from exc
-    except packages.RequirementError as exc:
-        detail = {"error": "requirement", "plugin_id": exc.plugin_id, "missing": exc.missing}
-        raise HTTPException(status_code=409, detail=detail) from exc
+    except REFUSALS as exc:
+        raise HTTPException(status_code=409, detail=refusal_detail(exc)) from exc
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -91,7 +77,7 @@ async def install_plugin(
         install_hub.publish({"type": "done", "ok": response.ok})
         return response
     except HTTPException as exc:
-        install_hub.publish({"type": "done", "ok": False, "error": _detail_text(exc.detail)})
+        install_hub.publish({"type": "done", "ok": False, "error": detail_text(exc.detail)})
         raise
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -109,6 +95,8 @@ async def reconfigure_plugin(plugin_id: str, user_vars: dict[str, str]) -> Recon
         result_id, log = await asyncio.to_thread(packages.reconfigure, plugin_id, all_vars, user_vars)  # noqa: E501
     except packages.BlockedActionError:
         raise
+    except packages.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail=refusal_detail(exc)) from exc
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -126,7 +114,10 @@ async def reconfigure_plugin(plugin_id: str, user_vars: dict[str, str]) -> Recon
     ),
 )
 async def plugin_config(plugin_id: str) -> PluginConfigResponse:
-    plugin_dir = packages.PLUGIN_ROOT / plugin_id
+    try:
+        plugin_dir = packages.contained_plugin_dir(packages.PLUGIN_ROOT, plugin_id)
+    except packages.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail=refusal_detail(exc)) from exc
     if not plugin_dir.is_dir():
         raise HTTPException(status_code=404, detail=plugin_id)
     return PluginConfigResponse(vars=packages.load_user_vars(plugin_dir))
@@ -143,6 +134,8 @@ async def uninstall_plugin(plugin_id: str, cascade: bool = False) -> UninstallRe
     except packages.DependentsError as exc:
         detail = {"error": "dependents", "plugin_id": exc.plugin_id, "dependents": exc.dependents}
         raise HTTPException(status_code=409, detail=detail) from exc
+    except packages.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail=refusal_detail(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

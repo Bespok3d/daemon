@@ -70,6 +70,7 @@ def _sample_capabilities() -> CapabilitiesResponse:
         "hardware": ["camera-mipi", "rfid-spi"],
         "installed": {"spoolman": "0.1.8"},
         "deactivated": [],
+        "stored_signatures": ["spoolman"],
         "firmware_version": "1.4.1",
         "arch": "aarch64",
         "board_class": "standard",

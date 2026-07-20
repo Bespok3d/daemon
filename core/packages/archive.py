@@ -14,6 +14,17 @@ from pathlib import Path
 from typing import cast
 
 from ..results import item, phase
+from .integrity import (
+    ESCAPING_MEMBER,
+    UNDECLARED_MEMBER,
+    IntegrityError,
+)
+from .members import (
+    escaping_members,
+    is_doc_member,
+    undeclared_members,
+)
+from .plugin_dir import contained_plugin_dir
 from .print_guard import guard_no_print_during_restart
 from .python_deps import reject_conflicting_dep_files, reject_unbaked_deps
 
@@ -23,14 +34,16 @@ def read_manifest(package_path: Path) -> dict:
         return cast(dict, json.loads(zf.read("manifest.json")))
 
 
-def _is_doc_member(name: str) -> bool:
-    return name == "doc" or name.startswith("doc/")
-
-
-def _extract_members(zf: zipfile.ZipFile, plugin_dir: Path, members: list[str]) -> None:
+def _extract_members(
+    zf: zipfile.ZipFile, plugin_dir: Path, plugin_id: str, members: list[str],
+) -> None:
+    escaping = escaping_members(plugin_dir, members)
+    if escaping:
+        raise IntegrityError(plugin_id, ESCAPING_MEMBER, escaping)
     # Unlink an existing file before extracting over it. Overwriting a running binary in place fails
     # with ETXTBSY ("Text file busy"); unlinking keeps the running process's inode and writes a new
-    # file, so a reinstall or version switch can replace a binary that is currently executing.
+    # file, so a reinstall or version switch can replace a binary that is currently executing. The
+    # delete runs as root, which is why no member reaches it before the containment check above.
     for name in members:
         dest = plugin_dir / name
         if dest.is_file() or dest.is_symlink():
@@ -44,10 +57,19 @@ def unpack_package(plugin_root: Path, package_path: Path) -> tuple[dict, Path, i
             raise ValueError("missing manifest.json")
         manifest = json.loads(zf.read("manifest.json"))
         guard_no_print_during_restart(manifest)
-        plugin_dir = plugin_root / manifest["name"]
+        # Checked before anything is measured against the plugin dir: the package names that
+        # directory, so a name carrying a path would relocate the extraction and every member would
+        # then land "inside" the relocated root.
+        plugin_dir = contained_plugin_dir(plugin_root, manifest.get("name"))
+        plugin_id = plugin_dir.name
+        # Enumerated before the plugin dir even exists: an archive carrying an unsigned member is
+        # refused whole, so a refused reinstall leaves the working install it would replace intact.
+        undeclared = undeclared_members(zf.namelist(), manifest.get("files", []))
+        if undeclared:
+            raise IntegrityError(plugin_id, UNDECLARED_MEMBER, undeclared)
         plugin_dir.mkdir(parents=True, exist_ok=True)
-        members = [name for name in zf.namelist() if not _is_doc_member(name)]
-        _extract_members(zf, plugin_dir, members)
+        members = [name for name in zf.namelist() if not is_doc_member(name)]
+        _extract_members(zf, plugin_dir, plugin_id, members)
         file_count = len(members)
     shutil.rmtree(plugin_dir / "doc", ignore_errors=True)
     reject_conflicting_dep_files(plugin_dir)
