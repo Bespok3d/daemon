@@ -28,6 +28,10 @@ max-returns = 4
 
 [tool.mypy]
 python_version = "3.11"
+# scripts/stage-package.sh copies core/, api/ and protocol/ into dist/package/ to hand b3-builder the
+# plugin shape it packs. mypy crawls directories itself (it does not read .gitignore the way ruff
+# does), so without this the staged copies collide with the originals as duplicate module names.
+exclude = ["^dist/"]
 disallow_untyped_defs = true
 warn_return_any = true
 warn_unused_ignores = true

@@ -1,14 +1,16 @@
 name: build-and-release
 
 # On a push to main that changes the daemon source, manifest, version, or build scripts: run the
-# daemon gate, pack the .b3 ("b3 zero", ADR-0030), publish a GitHub release, and attach the .b3 plus
-# its index atom. The app reads the atom to know when a newer daemon is available.
+# daemon gate, stage the daemon as a plugin source dir, then hand it to the one org-wide build Action
+# (b3-builder) that packs, stamps the publisher and SIGNS every other plugin. The daemon is plugin
+# zero (ADR-0030): same package shape, same signature, same release layout as any plugin. The single
+# difference is that the adapter puts it on the printer at enrollment, so it is never installed
+# through the plugin pipeline.
 #
-# D3 (deferred to 1b): whether to ALSO push the atom into Bespok3d/main-index/atoms/ so the daemon
-# appears in the catalog. Kept release-only for now: the daemon is bootstrapped by the adapter, not
-# store-installable, so we do NOT want to create a browsable store card for it yet. When D3 is settled,
-# add a main-index clone + commit step here (mirror the solo-plugin release.yml, harden the push with
-# fetch+rebase+retry per the project_ci_secrets_centralization note).
+# D3 (still deferred): whether to ALSO register the atom into Bespok3d/main-index/atoms/ so the daemon
+# appears in the catalog. Kept release-only: a browsable store card would offer an install path the
+# daemon does not have. When D3 is settled, add the main-index register-atoms action here, exactly as
+# the solo-plugin repos do.
 on:
   push:
     branches: [main]
@@ -18,7 +20,7 @@ on:
       - daemon.py
       - 'api/**'
       - 'core/**'
-      - 'jinni/**'
+      - 'protocol/**'
       - S99bespok3d
       - s10bespok3d-daemon
       - 'wheels/**'
@@ -35,10 +37,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -46,22 +44,55 @@ jobs:
       - name: Daemon gate (ruff + mypy + pytest on 3.11)
         run: bash scripts/check.sh
 
-      - name: Pack the daemon .b3
-        run: sh scripts/pack.sh
+      # An absent signing key makes b3-builder publish an unsigned .b3 while the run stays green, and a
+      # printer would then take the daemon on trust with nothing to verify. Refuse the release instead.
+      - name: Refuse to release without the signing key
+        env:
+          REGISTRY_SIGNING_KEY: ${{ secrets.REGISTRY_SIGNING_KEY }}
+        run: |
+          [ -n "$REGISTRY_SIGNING_KEY" ] || {
+            echo "REGISTRY_SIGNING_KEY is not set on this repo; refusing to publish an unsigned daemon" >&2
+            exit 1
+          }
 
-      - name: Release and attach the .b3 + atom
+      - name: Stage the daemon as a plugin source dir
+        run: sh scripts/stage-package.sh
+
+      - uses: Bespok3d/b3-builder@76d815a56dc5708b3d0c3a587fc2b027deca4640  # main @ 2026-07-21
+        with:
+          unit: repo
+          source: dist/package
+          out: dist
+          # Per-repo Actions secret today (GitHub Free cannot org-secret private repos); becomes ONE org
+          # secret every repo inherits when the repos go public.
+          signing-key: ${{ secrets.REGISTRY_SIGNING_KEY }}
+          # The wheels this package ships are vendored in the repo, so there is nothing to bake.
+          bake: 'false'
+          atom-repo: ${{ github.repository }}
+
+      # The signature is the whole point of routing through b3-builder, so prove it landed rather than
+      # trust a green run: a packed manifest with no detached signature, or one still carrying the
+      # source manifest's PLACEHOLDER publisher, means the release is not verifiable.
+      - name: Verify the packed daemon is signed and stamped
+        run: |
+          name=$(jq -r '.name' manifest.json)
+          version=$(jq -r '.version' manifest.json)
+          package="dist/${name}-${version}.b3"
+          unzip -l "$package" | grep -q 'manifest.json.sig' || {
+            echo "$package carries no manifest.json.sig" >&2; exit 1; }
+          publisher=$(unzip -p "$package" manifest.json | jq -r '.publisher')
+          case "$publisher" in
+            [Pp][Ll][Aa][Cc][Ee][Hh][Oo][Ll][Dd][Ee][Rr]|null|"")
+              echo "$package was not stamped with a real publisher (got '${publisher}')" >&2; exit 1 ;;
+          esac
+          echo "signed and stamped: publisher ${publisher}"
+
+      # b3-builder releases the .b3 itself. The atom rides along on the same release because the app
+      # reads it to learn a newer daemon exists; it is not registered in the catalog (see D3 above).
+      - name: Attach the index atom to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           name=$(jq -r '.name' manifest.json)
           version=$(jq -r '.version' manifest.json)
-          tag="${name}-v${version}"
-          asset="${name}-${version}.b3"
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "$tag" --notes "Automated release of ${asset}"
-          fi
-          gh release upload "$tag" "dist/${asset}" --clobber
-          download_url=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" \
-            --jq ".assets[] | select(.name==\"${asset}\") | .url")
-          node scripts/generate-atom.mjs --download-url "$download_url" --repo "$GITHUB_REPOSITORY"
-          gh release upload "$tag" "dist/${name}.atom.json" --clobber
+          gh release upload "${name}-v${version}" "dist/${name}.atom.json" --clobber

@@ -18,8 +18,7 @@ accept.
 
 ```sh
 bash scripts/check.sh          # the gate: em-dash guard, ruff, strict mypy, pytest on Python 3.11
-sh scripts/pack.sh             # build the publishable .b3 into dist/
-node scripts/generate-atom.mjs # inspect the index atom CI publishes (dry run)
+sh scripts/stage-package.sh    # lay the deployable subset out as the plugin source dir CI packs
 ```
 
 The gate pins Python 3.11 (the device runtime): it uses a real `python3.11`, else provisions a

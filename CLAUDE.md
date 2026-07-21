@@ -69,7 +69,7 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
   fine; propose any device-changing step and wait for a yes.
 - **Never pip the system, Klipper, or Moonraker interpreters.** The daemon's deps live in its venv; plugin
   deps are baked into the package. (See the venv-isolation invariant in architecture.md.)
-- **Versioning.** Bump `version.py` and `manifest.json` together (the pack refuses a mismatch) and
+- **Versioning.** Bump `version.py` and `manifest.json` together (the gate refuses a mismatch) and
   update `tests/api/test_api.py`. The app-side `EXPECTED_DAEMON_VERSION` is generated from `version.py`
   at build time, so it needs no manual sync.
 - **Gate must stay green** before any change is considered done.

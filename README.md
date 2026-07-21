@@ -13,13 +13,14 @@ version.py            DAEMON_VERSION, the single source of truth for the version
 daemon.py             entrypoint
 api/                  FastAPI app, routes, middleware
 core/                 install / uninstall / recovery / safety / intent / auth ...
-jinni/                generic base jinni + loader (device-specific jinnis live in adapters/)
+protocol/             the contract the daemon and the jinni both import (the jinni runtime is its own
+                      app, adapters/klipper-jinni)
 S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
 wheels/               prebuilt offline runtime deps (pgpy)
 requirements.txt      runtime deps
 tests/                test suite (not packed)
-scripts/              check.sh / pack.sh / generate-atom.mjs (not packed)
+scripts/              check.sh / stage-package.sh (not packed)
 manifest.json         b3-zero manifest (version mirrors version.py)
 doc/                  README + CHANGELOG (shipped in the .b3); architecture + engineering-rules (not shipped)
 ```
@@ -34,14 +35,11 @@ assistant, point it at [CLAUDE.md](CLAUDE.md), which encodes the same rules and 
 ## Develop
 
 ```sh
-# Run the full gate (ruff + mypy + pytest). Requires python3.11 or uv, plus zip/jq for packing.
+# Run the full gate (ruff + mypy + pytest). Requires python3.11 or uv, plus jq for staging.
 bash scripts/check.sh
 
-# Build the publishable package -> dist/bespok3d-daemon-<version>.b3
-sh scripts/pack.sh
-
-# Inspect the index atom that CI publishes (dry run, local download_url)
-node scripts/generate-atom.mjs
+# Lay the deployable subset out as a plugin source dir -> dist/package/bespok3d-daemon/
+sh scripts/stage-package.sh
 
 # Browse the HTTP API locally: serves on http://localhost:4269/docs (dev mode, no auth, fake jinni)
 bash scripts/serve-local.sh
@@ -52,13 +50,18 @@ provisions a project-local one via `uv`, else exits rather than running on a dif
 
 ## Versioning
 
-Bump `version.py` (`DAEMON_VERSION`) and `manifest.json` (`version`) together; `pack.sh` refuses to
-build if they disagree, and update `tests/api/test_api.py` when bumping. The Bespok3d app derives its
-expected version from `version.py` at build time, so there is no `EXPECTED_DAEMON_VERSION` mirror to
-keep in sync.
+Bump `version.py` (`DAEMON_VERSION`) and `manifest.json` (`version`) together; the gate fails if they
+disagree (`tests/test_manifest_version.py`), and update `tests/api/test_api.py` when bumping. The
+Bespok3d app derives its expected version from `version.py` at build time, so there is no
+`EXPECTED_DAEMON_VERSION` mirror to keep in sync.
 
 ## Releasing
 
 A push to `main` touching the daemon source, manifest, version, or scripts triggers
-`.github/workflows/release.yml`: it runs the gate, packs the `.b3`, and publishes a GitHub release with
-the `.b3` and its index atom attached.
+`.github/workflows/release.yml`: it runs the gate, stages the daemon as a plugin source dir, and hands
+it to the org-wide `b3-builder` Action, which packs the `.b3`, stamps the publisher, signs the manifest
+and publishes a GitHub release with the `.b3` and its index atom attached.
+
+The daemon is plugin zero (ADR-0030): same package shape, same signature, same release layout as any
+plugin. The single difference is that the adapter puts it on the printer at enrollment, so it is never
+installed through the plugin pipeline and is not registered in the catalog.

@@ -274,8 +274,8 @@ build break, not a style note.
 - **Every behavior change ships with a regression test** at the layer that would have caught the bug (a
   unit test for pure logic, a fault-injection or integration test for wiring). The test fails on the old
   behavior and passes on the fix, in the same change.
-- **Versioning.** Bump `version.py` (`DAEMON_VERSION`) and `manifest.json` together (`pack.sh` refuses to
-  build if they disagree), and update `tests/api/test_api.py`. The app's expected version is generated from
+- **Versioning.** Bump `version.py` (`DAEMON_VERSION`) and `manifest.json` together (the gate fails if
+  they disagree), and update `tests/api/test_api.py`. The app's expected version is generated from
   `version.py` at build time, so there is no `EXPECTED_DAEMON_VERSION` mirror to keep in sync.
 
 ---

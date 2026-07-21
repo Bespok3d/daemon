@@ -165,15 +165,19 @@ Do not stream a command's result over a side channel, and do not poll for state 
   offline (its own venv) or symlinked into the target interpreter's site-packages (a Klipper/Moonraker
   extra), never installed live on the printer.
 - **Version single-source.** `version.py` `DAEMON_VERSION` is the source of truth. `manifest.json` mirrors
-  it (`pack.sh` enforces equality), and `tests/api/test_api.py` tracks it. The app derives its expected
-  version from `version.py` at build time (generated, not hand-mirrored), so there is no
-  `EXPECTED_DAEMON_VERSION` constant to keep in sync.
+  it (`tests/test_manifest_version.py` enforces equality), and `tests/api/test_api.py` tracks it. The
+  app derives its expected version from `version.py` at build time (generated, not hand-mirrored), so
+  there is no `EXPECTED_DAEMON_VERSION` constant to keep in sync.
 - **Auth on every route** except the single unauthenticated `POST /access/request`. Token comparison is
   constant-time.
 
 ## Layout
 
-Natural Python layout at the repo root; `scripts/pack.sh` maps the deployable subset into a `.b3`.
+Natural Python layout at the repo root. The daemon is plugin zero (ADR-0030): it ships as a `.b3` with
+the same shape and the same signature as any plugin, and the single difference is that the adapter puts
+it on the printer at enrollment instead of the plugin pipeline installing it. `scripts/stage-package.sh`
+maps the deployable subset into the plugin source shape (`manifest.json` + `files/` + `doc/`) that the
+org-wide `b3-builder` Action packs, stamps and signs.
 
 ```
 version.py            DAEMON_VERSION, the version source of truth
@@ -189,7 +193,7 @@ S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
 wheels/               prebuilt offline runtime deps (pgpy)
 tests/                test suite (not packed); mirrors the source tree (tests/core/packages/, tests/api/, ...)
-scripts/              check.sh, pack.sh, generate-atom.mjs, test-daemon-docker.sh (not packed)
+scripts/              check.sh, stage-package.sh, test-daemon-docker.sh (not packed)
 doc/                  README + CHANGELOG (shipped in the .b3); this file + engineering-rules (not shipped)
 ```
 
