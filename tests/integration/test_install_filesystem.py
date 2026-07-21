@@ -6,11 +6,16 @@ end to end against a real directory tree, with no device and no services: every 
 `start: []`, so nothing touches Klipper/Moonraker. The printer remains the judge of device fidelity;
 this is the logical-coherence net below it.
 """
+import hashlib
+import io
+import json
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from core import packages
+from core.packages.integrity import ESCAPING_MEMBER, UNDECLARED_MEMBER, IntegrityError
 from core.packages.signatures import plugins_with_stored_signature
 from core.selfcheck import run_selfcheck
 from tests.package_fixtures import package_bytes
@@ -91,6 +96,112 @@ def test_recover_reapplies_a_removed_symlink(workspace: Path) -> None:
     packages.recover(vars)
 
     assert (klipper / "x.cfg").is_symlink()
+
+
+def test_signed_package_installs_its_payload_clean(workspace: Path) -> None:
+    klipper = workspace / "klipper"
+    klipper.mkdir()
+    members = {"files/x.cfg": "DATA", "manifest.json.sig": "-----BEGIN PGP SIGNATURE-----"}
+    package_path = build_b3(workspace, "demo", config_symlink_install(), members)
+
+    packages.install(package_path, {"BESPOK3D_KLIPPER": str(klipper)})
+
+    link = klipper / "x.cfg"
+    assert link.is_symlink()
+    assert link.read_text() == "DATA"
+
+
+def hand_packed_b3(
+    base: Path, name: str, manifest_files: list[dict], members: dict[str, str],
+) -> Path:
+    """A .b3 whose files[] the caller declares directly, diverging from `members` on purpose: the
+    tamper cases need a manifest and an archive that disagree, which `package_bytes` refuses to
+    build."""
+    empty_install: dict[str, list] = {"dirs": [], "symlinks": [], "patches": []}
+    manifest = {"name": name, "version": "1.0.0", "install": empty_install, "files": manifest_files}
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        for member_name, content in members.items():
+            archive.writestr(member_name, content)
+    package_path = base / f"{name}.b3"
+    package_path.write_bytes(buffer.getvalue())
+    return package_path
+
+
+def test_install_refuses_an_undeclared_member_and_installs_nothing(workspace: Path) -> None:
+    plugin_root = workspace / "plugins"
+    declared = [{"path": "files/x.cfg", "sha256": "irrelevant", "mode": "644"}]
+    members = {"files/x.cfg": "DATA", "files/smuggled.cfg": "UNSIGNED"}
+    package_path = hand_packed_b3(workspace, "demo", declared, members)
+
+    with pytest.raises(IntegrityError) as caught:
+        packages.install(package_path, {})
+
+    assert caught.value.reason == UNDECLARED_MEMBER
+    assert not (plugin_root / "demo").exists()
+
+
+def test_install_refuses_an_escaping_member_and_writes_no_payload(workspace: Path) -> None:
+    plugin_root = workspace / "plugins"
+    traversal = "../victim.cfg"
+    declared = [{"path": traversal, "sha256": "irrelevant", "mode": "644"}]
+    members = {traversal: "CLOBBERED"}
+    package_path = hand_packed_b3(workspace, "demo", declared, members)
+
+    with pytest.raises(IntegrityError) as caught:
+        packages.install(package_path, {})
+
+    assert caught.value.reason == ESCAPING_MEMBER
+    assert not (workspace / "victim.cfg").exists()
+    assert not (plugin_root / "demo").exists()
+
+
+def test_refused_escaping_reinstall_keeps_the_existing_install(workspace: Path) -> None:
+    # A tampered reinstall over a working plugin must not take the good install down with it: the
+    # escaping refusal fires before the plugin dir is touched, so the payload already on disk stays.
+    klipper = workspace / "klipper"
+    klipper.mkdir()
+    vars = {"BESPOK3D_KLIPPER": str(klipper)}
+    plugin_root = workspace / "plugins"
+    good = build_b3(workspace, "demo", config_symlink_install(), {"files/x.cfg": "DATA"})
+    packages.install(good, vars)
+    assert (plugin_root / "demo" / "files" / "x.cfg").read_text() == "DATA"
+
+    traversal = "../victim.cfg"
+    declared = [{"path": traversal, "sha256": "irrelevant", "mode": "644"}]
+    tampered = hand_packed_b3(workspace, "demo", declared, {traversal: "CLOBBERED"})
+    with pytest.raises(IntegrityError) as caught:
+        packages.install(tampered, vars)
+
+    assert caught.value.reason == ESCAPING_MEMBER
+    assert (plugin_root / "demo" / "files" / "x.cfg").read_text() == "DATA"
+
+
+def test_install_refuses_a_manifest_path_that_escapes_the_plugin_dir(workspace: Path) -> None:
+    # The archive is clean (its one member is declared and contained), but the manifest files[]
+    # also names a doc-prefixed path climbing out of the plugin dir. apply_modes chmods manifest
+    # paths as root, and installed_files drops doc entries so verify_files never sees this one, so
+    # without the containment check on files[] the install would chmod a file outside the sandbox.
+    # It is refused before the plugin dir is touched, and the file outside is left as it was.
+    plugin_root = workspace / "plugins"
+    victim = workspace / "victim.cfg"
+    victim.write_text("STOCK")
+    victim.chmod(0o644)
+    escaping = "doc/../../../victim.cfg"
+    good_hash = hashlib.sha256(b"DATA").hexdigest()
+    declared = [
+        {"path": "files/x.cfg", "sha256": good_hash, "mode": "644"},
+        {"path": escaping, "mode": "4777"},
+    ]
+    package_path = hand_packed_b3(workspace, "demo", declared, {"files/x.cfg": "DATA"})
+
+    with pytest.raises(IntegrityError) as caught:
+        packages.install(package_path, {})
+
+    assert caught.value.reason == ESCAPING_MEMBER
+    assert not (plugin_root / "demo").exists()
+    assert victim.stat().st_mode & 0o7777 == 0o644
 
 
 def test_the_shipped_signature_survives_install_and_recover(workspace: Path) -> None:

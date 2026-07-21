@@ -61,6 +61,16 @@ def escaping_members(plugin_dir: Path, archive_members: list[str]) -> list[str]:
     return sorted(name for name in archive_members if not _stays_inside(plugin_dir, name))
 
 
+def escaping_declared_paths(plugin_dir: Path, manifest_files: object) -> list[str]:
+    """The manifest files[] paths that resolve outside the plugin's own directory. The manifest is
+    package-chosen and drives a root chmod (apply_modes reads files[] directly), so a `..` or
+    absolute path here aims that chmod at a file elsewhere on the printer even when every archive
+    member stays contained. doc/ paths are measured too: apply_modes never drops them."""
+    return sorted(
+        path for path in _declared_paths(manifest_files) if not _stays_inside(plugin_dir, path)
+    )
+
+
 def _declared_paths(manifest_files: object) -> set[str]:
     """The paths a manifest declares. A malformed files[] declares nothing, so its members are
     refused as undeclared instead of crashing the install on an attacker-shaped manifest."""
