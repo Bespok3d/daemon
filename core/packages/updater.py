@@ -6,7 +6,9 @@ the thin entry point that drives it as an update.
 from pathlib import Path
 
 from ..safety import OperationKind
-from .batch import ProgressSink, make_progress, plan_batch, run_batch
+from .batch import run_batch
+from .batch_plan import plan_batch
+from .batch_progress import ProgressSink, make_progress
 
 
 def run_update_batch(

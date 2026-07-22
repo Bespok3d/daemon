@@ -56,14 +56,15 @@ def test_installed_conflicts_is_symmetric(tmp_path: Path) -> None:
 def test_installed_provided_services_unions_active_providers(tmp_path: Path) -> None:
     write_plugin(tmp_path, "tun-module", provides=["tun"])
     write_plugin(tmp_path, "spoolman", provides=["spoolman"])
-    assert dependencies.installed_provided_services(tmp_path, "zerotier") == {"tun", "spoolman"}
+    provided = dependencies.installed_provided_services(tmp_path, frozenset(["zerotier"]))
+    assert provided == {"tun", "spoolman"}
 
 
 def test_installed_provided_services_excludes_self_and_deactivated(tmp_path: Path) -> None:
     write_plugin(tmp_path, "zerotier", provides=["zerotier"])
     deactivated = write_plugin(tmp_path, "tun-module", provides=["tun"])
     (deactivated / "deactivated.json").write_text(json.dumps({"reason": "stale kernel module"}))
-    assert dependencies.installed_provided_services(tmp_path, "zerotier") == set()
+    assert dependencies.installed_provided_services(tmp_path, frozenset(["zerotier"])) == set()
 
 
 def test_unsatisfied_requirements_flags_a_missing_service(tmp_path: Path) -> None:

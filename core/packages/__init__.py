@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..data_root import DATA_ROOT
 from ..safety import OperationContext, OperationKind
-from .batch import ProgressSink  # noqa: F401  re-export for api.routes
+from .batch_progress import ProgressSink  # noqa: F401  re-export for api.routes
 from .batch_uninstaller import run_uninstall_batch
 from .deactivation import DEACTIVATED_MARKER
 from .dependencies import provided_services, topo_sort

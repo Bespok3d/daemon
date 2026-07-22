@@ -46,13 +46,13 @@ def installed_dependents(plugin_root: Path, plugin_id: str) -> list[str]:
     return [plugin_dir.name for plugin_dir in others if _depends_on_any(plugin_dir, provided)]
 
 
-def installed_provided_services(plugin_root: Path, exclude_id: str) -> set[str]:
-    """Every service provided by an installed, non-deactivated plugin other than `exclude_id` (the
-    package being installed, whose freshly-unpacked dir is already present and must not count as its
-    own provider)."""
+def installed_provided_services(plugin_root: Path, being_applied: frozenset[str]) -> set[str]:
+    """Every service provided by an installed, non-deactivated plugin, ignoring the plugins named in
+    `being_applied` (the packages this call is applying, whose freshly-unpacked dirs are already
+    present and must not count as providers of what the call itself has yet to deliver)."""
     active = [
         plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root)
-        if plugin_dir.name != exclude_id and not (plugin_dir / DEACTIVATED_MARKER).exists()
+        if plugin_dir.name not in being_applied and not (plugin_dir / DEACTIVATED_MARKER).exists()
     ]
     return {service for plugin_dir in active for service in provided_services(manifest_at(plugin_dir))}  # noqa: E501
 
@@ -62,7 +62,7 @@ def unsatisfied_requirements(
 ) -> list[str]:
     """The services a package requires that no installed, non-deactivated plugin provides.
     `also_provided` covers the batch case, where a sibling package supplies a required service."""
-    available = installed_provided_services(plugin_root, plugin_id) | also_provided
+    available = installed_provided_services(plugin_root, frozenset([plugin_id])) | also_provided
     return sorted(service for service in required_services(manifest) if service not in available)
 
 
@@ -118,20 +118,26 @@ def _decrement_and_enqueue(
             queue.append(dependent)
 
 
-def topo_sort(plugin_dirs: list[Path]) -> list[Path]:
-    manifests: dict[Path, dict[str, Any]] = {plugin_dir: manifest_at(plugin_dir) for plugin_dir in plugin_dirs}  # noqa: E501
+def order_by_dependency(nodes: list[Path], manifests: dict[Path, dict[str, Any]]) -> list[Path]:
+    """Providers before the plugins that require them, keeping the given order between unrelated
+    plugins. The nodes are paths the caller already holds a manifest for: installed plugin dirs for
+    recover, staged package files for a batch. A cycle leaves its members in the given order."""
     provides_map: dict[str, Path] = {
-        service: plugin_dir
-        for plugin_dir, manifest in manifests.items()
+        service: node
+        for node, manifest in manifests.items()
         for service in provided_services(manifest)
     }
-    in_degree, reverse_deps = _build_dep_graph(plugin_dirs, manifests, provides_map)
-    queue = [plugin_dir for plugin_dir in plugin_dirs if in_degree[plugin_dir] == 0]
+    in_degree, reverse_deps = _build_dep_graph(nodes, manifests, provides_map)
+    queue = [node for node in nodes if in_degree[node] == 0]
     ordered: list[Path] = []
     while queue:
         node = queue.pop(0)
         ordered.append(node)
         _decrement_and_enqueue(reverse_deps[node], in_degree, queue)
 
-    remaining = [plugin_dir for plugin_dir in plugin_dirs if plugin_dir not in ordered]
+    remaining = [node for node in nodes if node not in ordered]
     return ordered + remaining
+
+
+def topo_sort(plugin_dirs: list[Path]) -> list[Path]:
+    return order_by_dependency(plugin_dirs, {plugin_dir: manifest_at(plugin_dir) for plugin_dir in plugin_dirs})  # noqa: E501

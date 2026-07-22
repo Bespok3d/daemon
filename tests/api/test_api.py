@@ -64,7 +64,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.19-dev"
+    assert body["version"] == "0.12.20-dev"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -390,17 +390,33 @@ async def test_update_batch_route_returns_per_plugin_results(
     assert [result["plugin_id"] for result in body["results"]] == ["alpha", "(services)"]
 
 
-async def test_update_batch_route_returns_400_on_bad_vars(
+async def test_update_batch_route_settles_a_bad_setting_per_plugin(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A value the printer will not take costs its own plugin, never the whole call: the route hands
+    every package to the batch, which leaves that one out and installs the rest. It also hands over
+    each package under the name the app uploaded, so a package too broken to name itself is still
+    reported as the plugin the user picked."""
+    staged: list[str] = []
+
+    def record_paths(
+        _vars: dict[str, str], paths: list[Path], _vars_by_id: dict[str, dict[str, str]],
+        _publish: object = None,
+    ) -> list[dict]:
+        staged.extend(path.name for path in paths)
+        return [{"plugin_id": "alpha", "ok": False, "skipped": True,
+                 "reason": "allows only", "log": []}]
+
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "update_batch", record_paths)
     response = await client.post(
         "/packages/update-batch",
         files=[("files", ("alpha.b3", _minimal_b3(), "application/octet-stream"))],
         data={"vars_json": json.dumps({"alpha": {"NAME": "bad<value>"}})},
     )
-    assert response.status_code == 400
-    assert "allows only" in response.json()["detail"]
+    assert response.status_code == 200
+    assert staged == ["alpha.b3"]
+    assert response.json()["results"][0]["skipped"] is True
 
 
 async def test_install_batch_route_returns_per_plugin_results(
@@ -431,42 +447,36 @@ async def test_install_batch_route_returns_per_plugin_results(
     assert [result["plugin_id"] for result in body["results"]] == ["camera", "(services)"]
 
 
-async def test_install_batch_route_returns_409_on_conflict(
+async def test_install_batch_route_reports_a_plugin_left_out_alongside_the_ones_installed(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def raise_conflict(*_args: object, **_kwargs: object) -> list[dict]:
-        raise packages.ConflictError("force-bed-mesh", ["force-bed-mesh-adaptive"])
+    """A plugin the printer will not accept comes back as its own row saying why, in a normal
+    results envelope, so the user still gets every other plugin in the same pick."""
+    def settle_per_plugin(*_args: object, **_kwargs: object) -> list[dict]:
+        return [
+            {"plugin_id": "camera", "ok": True, "skipped": False, "reason": "", "log": []},
+            {
+                "plugin_id": "force-bed-mesh-adaptive", "ok": False, "skipped": True,
+                "reason": "Conflicts with installed plugin(s): force-bed-mesh", "log": [],
+            },
+        ]
 
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
-    monkeypatch.setattr(packages, "install_batch", raise_conflict)
+    monkeypatch.setattr(packages, "install_batch", settle_per_plugin)
     response = await client.post(
         "/packages/install-batch",
-        files=[("files", ("force-bed-mesh.b3", _minimal_b3(), "application/octet-stream"))],
+        files=[
+            ("files", ("camera.b3", _minimal_b3(), "application/octet-stream")),
+            ("files", ("force-bed-mesh-adaptive.b3", _minimal_b3(), "application/octet-stream")),
+        ],
         data={"vars_json": json.dumps({})},
     )
-    assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert detail["error"] == "conflict"
-    assert detail["conflicts"] == ["force-bed-mesh-adaptive"]
-
-
-async def test_install_batch_route_returns_409_on_unmet_requirement(
-    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def raise_requirement(*_args: object, **_kwargs: object) -> list[dict]:
-        raise packages.RequirementError("zerotier", ["tun"])
-
-    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
-    monkeypatch.setattr(packages, "install_batch", raise_requirement)
-    response = await client.post(
-        "/packages/install-batch",
-        files=[("files", ("zerotier.b3", _minimal_b3(), "application/octet-stream"))],
-        data={"vars_json": json.dumps({})},
-    )
-    assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert detail["error"] == "requirement"
-    assert detail["missing"] == ["tun"]
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert [(entry["plugin_id"], entry["skipped"]) for entry in results] == [
+        ("camera", False), ("force-bed-mesh-adaptive", True),
+    ]
+    assert results[1]["reason"] == "Conflicts with installed plugin(s): force-bed-mesh"
 
 
 async def test_uninstall_route_returns_ok(

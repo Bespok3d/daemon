@@ -93,6 +93,13 @@ def unpack_package(plugin_root: Path, package_path: Path) -> tuple[dict, Path, i
     return manifest, plugin_dir, file_count
 
 
+def discard_extraction(plugin_dir: Path) -> None:
+    """Take back what unpacking wrote. A package the printer refuses after it was unpacked must not
+    leave its files behind: kept, the tree would make /capabilities report a plugin the daemon never
+    applied."""
+    shutil.rmtree(plugin_dir, ignore_errors=True)
+
+
 def fix_ownership(plugin_dir: Path, runtime_user: str) -> dict:
     items: list[dict] = []
     chmod_result = subprocess.run(

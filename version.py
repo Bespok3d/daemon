@@ -1,1 +1,1 @@
-DAEMON_VERSION = "0.12.19-dev"
+DAEMON_VERSION = "0.12.20-dev"

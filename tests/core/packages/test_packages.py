@@ -1589,21 +1589,11 @@ def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) 
 def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> None:
     """A plugin whose apply RAISES is contained like a failed phase: it is deactivated and the batch
     still finishes for the rest, instead of a single fault aborting the whole POST."""
-    from core.packages import batch
-
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     good = make_package_file(tmp_path, "good")
     boom = make_package_file(tmp_path, "boom")
-    real_apply = batch.apply_install_deferred
-
-    def flaky(plugin_root_arg: Path, plugin_dir: Path, manifest: dict,
-              vars: dict[str, str], notify: object) -> tuple[list[dict], list[str]]:
-        if plugin_dir.name == "boom":
-            raise RuntimeError("kaboom")
-        return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(batch, "apply_install_deferred", flaky)
+    fail_the_apply_of(monkeypatch, "boom")
 
     results = packages.update_batch({}, [good, boom], {})
 
@@ -1612,6 +1602,116 @@ def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> 
     assert by_id["boom"]["ok"] is False
     assert "kaboom" in by_id["boom"]["reason"]
     assert (plugin_root / "boom" / "deactivated.json").exists()
+
+
+def fail_the_apply_of(monkeypatch: MP, doomed_plugin_id: str) -> None:
+    """Make one plugin's apply blow up on the printer, leaving the rest of the call untouched."""
+    from core.packages import batch
+
+    real_apply = batch.apply_install_deferred
+
+    def flaky(plugin_root_arg: Path, plugin_dir: Path, manifest: dict,
+              vars: dict[str, str], notify: object) -> tuple[list[dict], list[str]]:
+        if plugin_dir.name == doomed_plugin_id:
+            raise RuntimeError("kaboom")
+        return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(batch, "apply_install_deferred", flaky)
+
+
+def test_install_batch_never_installs_a_plugin_whose_provider_failed(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """Print safety: a plugin that fails on the printer is rolled back, so the plugins that need it
+    must not land either. Judged plugin by plugin as the call runs, not once at the start, because
+    the provider was there when the user pressed the button and is not there now."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    tun = make_service_package(tmp_path, "tun-module", {"provides": [{"service": "tun"}]})
+    zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+    camera = make_package_file(tmp_path, "camera")
+    fail_the_apply_of(monkeypatch, "tun-module")
+
+    rows = rows_by_plugin(packages.install_batch({}, [tun, zerotier, camera], {}))
+
+    assert (plugin_root / "tun-module" / "deactivated.json").exists()
+    assert not (plugin_root / "zerotier" / "manifest.json").exists()
+    assert (plugin_root / "camera" / "manifest.json").exists()
+    assert rows["zerotier"]["skipped"] is True
+    assert rows["zerotier"]["reason"] == (
+        'not installed because "tun-module", which it needs, was not installed either'
+    )
+
+
+def test_update_batch_never_updates_a_plugin_whose_provider_failed(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """Updating several plugins at once obeys the same print-safety rule as installing them: the
+    apply loop is shared, so an update cannot put a plugin back to work over a rolled-back one."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    tun = make_service_package(tmp_path, "tun-module", {"provides": [{"service": "tun"}]})
+    zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+    fail_the_apply_of(monkeypatch, "tun-module")
+
+    rows = rows_by_plugin(packages.update_batch({}, [tun, zerotier], {}))
+
+    assert not (plugin_root / "zerotier" / "manifest.json").exists()
+    assert rows["zerotier"]["skipped"] is True
+    assert rows["zerotier"]["reason"] == (
+        'not updated because "tun-module", which it needs, is not on the printer'
+    )
+
+
+def test_install_batch_installs_a_dependent_the_printer_can_already_serve(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A plugin already on the printer supplies the service, so a package in the same call failing
+    to supply it too costs nothing: the plugin that needs the service still installs, exactly as it
+    would have on its own."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    write_plugin(plugin_root, "kernel-tun", provides=["tun"])
+    tun = make_service_package(tmp_path, "tun-module", {"provides": [{"service": "tun"}]})
+    zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+    fail_the_apply_of(monkeypatch, "tun-module")
+
+    rows = rows_by_plugin(packages.install_batch({}, [tun, zerotier], {}))
+
+    assert (plugin_root / "zerotier" / "manifest.json").exists()
+    assert rows["zerotier"]["ok"] is True
+
+
+def test_install_batch_makes_a_self_providing_plugin_wait_for_the_real_provider(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A package that names the same service in provides and in require does not thereby supply it
+    to itself: it still waits for the plugin that really supplies it, and is left out when that
+    plugin is rolled back."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    tun = make_service_package(tmp_path, "tun-module", {"provides": [{"service": "tun"}]})
+    zerotier = make_service_package(
+        tmp_path, "zerotier",
+        {"provides": [{"service": "tun"}], "require": [{"service": "tun"}]},
+    )
+    fail_the_apply_of(monkeypatch, "tun-module")
+
+    rows = rows_by_plugin(packages.install_batch({}, [tun, zerotier], {}))
+
+    assert not (plugin_root / "zerotier" / "manifest.json").exists()
+    assert rows["zerotier"]["skipped"] is True
+
+
+def test_install_batch_settles_a_clash_by_which_plugin_the_user_picked_first(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """Two plugins that exclude each other are settled by the order the user picked them, not by
+    the order the printer has to apply them in: picking a plugin whose provider comes later in the
+    call must not cost that plugin its place."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+    wireguard = make_package_file(tmp_path, "wireguard", conflicts=["zerotier"])
+    tun = make_service_package(tmp_path, "tun-module", {"provides": [{"service": "tun"}]})
+
+    rows = rows_by_plugin(packages.install_batch({}, [zerotier, wireguard, tun], {}))
+
+    assert (plugin_root / "zerotier" / "manifest.json").exists()
+    assert (plugin_root / "tun-module" / "manifest.json").exists()
+    assert not (plugin_root / "wireguard").exists()
+    assert rows["wireguard"]["skipped"] is True
+    assert "zerotier" in rows["wireguard"]["reason"]
 
 
 def test_install_batch_empty_returns_empty(tmp_path: Path, monkeypatch: MP) -> None:
@@ -1649,22 +1749,30 @@ def test_install_batch_bounces_a_service_once(tmp_path: Path, monkeypatch: MP) -
     assert services["ok"] is True
 
 
-def test_install_batch_rejects_conflicting_packages(tmp_path: Path, monkeypatch: MP) -> None:
-    """Installing two mutually-exclusive plugins together must be refused up front, the same gate a
-    one-at-a-time install enforces, before any package is unpacked."""
+def rows_by_plugin(results: list[dict]) -> dict[str, dict]:
+    return {result["plugin_id"]: result for result in results}
+
+
+def test_install_batch_leaves_out_only_the_conflicting_plugin(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """Picking two mutually-exclusive plugins costs the second one, not the whole pick: the first is
+    installed, the second is left out saying why, and an unrelated plugin in the same call installs
+    exactly as it would have on its own."""
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     mesh = make_package_file(tmp_path, "force-bed-mesh", conflicts=["force-bed-mesh-adaptive"])
     adaptive = make_package_file(tmp_path, "force-bed-mesh-adaptive", conflicts=["force-bed-mesh"])
+    camera = make_package_file(tmp_path, "camera")
 
-    with pytest.raises(packages.ConflictError):
-        packages.install_batch({}, [mesh, adaptive], {})
+    rows = rows_by_plugin(packages.install_batch({}, [mesh, adaptive, camera], {}))
 
-    assert not (plugin_root / "force-bed-mesh").exists()
+    assert (plugin_root / "force-bed-mesh" / "manifest.json").exists()
+    assert (plugin_root / "camera" / "manifest.json").exists()
     assert not (plugin_root / "force-bed-mesh-adaptive").exists()
+    assert rows["force-bed-mesh-adaptive"]["skipped"] is True
+    assert "force-bed-mesh" in rows["force-bed-mesh-adaptive"]["reason"]
 
 
-def test_install_batch_rejects_conflict_with_installed(tmp_path: Path, monkeypatch: MP) -> None:
+def test_install_batch_leaves_out_only_the_plugin_that_clashes_with_an_installed_one(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     incumbent = plugin_root / "incumbent"
@@ -1673,29 +1781,35 @@ def test_install_batch_rejects_conflict_with_installed(tmp_path: Path, monkeypat
         json.dumps({"name": "incumbent", "version": "0.1.0", "conflicts": []})
     )
     challenger = make_package_file(tmp_path, "challenger", conflicts=["incumbent"])
+    camera = make_package_file(tmp_path, "camera")
 
-    with pytest.raises(packages.ConflictError):
-        packages.install_batch({}, [challenger], {})
+    rows = rows_by_plugin(packages.install_batch({}, [challenger, camera], {}))
 
     assert not (plugin_root / "challenger").exists()
+    assert (plugin_root / "camera" / "manifest.json").exists()
+    assert rows["challenger"]["skipped"] is True
+    assert "incumbent" in rows["challenger"]["reason"]
 
 
-def test_install_batch_refuses_a_plugin_missing_a_required_service(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
-    """The require gate the single install enforces also refuses a batch, before any unpack, when no
-    installed plugin and no sibling in the batch provides a required service."""
+def test_install_batch_leaves_out_only_the_plugin_missing_a_required_service(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A plugin nothing on the printer can serve is left out on its own; the rest of the pick lands.
+    """
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+    camera = make_package_file(tmp_path, "camera")
 
-    with pytest.raises(packages.RequirementError):
-        packages.install_batch({}, [zerotier], {})
+    rows = rows_by_plugin(packages.install_batch({}, [zerotier, camera], {}))
 
     assert not (plugin_root / "zerotier").exists()
+    assert (plugin_root / "camera" / "manifest.json").exists()
+    assert rows["zerotier"]["skipped"] is True
+    assert "tun" in rows["zerotier"]["reason"]
 
 
 def test_install_batch_satisfies_a_requirement_from_a_sibling_package(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
-    """A requirement met by a sibling in the same batch passes the gate: the app orders the provider
-    (tun-module) before its dependent (zerotier), so both install together."""
+    """A requirement met by a sibling in the same call is satisfied: the provider (tun-module) is
+    installed before its dependent (zerotier), so both install together."""
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     tun = make_service_package(tmp_path, "tun-module", {"provides": [{"service": "tun"}]})
@@ -1708,19 +1822,56 @@ def test_install_batch_satisfies_a_requirement_from_a_sibling_package(tmp_path: 
     assert all(result["ok"] for result in results)
 
 
+def test_install_batch_installs_a_provider_the_user_picked_after_its_dependent(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """The order the user happened to pick the plugins in is never the reason one is left out: the
+    printer installs the provider first whichever way round they arrive."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    tun = make_service_package(tmp_path, "tun-module", {"provides": [{"service": "tun"}]})
+    zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+
+    results = packages.install_batch({}, [zerotier, tun], {})
+
+    assert (plugin_root / "zerotier" / "manifest.json").exists()
+    assert [result["plugin_id"] for result in results] == ["tun-module", "zerotier"]
+    assert all(result["ok"] for result in results)
+
+
+def test_install_batch_leaves_out_the_plugins_waiting_on_a_plugin_it_would_not_accept(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A plugin the printer will not accept takes the plugins that need it with it, and only those:
+    each one says which plugin it was waiting for, in the words the app uses."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    unservable = {"provides": [{"service": "tun"}], "require": [{"service": "kernel-headers"}]}
+    tun = make_service_package(tmp_path, "tun-module", unservable)
+    zerotier = make_service_package(tmp_path, "zerotier", {"require": [{"service": "tun"}]})
+    camera = make_package_file(tmp_path, "camera")
+
+    rows = rows_by_plugin(packages.install_batch({}, [tun, zerotier, camera], {}))
+
+    assert (plugin_root / "camera" / "manifest.json").exists()
+    assert not (plugin_root / "zerotier").exists()
+    assert "kernel-headers" in rows["tun-module"]["reason"]
+    assert rows["zerotier"]["skipped"] is True
+    assert rows["zerotier"]["reason"] == (
+        'not installed because "tun-module", which it needs, was not installed either'
+    )
+
+
 def test_install_batch_does_not_let_a_plugin_satisfy_its_own_requirement(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
-    """A plugin that both provides and requires the same service must be refused in a batch exactly
-    as on the single-install path: its own `provides` never satisfies its own `require` (only a
-    sibling or an installed plugin can)."""
+    """A plugin that both provides and requires the same service is left out in a batch exactly as
+    on the single-install path: its own `provides` never satisfies its own `require` (only a sibling
+    or an installed plugin can)."""
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     both = {"provides": [{"service": "tun"}], "require": [{"service": "tun"}]}
     self_serving = make_service_package(tmp_path, "self-serving", both)
 
-    with pytest.raises(packages.RequirementError):
-        packages.install_batch({}, [self_serving], {})
+    rows = rows_by_plugin(packages.install_batch({}, [self_serving], {}))
 
     assert not (plugin_root / "self-serving").exists()
+    assert rows["self-serving"]["skipped"] is True
+    assert "tun" in rows["self-serving"]["reason"]
 
 
 def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: MP) -> None:
@@ -1732,6 +1883,94 @@ def test_update_batch_applies_per_plugin_user_vars(tmp_path: Path, monkeypatch: 
 
     saved = json.loads((plugin_root / "spoolman" / packages.USER_VARS_FILE).read_text())
     assert saved == {"SPOOLMAN_SERVER": "printer.local"}
+
+
+def test_install_batch_installs_the_rest_when_a_package_cannot_be_read(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A .b3 the daemon cannot even open costs only that package. It is reported under the name the
+    app uploaded it as, because a package that cannot be read cannot say its own name."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    camera = make_package_file(tmp_path, "camera")
+    corrupt = tmp_path / "rfid-ntag.b3"
+    corrupt.write_bytes(b"this is not a zip")
+
+    rows = rows_by_plugin(packages.install_batch({}, [corrupt, camera], {}))
+
+    assert (plugin_root / "camera" / "manifest.json").exists()
+    assert rows["camera"]["ok"] is True
+    assert rows["rfid-ntag"]["ok"] is False
+    assert "could not be read" in rows["rfid-ntag"]["reason"]
+
+
+def test_install_batch_leaves_out_only_the_plugin_whose_setting_is_unusable(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """One value the printer will not take costs its own plugin: it is left out with the sentence a
+    single install shows, nothing is written for it, and every other plugin in the call installs."""
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    camera = make_package_file(tmp_path, "camera")
+    spoolman = make_package_file(tmp_path, "spoolman")
+
+    rows = rows_by_plugin(packages.install_batch(
+        {}, [camera, spoolman], {"spoolman": {"SPOOLMAN_SERVER": "printer.local; reboot"}},
+    ))
+
+    assert rows["camera"]["ok"] is True
+    assert rows["spoolman"]["skipped"] is True
+    assert "allows only" in rows["spoolman"]["reason"]
+    assert not (plugin_root / "spoolman").exists()
+
+
+def test_install_batch_leaves_nothing_behind_when_a_package_fails_its_checksums(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A package whose contents do not match what it declares leaves nothing on the printer, exactly
+    as installing it on its own does, instead of a deactivated tree the daemon never applied."""
+    from core.packages import batch
+    from core.packages.integrity import CHECKSUM_MISMATCH, IntegrityError
+
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    camera = make_package_file(tmp_path, "camera")
+    tampered = make_package_file(tmp_path, "rfid-ntag")
+    real_apply = batch.apply_install_deferred
+
+    def refuse_the_tampered_one(plugin_root_arg: Path, plugin_dir: Path, manifest: dict,
+                                vars: dict[str, str], notify: object) -> tuple[list[dict], list[str]]:  # noqa: E501
+        if plugin_dir.name == "rfid-ntag":
+            raise IntegrityError("rfid-ntag", CHECKSUM_MISMATCH, ["rfid.py"])
+        return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(batch, "apply_install_deferred", refuse_the_tampered_one)
+
+    rows = rows_by_plugin(packages.install_batch({}, [camera, tampered], {}))
+
+    assert rows["camera"]["ok"] is True
+    assert rows["rfid-ntag"]["ok"] is False
+    assert not (plugin_root / "rfid-ntag").exists()
+
+
+def test_install_batch_reports_a_plugin_the_safety_net_switched_off_as_failed(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
+    """A plugin the safety net deactivated at the batch's single restart is not on the printer, so
+    its own row must say so: installed on its own the same net would have failed it."""
+    from core.packages import batch
+
+    plugin_root = tmp_path / "plugins"
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    camera = make_package_file(tmp_path, "camera", start=["/etc/init.d/S60klipper restart"])
+    spoolman = make_package_file(tmp_path, "spoolman", start=["/etc/init.d/S60klipper restart"])
+
+    def net_saves_the_printer(_plugin_root: Path, _restarts: list[str], _vars: dict[str, str],
+                              _ctx: object) -> dict:
+        return {
+            "plugin_id": "(services)", "ok": False, "skipped": False, "reason": "", "log": [],
+            "auto_deactivated": "camera", "fix_detail": "klipper did not come back",
+        }
+
+    monkeypatch.setattr(batch, "restart_services", net_saves_the_printer)
+
+    rows = rows_by_plugin(packages.install_batch({}, [camera, spoolman], {}))
+
+    assert rows["spoolman"]["ok"] is True
+    assert rows["camera"]["ok"] is False
+    assert "klipper did not come back" in rows["camera"]["reason"]
 
 
 def test_update_batch_refused_during_print(

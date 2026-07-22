@@ -9,7 +9,6 @@ The orchestrator (`core/packages/__init__.py`) owns the plugin root and passes i
 worker stays independent of where plugins live on disk.
 """
 
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
@@ -18,7 +17,7 @@ from .. import jinni_client
 from ..intent import normalize_install
 from ..results import item, phase
 from ..safety import OperationKind
-from .archive import fix_ownership, unpack_package
+from .archive import discard_extraction, fix_ownership, unpack_package
 from .deactivation import finalize_install_outcome
 from .dependencies import installed_conflicts, unsatisfied_requirements
 from .errors import ConflictError, RequirementError
@@ -97,9 +96,8 @@ def _install_apply_phases(
 
 
 def _refuse(plugin_dir: Path, refusal: Exception) -> NoReturn:
-    """A refused install takes its own extraction with it. Kept, the unpacked tree would make
-    /capabilities report a plugin the daemon never applied."""
-    shutil.rmtree(plugin_dir, ignore_errors=True)
+    """A refused install takes its own extraction with it."""
+    discard_extraction(plugin_dir)
     raise refusal
 
 
