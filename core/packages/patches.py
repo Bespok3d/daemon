@@ -2,7 +2,10 @@
 diagnostics, and a baseline of every original so teardown can restore it.
 
 The stock file is FETCHED from the device through the jinni (reading a device file is the jinni's,
-ADR-0037) and captured once as the pristine baseline in `patches_orig/`. Every fragment targeting
+ADR-0037) and captured as the baseline in `patches_orig/`. Before any fragment touches it, that
+baseline is self-healed back to stock when it is the already-patched output of these diffs (a
+re-provision can leave the live file patched with no baseline held), so the plugin never traps
+itself re-patching an already-patched file (see baseline.derive_stock). Every fragment targeting
 that file is applied IN ORDER to one working copy of the baseline (pure daemon CPU), so a later
 fragment builds on an earlier one (klipper-motion patches toolhead.py four times); the cumulative
 result is WRITTEN back through the jinni once. `restore` writes the baseline back the same way.
@@ -15,6 +18,7 @@ from pathlib import Path
 
 from .. import jinni_client
 from ..results import MAX_OUTPUT_BYTES, item, phase
+from . import baseline
 from .user_vars import expand
 
 
@@ -54,19 +58,6 @@ def _collect_rej(work_path: Path) -> str:
     return f"\n--- rejected hunks ---\n{rej_text}"
 
 
-def _ensure_pristine(target: Path, pristine_path: Path) -> bool:
-    """Capture the device's REAL current file as the pristine baseline, once, via the jinni's fetch.
-    Returns False when the file is absent (so the patch reports target-not-found). On a re-apply the
-    baseline already exists and is kept (the target is by then our patched copy)."""
-    if pristine_path.exists():
-        return True
-    content = jinni_client.fetch(str(target))
-    if content is None:
-        return False
-    pristine_path.write_text(content)
-    return True
-
-
 def _apply_fragment(work_path: Path, patch_file: Path, patch_rel: str, crlf_stripped: bool) -> dict:
     """Apply one diff fragment to the working copy IN PLACE, so the next fragment for the same file
     builds on it (the old in-place cumulative patching, now on a bespok3d-tree copy). The item is
@@ -100,8 +91,10 @@ def _patch_target(target: str, fragments: list[dict], plugin_dir: Path, vars: di
     copy of it, never re-applying against the original."""
     target_path = Path(target)
     pristine_path = orig_dir / target_path.name
-    if not _ensure_pristine(target_path, pristine_path):
-        return [item(f"patch {Path(fragment['patch']).name}", ok=False, output="target file not found")  # noqa: E501
+    fragment_paths = [plugin_dir / fragment["patch"] for fragment in fragments]
+    fetch_failure = baseline.establish(target_path, pristine_path, fragment_paths)
+    if fetch_failure is not None:
+        return [item(f"patch {Path(fragment['patch']).name}", ok=False, output=fetch_failure)
                 for fragment in fragments]
     work_path = pristine_path.parent / (pristine_path.name + ".b3work")
     shutil.copy2(pristine_path, work_path)
