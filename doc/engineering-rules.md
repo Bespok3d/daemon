@@ -252,7 +252,7 @@ run on every operation that restarts a core service, not only on recover.
 The em-dash (U+2014) and the en-dash (U+2013) are forbidden as punctuation everywhere: source, comments,
 docstrings, JSON, Markdown, commit messages, and PR text. Use a comma, colon, semicolon, parentheses, or
 two sentences instead. A plain hyphen inside a compound word (`on-printer`, `start-stop-daemon`) is fine;
-it is not punctuation. This is enforced by `scripts/em_dash_guard.py` in the gate, so a stray dash is a
+it is not punctuation. This is enforced by the shared em-dash guard in the gate, so a stray dash is a
 build break, not a style note.
 
 ---

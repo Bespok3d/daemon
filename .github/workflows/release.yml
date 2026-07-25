@@ -35,7 +35,21 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The gate below runs the shared em-dash and workflow-pinning guards, which live in lib_bespok3d,
+      # mounted here as a submodule in a separate private repo. The daemon's own checkout uses the auto
+      # GITHUB_TOKEN; the submodule is fetched in its own step with a read token (MAIN_INDEX_TOKEN), since
+      # GITHUB_TOKEN cannot read a sibling private repo. persist-credentials is off so GITHUB_TOKEN is not
+      # left in git config and reused for the submodule fetch (which would 403). Without the submodule the
+      # release build fails at the gate step.
       - uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Fetch the shared-tooling submodule
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.MAIN_INDEX_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git submodule update --init --recursive
 
       - uses: actions/setup-python@v5
         with:

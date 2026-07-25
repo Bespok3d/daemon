@@ -16,6 +16,10 @@ export PYTHONDONTWRITEBYTECODE=1
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV="$REPO_DIR/.venv"
+
+# The detectors that enforce a workspace-wide rule live in one place and are invoked by every repo's
+# gate. See lib_bespok3d/tooling/README.md. This is the only line that knows where they are.
+B3D_TOOLING="${B3D_TOOLING:-$REPO_DIR/lib_bespok3d/tooling}"
 cd "$REPO_DIR"
 
 PASS=0
@@ -61,7 +65,9 @@ if [ ! -d "$VENV" ]; then
 fi
 
 echo "Daemon gate (Python $("$VENV/bin/python" --version 2>&1 | awk '{print $2}'))"
-run_check "em-dash / en-dash ban" "$VENV/bin/python" scripts/em_dash_guard.py
+run_check "em-dash / en-dash ban" node "$B3D_TOOLING/em-dash-guard.mjs" "$REPO_DIR" \
+    --name S99bespok3d --name s10bespok3d-daemon
+run_check "workflow pinning"      node "$B3D_TOOLING/workflow-pinning-detector.mjs" "$REPO_DIR"
 run_check "cross-file private imports" "$VENV/bin/python" scripts/private_import_guard.py
 run_check "generic-daemon boundary" "$VENV/bin/python" scripts/generic_daemon_guard.py
 run_check "size ratchet" "$VENV/bin/python" scripts/size_ratchet.py

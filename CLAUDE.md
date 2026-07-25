@@ -41,7 +41,7 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
    exist, prefer stdlib / native / an existing helper, then write the smallest clear solution. A means to
    readability, never code-golf; it never overrides 1 and 2 and never adds "upgrade path" comments.
 8. **RULE ZERO: no em-dash or en-dash, anywhere.** Use a comma, colon, semicolon, parentheses, or two
-   sentences. A hyphen in a compound word is fine. Enforced by `scripts/em_dash_guard.py` in the gate.
+   sentences. A hyphen in a compound word is fine. Enforced by the shared em-dash guard in the gate.
 
 ## How to work a change
 
