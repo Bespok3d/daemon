@@ -1,0 +1,32 @@
+name: pr-gate
+
+# Every pull request runs the daemon's own check suite: ruff, strict mypy and pytest on Python 3.11,
+# plus the shared em-dash and workflow-pinning guards. Those two guards live in lib_bespok3d, mounted
+# here as a git submodule, so the checkout must fetch it. The default GITHUB_TOKEN cannot read a sibling
+# private repo, so a token with read access to lib_bespok3d is passed to checkout, which uses it for the
+# main clone and the submodule fetch alike (the submodule URL in .gitmodules is HTTPS for this reason).
+#
+# This is a check-only run: it never builds, packs, signs or publishes, so the signing key is never in
+# scope. The single secret it holds is the submodule read token. It is deliberately NOT named
+# pr-build.yml: that name is reserved for a b3-builder preview build, which the pinning guard forbids
+# from holding any secret at all. See the go-public finding: swap this token for a read-only one, or make
+# lib_bespok3d public, before external forks open PRs (a fork PR receives no secret and its checkout of
+# the private submodule would fail).
+on:
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.MAIN_INDEX_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Daemon gate (ruff + mypy + pytest on 3.11)
+        run: bash scripts/check.sh

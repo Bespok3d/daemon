@@ -35,7 +35,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The gate below runs the shared em-dash and workflow-pinning guards, which live in lib_bespok3d,
+      # mounted here as a submodule. Fetch it, with a token, since the default GITHUB_TOKEN cannot read a
+      # sibling private repo. Without this the release build fails at the gate step.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.MAIN_INDEX_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
