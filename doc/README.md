@@ -24,5 +24,7 @@ install pipeline. Every request is `Authorization: Bearer <token>` over cert-pin
 ## Security
 
 Bearer-token auth on every route except the single unauthenticated `POST /access/request` (how a
-second computer asks for access, then an already-authorized client approves it). GPG-signed package
-verification is scaffolded (`pgpy`) and deferred until packages are signed.
+second computer asks for access, then an already-authorized client approves it). Package signatures
+are verified app-side before install, not on the printer: the constrained 512MB board cannot carry
+on-printer GPG, so bearer-token auth over cert-pinned HTTPS plus app-side verification is the trust
+model.

@@ -1,7 +1,7 @@
 # Architecture and design intent
 
-This is the internal map of the daemon: what it is, the boundaries that hold it together, where code
-lives, and where the in-progress decomposition is headed. Read it before adding a module, so a new
+This is the internal map of the daemon: what it is, the boundaries that hold it together, and where
+each concern lives. Read it before adding a module, so a new
 concern lands in the right place instead of growing an existing file. The user-facing overview is
 [README.md](README.md); the rules every change follows are [engineering-rules.md](engineering-rules.md).
 
@@ -132,16 +132,15 @@ Only the bespok3d-layout conventions stay in core (the `etc/init.d` autostart wi
 data dir in `core/intent.py`), because they name the daemon's own `$BESPOK3D` tree, not a device. The
 daemon asks; the jinni answers.
 
-**ADR-0037 realized (gate-green; not yet device-verified).** The two apps are separated, the executor's
+**ADR-0037 realized (gate-green, exercised on the U1).** The two apps are separated, the executor's
 device actuation has moved behind the jinni's actuation verbs (the daemon mutates only its own
 `$BESPOK3D` tree), and a re-sweep finds no device token in `core`/`api`/`protocol` code beyond two
 documented keeps (`klipper_requirements.txt`, the ADR-0036 plugin-author file name, and
-`klipper_version`, an app-facing relay). Two follow-ups remain, both outside the Python gates:
-(1) DEPLOY: the daemon `.b3` ships `protocol` (not `jinni`), so the client's `uploadAdapterJinni` must
-deploy the `klipper-jinni` `jinni` package onto the device path alongside `bespok3d_jinni` (on the
-printer the daemon and jinni co-locate in one dir, so both import). (2) The patch path keeps the
-in-place write model (`fetch` + `write_files`) rather than ADR-0031's symlink-the-patched-copy; that
-conversion plus device verification of the moved actuation is a dedicated pass.
+`klipper_version`, an app-facing relay). One conversion is still open, outside the Python gates: the
+patch path keeps the in-place write model (`fetch` + `write_files`) rather than ADR-0031's
+symlink-the-patched-copy. Deployment is settled: the daemon `.b3` ships `protocol` (not `jinni`), and
+the client's `uploadAdapterJinni` deploys the `klipper-jinni` `jinni` package onto the device path
+alongside `bespok3d_jinni` (on the printer the daemon and jinni co-locate in one dir, so both import).
 
 ## The transport boundary: HTTP for commands, websockets for live state
 
@@ -217,8 +216,7 @@ under the ceiling):
   and topo sort), `start_commands` (resolve the start commands, defer core-service restarts to a batch
   off the jinni's `CommandEffect`, run them via the jinni's `run_actions`), `deactivation`, and
   `recovery` (pairs with `core/safety/`). The `__init__` is now essentially the
-  facade: the four op wrappers plus `recover` (kept as facade wiring). Consolidate the duplicated
-  deactivate/uninstall/guard helpers while extracting.
+  facade: the four op wrappers plus `recover` (kept as facade wiring).
 - **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
   core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck/oom),
   `feeds` (the three live websocket handlers and the `install_hub`), `plugins` (the single-plugin
@@ -267,4 +265,5 @@ under the ceiling):
   daemon classifies no print state.
 
 Each extraction is its own reviewed step: gate green to start, write the failing test first, extract, gate
-green, stop for review. The decomposition is tracked in the project's cleanup ledger.
+green, stop for review. The two remaining optional splits (`core/auth.py`, `core/safety/fixers.py`)
+follow the same discipline.
