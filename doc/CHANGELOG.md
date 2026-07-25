@@ -2,20 +2,20 @@
 
 ## 0.12.18-dev
 
-Out-of-memory detection for the constrained-board safety net (packet 8 of the VPN relay). A new
+Out-of-memory detection for the constrained-board safety net. A new
 read-only `GET /oom` reports whether the kernel's OOM killer has fired, its most recent victim, and
 the cumulative kill count a client dedupes on. The jinni reads /proc/vmstat and the kernel ring
-buffer (ADR-0037); the daemon relays a machine token (`oom-kill`) the app localizes plus the victim
+buffer; the daemon relays a machine token (`oom-kill`) the app localizes plus the victim
 line. Detection only: the daemon prevents no OOM here. Whether the victim was a core print service or
 a plugin is NOT classified (the victim comm is `python3` for the python services, so a comm match
 cannot tell them apart; that verdict is a follow-up for when real hardware exists). Preventing OOM
 (an oom_score floor, a print-versus-plugin coexistence policy) is deferred until the real 512MB board
-and firmware exist to measure against; see ADR-0040 for the reasoning. Device-unverified (no 512MB
+and firmware exist to measure against. Device-unverified (no 512MB
 hardware yet); logic is unit-tested on both sides.
 
 ## 0.12.17-dev
 
-Install-time `require` enforcement (Gap A of the VPN relay). Installing a plugin whose `require`d
+Install-time `require` enforcement. Installing a plugin whose `require`d
 service is provided by no installed, non-deactivated plugin is now refused up front with a clear
 `RequirementError` (mapped to a 409 the app localizes), instead of half-applying and failing later.
 The check runs on both the single install and the batched "install selected"; in a batch a sibling
@@ -26,7 +26,7 @@ declares `require: []`, so the gate is inert for them and fires only for the VPN
 
 ## 0.12.16-dev
 
-The kernel-module OTA autofixer (packet 5 of the VPN relay). After a firmware update bumps the
+The kernel-module OTA autofixer. After a firmware update bumps the
 kernel, a plugin's `.ko` no longer matches, and the daemon now names that failure precisely instead
 of a generic "install phase failed", so a stale module deactivates cleanly and the printer keeps
 working.
@@ -37,26 +37,26 @@ working.
   dimensions in `conditions.py` as the finer key for a module whose ABI differs between two kernels
   that share a release. Full contract dance: the `KernelInfo` schema, the TS wire mirror, the
   regenerated contract fixture, and the fakes.
-- **Load-failure classifier + `kernel_module_failure` fixer (ADR-0039).** When a kernel-module load
+- **Load-failure classifier + `kernel_module_failure` fixer.** When a kernel-module load
   fails, the jinni classifies it from the kernel ring buffer and emits a
   `kernel-module:vermagic-mismatch` token; the daemon relays it through the safety net's one
   attribution brain (a new `kernel_module_failure` fixer) so the plugin deactivates with that token
   as its reason and its dependents skip, exactly as the OTA recover path already deactivated a broken
   plugin. The classifier keys on the kernel's actual version-magic verdict, never a bare non-zero
-  load (a module that loads then misbehaves is a different cause, ADR-0039's three-gate honest
-  limit); classification is best-effort, so a dead-jinni round-trip degrades to the generic reason
+  load (a module that loads then misbehaves is a different cause, and a vermagic verdict is the honest
+  limit of what a load check can prove); classification is best-effort, so a dead-jinni round-trip degrades to the generic reason
   rather than aborting the install.
 
 ## 0.12.15-dev
 
-The kernel-module mechanism gets its first real specimen (the `tun-module` plugin, packet 4 of the
-VPN relay), and two guards the specimen exposed.
+The kernel-module mechanism gets its first real specimen (the `tun-module` plugin), and two guards
+the specimen exposed.
 
 - **`kernel_release` variant dimension.** A `.ko` is cross-built per kernel, so a `kernel-module`
   place entry now selects on `when.kernel_release` (the running kernel's `uname -r`, an exact-match
   dimension in `conditions.py`). The jinni reports it via a new `kernel_release` fact (base tier
   `unknown`; the U1 reads `uname -r`), kept in `variant_facts` only, not the capabilities report
-  (the richer `kernel`/`vermagic` capability is a later packet). A box whose kernel matches no
+  (the richer `kernel`/`vermagic` capability comes later). A box whose kernel matches no
   variant places no module, which fails closed.
 - **`install.kmodule` must load a placed `.ko`.** `normalize_install` now refuses a manifest whose
   `install.kmodule.module` names no `kernel-module` place entry: the loader insmods only from
@@ -65,14 +65,14 @@ VPN relay), and two guards the specimen exposed.
 
 ## 0.12.14-dev
 
-Kernel modules become a first-class plugin artifact (the mechanism; see ADR-0039). A plugin can now
+Kernel modules become a first-class plugin artifact (the mechanism). A plugin can now
 place a cross-built `.ko` and have the daemon load it, so a driver like `tun` (for the VPN plugins)
 ships the way any other file does.
 
 - **`kernel-module` destination class** places a `.ko` under `$BESPOK3D/lib/modules/`, and a new
   **`install.kmodule`** section declares the module, its device nodes (`/dev/net/tun c 10 200`), and
   whether to load it now. The daemon asks the jinni to render an s05 loader script (it owns
-  insmod/mknod/rmmod, ADR-0037) and wires it into the autostart dir BEFORE the s65 services, so a
+  insmod/mknod/rmmod) and wires it into the autostart dir BEFORE the s65 services, so a
   service that needs the module finds it already loaded. The whole feature is gated on a new
   `kernel-modules` capability flag; the U1 advertises it.
 - The module load runs immediately in its own install phase, not through the deferred core-service
@@ -119,7 +119,7 @@ ride, so a whole set of plugins lands with one Klipper/Moonraker bounce instead 
 
 ## 0.12.7-dev
 
-Multiple patch fragments targeting the same file now apply CUMULATIVELY. The ADR-0037 patch flow
+Multiple patch fragments targeting the same file now apply CUMULATIVELY. The daemon's patch flow
 fetched the stock file once as a pristine baseline, then applied EACH fragment independently against
 that baseline and wrote it back, so a plugin shipping several fragments for one file (klipper-motion
 patches `toolhead.py` four times, `resonance_tester.py` three) had every fragment past the first
@@ -147,7 +147,7 @@ leaves its diagnosis reason untouched.
 
 ## 0.12.1-dev
 
-ADR-0037 (daemon orchestrates, jinni actuates). The jinni is now a separate process the daemon parents
+Daemon orchestrates, jinni actuates. The jinni is now a separate process the daemon parents
 over a Unix socket, not an in-process class the daemon subclasses. Generic `core/` reaches it through
 one seam (`core/jinni_client/`) plus the leaf contract shapes (`jinni.contracts`), enforced by
 `scripts/generic_daemon_guard.py`; the retired `as_klipper_printer`, `ServiceActionVocabulary`, and the
@@ -165,18 +165,18 @@ one seam (`core/jinni_client/`) plus the leaf contract shapes (`jinni.contracts`
   adapter's client and jinni were split by concern and the adapter gained its own gate.
 
 DEVICE-VERIFIED on the U1 2026-06-16: the new daemon+jinni boundary drives plugin install and reinstall
-on real hardware. ADR-0037 is NOT done yet. The daemon repo still ships the generic Klipper jinni
+on real hardware. That split is not fully realized yet. The daemon repo still ships the generic Klipper jinni
 (`KlipperPrinterJinni` + the klipper facets + klippy/moonraker comms) and `core/safety` still names
 Klipper/Moonraker; that is device knowledge, and the daemon's realm is the bespok3d filesystem only, so it
 must move to a shared adapter-layer `klipper-jinni` library that device jinnis extend. Also remaining: the
-mid-print blocked-action flip on a live print, the jinni RSS footprint measurement, and the decision-6
-escape hatch (boot-gated inert mode plus declarative wiring-record replay), which is decided but not yet
+mid-print blocked-action flip on a live print, the jinni RSS footprint measurement, and the escape
+hatch (boot-gated inert mode plus declarative wiring-record replay), which is decided but not yet
 built.
 
 ## 0.11.8-dev
 
 First release cut from the standalone daemon repository, extracted from the Bespok3d monorepo
-(ADR-0030, "b3 zero"). The daemon is now packaged as a publishable `.b3` and carries its own gate
+("b3 zero"). The daemon is now packaged as a publishable `.b3` and carries its own gate
 (`scripts/check.sh`: ruff + mypy + pytest on Python 3.11), packer (`scripts/pack.sh`), and release CI.
 
 No runtime behavior change versus the monorepo's `0.11.8-dev`. The only code change in the extraction

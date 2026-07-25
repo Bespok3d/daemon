@@ -62,6 +62,6 @@ A push to `main` touching the daemon source, manifest, version, or scripts trigg
 it to the org-wide `b3-builder` Action, which packs the `.b3`, stamps the publisher, signs the manifest
 and publishes a GitHub release with the `.b3` and its index atom attached.
 
-The daemon is plugin zero (ADR-0030): same package shape, same signature, same release layout as any
+The daemon is plugin zero: same package shape, same signature, same release layout as any
 plugin. The single difference is that the adapter puts it on the printer at enrollment, so it is never
 installed through the plugin pipeline and is not registered in the catalog.

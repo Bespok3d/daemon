@@ -21,8 +21,7 @@ request is a bearer token over cert-pinned HTTPS on port 4269.
 
 ## The central boundary: daemon orchestrates, jinni actuates
 
-The single most important design rule here is the separation between generic and device-specific code
-(ADR-0037).
+The single most important design rule here is the separation between generic and device-specific code.
 
 - The **daemon is generic and ORCHESTRATES.** It knows plugins, packages, install phases, services,
   health, and recovery in the abstract: it unpacks and places files in the bespok3d tree, applies
@@ -37,7 +36,7 @@ The single most important design rule here is the separation between generic and
   repo.
 
 When the daemon needs a device value or action it does not hardcode it; it asks the jinni a semantic
-question and gets a serializable answer. If you find yourself typing a Snapmaker or Klipper specific
+question and gets a serializable answer. If you find yourself typing a vendor or Klipper specific
 into a `core/` file, stop: that fact belongs behind the jinni.
 
 ### The jinni is a separate process behind one seam
@@ -69,8 +68,8 @@ and target facts (`capability_flags` / `paths` / `capabilities_report`), classif
 start command acts on the device (`classify_commands`), report the device's health verdict (`health`),
 report what is blocked right now (`blocked_actions`), stream the blocked-action set on change
 (`subscribe_blocked_actions`), report the kernel's out-of-memory evidence for the constrained-board
-safety net (`oom_report`, ADR-0040), and fetch a stock file for the daemon to patch (`fetch`). ACTUATION
-verbs (ADR-0037: the daemon resolves and sequences, the jinni mutates the device): run a plugin's
+safety net (`oom_report`), and fetch a stock file for the daemon to patch (`fetch`). ACTUATION
+verbs (the daemon resolves and sequences, the jinni mutates the device): run a plugin's
 start/restart/stop commands (`run_actions`), symlink placed files and site-package links into the
 system (`wire`) and remove them (`unwire`), write a patched (or restored) source back (`write_files`),
 and the config-include unwire (`remove_bespok3d_includes` / `prune_bespok3d_config_dir` /
@@ -104,8 +103,7 @@ The safety net judges a `DeviceHealth` report the jinni fills in (`health()`), a
 question ("is the device healthy?") instead of probing each service or naming a port. When a failure has
 a NON-plugin cause the jinni knows (the U1's stock MQTT broker is down, say), the jinni sets
 `DeviceHealth.diagnosis` to a machine TOKEN; `core/safety/fixers.py device_infrastructure` relays the
-token verbatim and deactivates nothing, and the app localizes it. The device fact (the broker, port
-1883) lives behind the jinni; the daemon carries only the token.
+token verbatim and deactivates nothing, and the app localizes it. The device fact (the broker, port 1883) lives behind the jinni; the daemon carries only the token.
 
 ### Where the device half lives: a separate app over a socket
 
@@ -131,16 +129,6 @@ defines a device-vocabulary string constant.
 Only the bespok3d-layout conventions stay in core (the `etc/init.d` autostart wiring and the `var/lib`
 data dir in `core/intent.py`), because they name the daemon's own `$BESPOK3D` tree, not a device. The
 daemon asks; the jinni answers.
-
-**ADR-0037 realized (gate-green, exercised on the U1).** The two apps are separated, the executor's
-device actuation has moved behind the jinni's actuation verbs (the daemon mutates only its own
-`$BESPOK3D` tree), and a re-sweep finds no device token in `core`/`api`/`protocol` code beyond two
-documented keeps (`klipper_requirements.txt`, the ADR-0036 plugin-author file name, and
-`klipper_version`, an app-facing relay). One conversion is still open, outside the Python gates: the
-patch path keeps the in-place write model (`fetch` + `write_files`) rather than ADR-0031's
-symlink-the-patched-copy. Deployment is settled: the daemon `.b3` ships `protocol` (not `jinni`), and
-the client's `uploadAdapterJinni` deploys the `klipper-jinni` `jinni` package onto the device path
-alongside `bespok3d_jinni` (on the printer the daemon and jinni co-locate in one dir, so both import).
 
 ## The transport boundary: HTTP for commands, websockets for live state
 
@@ -172,7 +160,7 @@ Do not stream a command's result over a side channel, and do not poll for state 
 
 ## Layout
 
-Natural Python layout at the repo root. The daemon is plugin zero (ADR-0030): it ships as a `.b3` with
+Natural Python layout at the repo root. The daemon is plugin zero: it ships as a `.b3` with
 the same shape and the same signature as any plugin, and the single difference is that the adapter puts
 it on the printer at enrollment instead of the plugin pipeline installing it. `scripts/stage-package.sh`
 maps the deployable subset into the plugin source shape (`manifest.json` + `files/` + `doc/`) that the
@@ -196,74 +184,30 @@ scripts/              check.sh, stage-package.sh, test-daemon-docker.sh (not pac
 doc/                  README + CHANGELOG (shipped in the .b3); this file + engineering-rules (not shipped)
 ```
 
-## Decomposition (the concern-directory model)
+## Where each concern lives
 
-The daemon was reorganized from "split and jumbled" into directories named for their concern. ADR-0037
-is realized (the jinni runtime lives in `adapters/klipper-jinni`, and the executor's device actuation
-moved behind the jinni's verbs); the rule for new code is unchanged: land it in the right concern, not
-in a growing god file, and never name a device fact in `core/`. Where the concern split landed (two
-small residual splits, `core/auth/` and `core/safety/fixers/`, are optional polish, both single files
-under the ceiling):
+New code lands in the right concern, never in a growing god file, and never names a device fact in
+`core/`. The top-level split:
 
-- **`core/packages/` (from `core/packages.py`, 1441 lines).** The `__init__` keeps a thin public facade
-  (the API the routes import) and owns the plugin root, injecting it into the worker modules; the rest
-  splits by concern: `errors`, `user_vars`, `placement` (resolves the symlink family for the jinni to
-  wire; dirs/modes), `patches` (fetch + patch a copy + write back via the jinni), `templates`,
-  `services`, `installer` (install + reconfigure + the shared `apply_install_deferred` phase runner),
-  `updater` (the batched multi-plugin update, which streams per-plugin and per-phase progress),
-  `uninstaller` (the uninstall family), `lifecycle` (deactivate/teardown; the include/config-dir unwire
-  is the jinni's), `print_guard`, `python_deps`, `archive`, `manifest`, `dependencies` (the dep graph
-  and topo sort), `start_commands` (resolve the start commands, defer core-service restarts to a batch
-  off the jinni's `CommandEffect`, run them via the jinni's `run_actions`), `deactivation`, and
-  `recovery` (pairs with `core/safety/`). The `__init__` is now essentially the
-  facade: the four op wrappers plus `recover` (kept as facade wiring).
-- **`api/routes/` DONE (from `api/routes.py`, 442 lines).** Thin route registration that delegates to
-  core, an `APIRouter` per concern aggregated in `__init__`: `health` (status/capabilities/selfcheck/oom),
-  `feeds` (the three live websocket handlers and the `install_hub`), `plugins` (the single-plugin
-  routes under `/plugins/`: install/reconfigure/uninstall plus the config read), `packages` (the pack
-  commands under `/packages/`: recover/update-batch), `lifecycle` (deactivate/teardown), `access` (the
-  request/grant/revoke flow). The shared data-root constant lives in `core/data_root.py` (the old
-  `routes/paths.py` retired into it). Handlers stay thin.
-- **`core/auth/` (DEFERRED, optional). From `core/auth.py` (149 lines), under the ceiling.** When split,
-  one security concern per file: keys, roles, labels, tokens, identity, and the request/grant/revoke cycle.
-- **`core/intent.py` DONE (ADR-0026, then ADR-0037).** It translates the intent-based install block
-  (`place` / `instrument` / `service` / `restart`) into the mechanism operations the executor runs,
-  naming no device value: a placement or instrument resolves its CLASS via
-  `jinni_client.placement_destination`/`instrument_destination`, and a restart resolves its HOOK via
-  `jinni_client.restart_command`. Command classification (`classify_commands`) and writing the jinni's
-  own startup control scripts moved INTO the jinni process (the verb plus `jinni/service.py`), so the
-  daemon no longer owns a service-action vocabulary or a control-script writer. `intent.py` keeps only
-  the bespok3d-layout service wiring and the `var/lib` data-dir convention (its own `$BESPOK3D` tree, no
-  device value).
-- **`jinni/printer_comms/` DONE (ADR-0029 Part 2 P6; was `core/printer_comms/`, the tentative
-  `core/uds/`).** Groups the clients that talk to the printer's own running services: `klippy`,
-  `moonraker`, and the shared `frame` transport. Talking to the printer's OWN software is the device's
-  realm, so these live with the jinni; generic `core/` reaches them through the jinni boundary
-  (`from jinni.printer_comms import ...`).
-- **`core/safety/fixers/` (DEFERRED, optional). From `core/safety/fixers.py` (138 lines), under the
-  ceiling.** When split, one fixer per file with a registry, so new failure modes slot in cleanly.
-- **`core/safety/health.py` DONE, then `probe/` moved behind the jinni (ADR-0029 Part 2 P7+P8).** The
-  233-line file first split into a `core/safety/probe/` package plus two siblings. Part 2 then moved the
-  whole printer-service-health concern onto the jinni: the low-level reachability (`reach.py`'s
-  `service_get` + `port_listening`) became overridable base-`Jinni` methods (P7, impl in
-  `jinni/inspection.py`), and the per-service verdicts (`klipper_healthy`, `moonraker_healthy`,
-  `probe_moonraker`) became `KlipperHealth` methods that assemble the boundary `DeviceHealth` /
-  `ServiceHealth` report (`jinni/contracts.py`), with `MoonrakerInfo` an internal type in
-  `jinni/health.py`; `core/safety/probe/` is deleted. The safety net asks for the report through the
-  seam, `jinni_client.health()` (ADR-0037), never an imported device object. Reading and PARSING the
-  device's logs (which config section / import / file failed, and the user-facing tail) is device
-  knowledge and belongs to the jinni too: its `health()` report carries the structured failure
-  SIGNALS and the formatted `log_tails`. What stays in `core/safety/` is generic and names no
-  service: the daemon maps a jinni-reported failure signal to the culprit PLUGIN via its own
-  placement index (the bespok3d-filesystem record of which plugin placed which section/module/file),
-  decides to deactivate, and orchestrates the restart + re-verify (`decision`, `attribution`,
-  `fixers`, `restart_batch`). The daemon reads no device log and authors no Klipper/Moonraker text.
-- **`core/live/` DONE (absorbed `core/log_capture.py`).** The websocket push-on-change sources:
-  `install_progress`, `print_state`, and `log_capture`. `print_state` stays device-free: `app_frame`
-  shapes the jinni's blocked-action token set into the `/ws/print-state` frame, and the route
-  (`api/routes/feeds.py`) relays the `subscribe_blocked_actions` stream verbatim (ADR-0037), so the
-  daemon classifies no print state.
+- **`core/packages/`** owns the plugin lifecycle: a thin public facade in `__init__` over worker modules
+  split by concern (`placement`, `patches`, `templates`, `services`, `installer`, `updater`,
+  `uninstaller`, `lifecycle`, `print_guard`, `python_deps`, `archive`, `manifest`, `dependencies`,
+  `start_commands`, `deactivation`, `recovery`).
+- **`api/routes/`** is thin route registration that delegates to core, one `APIRouter` per concern
+  aggregated in `__init__`: `health`, `feeds` (the live websocket handlers), `plugins`, `packages`,
+  `lifecycle`, `access`. Handlers stay thin; the shared data-root constant lives in `core/data_root.py`.
+- **`core/intent.py`** translates the intent-based install block (`place` / `instrument` / `service` /
+  `restart`) into mechanism operations, naming no device value: a placement or instrument resolves its
+  CLASS through the jinni, and a restart resolves its HOOK through the jinni. It keeps only the
+  bespok3d-layout service wiring and the `var/lib` data-dir convention (its own `$BESPOK3D` tree).
+- **`core/safety/`** is the self-heal family (`decision`, `attribution`, `fixers`, `restart_batch`). It
+  is generic and names no service: it maps a jinni-reported failure signal to the culprit PLUGIN via its
+  own placement index, decides to deactivate, and orchestrates the restart and re-verify. It reads no
+  device log and authors no Klipper/Moonraker text; the health verdict and log parsing are the jinni's.
+- **`core/live/`** holds the websocket push-on-change sources (`install_progress`, `print_state`,
+  `log_capture`). `print_state` stays device-free: `app_frame` shapes the jinni's blocked-action token
+  set into the `/ws/print-state` frame, and the route relays the `subscribe_blocked_actions` stream
+  verbatim, so the daemon classifies no print state.
 
-Each extraction is its own reviewed step: gate green to start, write the failing test first, extract, gate
-green, stop for review. The two remaining optional splits (`core/auth.py`, `core/safety/fixers.py`)
-follow the same discipline.
+Each change is its own reviewed step: gate green to start, write the failing test first, make the
+change, gate green, stop for review.
