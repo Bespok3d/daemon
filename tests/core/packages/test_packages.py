@@ -765,7 +765,7 @@ def test_teardown_restarts_core_services_once(tmp_path: Path, monkeypatch: MP) -
     assert ran.count("/etc/init.d/S60klipper restart") == 1
 
 
-def make_installed_plugin(  # noqa: PLR0913
+def make_installed_plugin(  # noqa: PLR0913, PLR0917
     plugin_root: Path,
     plugin_id: str,
     provides: list[str] | None = None,
