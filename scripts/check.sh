@@ -20,6 +20,16 @@ VENV="$REPO_DIR/.venv"
 # The detectors that enforce a workspace-wide rule live in one place and are invoked by every repo's
 # gate. See lib_bespok3d/tooling/README.md. This is the only line that knows where they are.
 B3D_TOOLING="${B3D_TOOLING:-$REPO_DIR/lib_bespok3d/tooling}"
+# lib_bespok3d is a submodule. A clone made without it leaves an empty directory here, so say what
+# is actually wrong instead of letting every check below fail on a missing file.
+if [ ! -f "$B3D_TOOLING/em-dash-guard.mjs" ]; then
+    echo "The shared gate helpers are missing: the lib_bespok3d submodule is not checked out." >&2
+    echo "Run this once from the repo root, then try again:" >&2
+    echo "  git submodule sync --recursive && git submodule update --init --recursive" >&2
+    echo "See CONTRIBUTING.md for the full environment setup." >&2
+    exit 1
+fi
+
 cd "$REPO_DIR"
 
 PASS=0
