@@ -72,7 +72,7 @@ jobs:
       - name: Stage the daemon as a plugin source dir
         run: sh scripts/stage-package.sh
 
-      - uses: Bespok3d/b3-builder@fe43aee920e620c6272a88f395499a789329e459  # main @ 2026-07-22
+      - uses: Bespok3d/b3-builder@ff6ad98482c57c3966af1c1f7c8aefdf8be8c812  # main @ 2026-07-26
         with:
           unit: repo
           source: dist/package
