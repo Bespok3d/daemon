@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 from pydantic import BaseModel, Field
 
 
@@ -31,4 +33,18 @@ class OomReportResponse(BaseModel):
     detail: str = Field(
         default="",
         description="Human-readable victim line for the user, or '' when the victim is unknown.",
+    )
+
+
+class LicenseResponse(BaseModel):
+    """The AGPL section 13 offer: a network user of this daemon can find the source for the exact
+    version answering them."""
+
+    version: str = Field(description="Daemon version this offer is about")
+    license: str = Field(description="SPDX identifier of the licence this daemon is under")
+    source: str = Field(
+        description="Public repository holding the complete source for every released version",
+    )
+    notice: str = Field(
+        description="The offer in words, naming where the source for this running version is",
     )

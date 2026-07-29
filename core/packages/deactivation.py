@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Taking a plugin out of effect and recording it: run its stop commands, undo what install placed
 on the system (symlinks, patched files, linked libs, venv), and write/clear the deactivated and
 recovery-failure markers. Shared by the recovery safety net and the uninstall/teardown paths.

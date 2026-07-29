@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Run a plugin's install start commands, deferring core-service restarts to a batch.
 
 A plugin's start commands run immediately, EXCEPT init-script/nginx service actions, which are

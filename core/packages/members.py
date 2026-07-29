@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Which members of a .b3 archive the daemon is allowed to write, decided before it writes any.
 
 Two independent refusals over the same member list:

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Write a generated init.d script into a plugin's tree, shared by the managed-service and
 kernel-module loaders.
 

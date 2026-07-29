@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """In-vitro daemon integration: install a real .b3 into a temp workspace and assert the actual
 filesystem effect (extraction, symlinks, dirs), plus the selfcheck-drift and recover round-trips.
 

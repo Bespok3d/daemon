@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Spawn and supervise the jinni child process (ADR-0037 THE FLIP).
 
 The init system launches the daemon; the daemon launches and parents the jinni as a child process

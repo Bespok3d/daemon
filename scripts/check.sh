@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
 
 # The daemon's self-contained gate: ruff + mypy + pytest on Python 3.11 (the device runtime). It

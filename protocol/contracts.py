@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Typed shapes the jinni interface returns to the daemon: the protocol's data contract.
 
 A dataclass here crosses the jinni boundary: the daemon asks, the device jinni fills it in. This is

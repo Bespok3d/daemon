@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The jinni seam's dispatch mechanism (ADR-0037).
 
 Routes one verb to the jinni: in dev the loaded jinni answers in-process (INJECTED by a test, never

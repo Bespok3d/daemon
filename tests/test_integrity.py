@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """verify_files must match a plugin's on-disk files against the sha256 the packer recorded in the
 manifest, and apply_install_deferred must refuse a mismatch before its phase list is even built
 (tmp_path-based style, no custom fixture, per tests/test_generic_daemon_guard.py)."""

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Patches (the unified-diff apply + CRLF handling + original-file backup/restore) have a canonical
 home in core.packages.patches. These guard the diagnostics that make a failed patch legible and the
 restore that teardown relies on."""

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The generic-box fake jinni: a plain linux box, no klipper services, vacuously healthy.
 
 The daemon's generic install path is tested against this, exactly as the loader's generic fallback

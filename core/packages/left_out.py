@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Which plugins a batch leaves out, and the sentence the user reads for each one. A plugin is left
 out either because the printer settled it will not accept it, or because a plugin it needs is not on
 the printer at the moment its turn comes.

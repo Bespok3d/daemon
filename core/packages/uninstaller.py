@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Uninstalling a plugin: take its effect off the system and restart the services its removal needs.
 
 Removal is reference-counted and cascades dependents-first: a plugin that other installed plugins

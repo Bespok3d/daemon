@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Building a .b3 in a test the way a real packer builds one.
 
 The daemon refuses an archive carrying a member its manifest never listed, so a fixture that writes

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Run the daemon tests + mutation on the TARGET Python (3.11) inside Docker. Nothing is installed on the
 # dev machine: the source is copied into the image and run there. Use this for on-target verification and
 # to generate the Python mutation baseline (mutmut does not run on a newer dev-machine python like 3.14).

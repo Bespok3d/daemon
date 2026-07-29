@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Reading installed plugins' manifests off disk: read one plugin's manifest.json, and enumerate
 the installed plugins (the directories under the plugin root that carry a manifest)."""
 

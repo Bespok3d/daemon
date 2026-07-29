@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """User-variable handling has a canonical home in core.packages.user_vars (validation, the $VAR
 expander, persistence to user_vars.json, the per-plugin venv var, and required-variable checks) and
 stays reachable from the core.packages namespace as packages.validate_user_vars (the api consumes

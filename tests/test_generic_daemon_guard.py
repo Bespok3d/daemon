@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The generic-daemon boundary guard: no core/ code imports the jinni runtime (only the protocol
 crosses), and the protocol contract carries no device vocabulary.
 

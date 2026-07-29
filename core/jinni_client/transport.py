@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Pluggable transport for the jinni seam (ADR-0037 THE FLIP).
 
 In dev (no device) the loaded jinni answers in-process; on the printer the daemon spawns its jinni

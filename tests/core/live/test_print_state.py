@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 from core.live import print_state
 
 # The daemon relays blocked-action tokens opaquely; these stand in for any jinni's vocabulary.

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Plugin Python deps (ADR-0036): provision a per-plugin venv or symlink baked packages into the
 system site-packages, then tear them down. CI bakes the deps into the .b3, so no pip runs on the
 printer.

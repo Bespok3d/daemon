@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Self-check: diff the expected on-printer state (each plugin's manifest plus persisted
 user_vars) against the actual filesystem. Read-only; never mutates.

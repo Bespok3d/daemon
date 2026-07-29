@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Template rendering (the $VAR-expanding config-template writer) has a canonical home in
 core.packages.templates. These guard the path-escape rejection a template 'to' must enforce."""
 from pathlib import Path

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Pure attribution tests: a jinni failure SIGNAL in, culprit plugin out.
 
 The jinni read the failing identifier out of the device log; the daemon only maps it to the plugin

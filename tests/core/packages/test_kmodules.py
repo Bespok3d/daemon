@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The kernel-module install phases: generate the s05 loader script (gated on the printer's
 `kernel-modules` capability) and run the immediate load. The daemon never imports the jinni runtime,
 so these drive the seam with a duck-typed fake, as a real jinni answers over the socket."""

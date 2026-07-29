@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The daemon safety net: detect and recover from a risky operation that breaks a core service.
 
 The daemon does the risky thing (places files, restarts services), then hands the gathered evidence

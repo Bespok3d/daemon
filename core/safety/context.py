@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """What the daemon was doing when it asked the safety net to keep watch.
 
 The daemon performs a risky operation (an install, an update, an OTA recover) and hands this context

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """White-box units for post-restart evidence gathering (core/packages/recovery/evidence.py)."""
 import json
 from pathlib import Path

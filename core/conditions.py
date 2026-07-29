@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The variant engine: pick which of a manifest entry's variants applies to THIS printer.
 
 A manifest place/instrument entry may carry a `variants` list of `{ when, src|diff }`. `when` is a

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The deactivate/teardown lifecycle lives in core/packages/lifecycle.py: deactivate_all (the
 reversible off-switch that keeps plugin files) and teardown (full uninstall + config-dir prune).
 Editing the printer's own config and pruning its include dirs moved to the jinni (ADR-0037); the

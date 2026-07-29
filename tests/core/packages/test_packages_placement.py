@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Placement in core.packages.placement: directories, file modes, and resolving the symlink family
 for the jinni to wire. The symlink IO and the stock-original backup/restore contract moved to the
 jinni's wiring facet (ADR-0037); these cover what the daemon still owns: dir/mode creation, the

@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 DAEMON_DIR=/userdata/bespok3d/var/lib/daemon
 PID_FILE=/userdata/bespok3d/run/bespok3d-daemon.pid
 LOG_FILE=/userdata/bespok3d/var/log/daemon.log

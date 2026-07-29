@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """A fresh install lives in core/packages/installer.py, the config-only reconfigure in
 reconfigurer.py, and the batched update in updater.py; the two install-shaped paths (install and
 batched update) share ONE phase runner (`apply_install_deferred`), which install drives live (a

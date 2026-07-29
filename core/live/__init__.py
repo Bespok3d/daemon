@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Live state the daemon pushes to the app on change.
 
 Three websocket feeds (`/ws/install-progress`, `/ws/print-state`, `/ws/plugin-log`) each have a

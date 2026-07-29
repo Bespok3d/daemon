@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Per-verb result decoders: rebuild the typed contract shape from a reply's JSON form (strict
 output at the boundary).
 

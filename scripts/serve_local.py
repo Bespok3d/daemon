@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Run the daemon locally to inspect its Swagger UI at http://localhost:4269/docs.
 
 DEV ONLY. Sets BESPOK3D_DEV_OPEN so the bearer middleware answers without a token (the daemon never

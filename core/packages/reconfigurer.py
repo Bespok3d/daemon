@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Config-only reconfigure: re-render an installed plugin's config templates from new user values
 and restart its services, without re-applying files, symlinks, or patches.
 

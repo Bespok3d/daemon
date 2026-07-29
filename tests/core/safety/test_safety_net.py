@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Pure decision tests for the safety net: build evidence as data, assert the verdict and culprit.
 
 No I/O, no monkeypatching - this is the brain, exercised with values. `escaped` (reached the

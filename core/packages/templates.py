@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Templates: render a plugin's $VAR-expanding config templates into its own dir.
 
 A template 'to' must stay relative and within the plugin dir (no absolute path, no parent escape).

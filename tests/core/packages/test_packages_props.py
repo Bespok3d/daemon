@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Property tests for the daemon's service dependency logic (topological recover ordering and the
 installed-dependents lookup). These are filesystem-backed (the functions read each plugin's
 manifest.json), so each example writes a small generated service graph into a fresh temp dir.

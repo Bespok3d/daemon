@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The protocol: the one contract the daemon and the jinni both speak (ADR-0037).
 
 The daemon orchestrates and the jinni actuates; they run as two processes and share NOTHING but this

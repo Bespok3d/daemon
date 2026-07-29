@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unpacking a .b3 package: read its manifest, extract its file tree onto the printer, and fix the
 permissions. A .b3 is a zip of manifest.json plus the plugin's files; doc/ is catalog-only and never
 deployed (printer space is at a premium).

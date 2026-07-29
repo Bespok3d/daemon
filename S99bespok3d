@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 BESPOK3D=/userdata/bespok3d
 INIT_D=$BESPOK3D/etc/init.d

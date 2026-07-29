@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Shape the jinni's blocked-action token set into the daemon's /ws/print-state frame.
 
 The daemon does not touch the printer or classify a print state (ADR-0037): the jinni pushes the

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Provision a plugin's private Python environment from its `requirements.txt`.
 
 ADR-0036: a plugin that runs its own Python service declares its dependencies in a plain

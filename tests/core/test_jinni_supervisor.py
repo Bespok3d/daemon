@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Single-instance, bounded jinni supervision (ADR-0037 invariants 2 and 3).
 
 These cover the supervisor's lifecycle decisions without a real child: the pidfile round-trip,

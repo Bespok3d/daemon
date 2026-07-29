@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """White-box units for the safety-net driver (core/packages/recovery/restart.py).
 
 Re-export identity guards the public entry points the orchestrator wires; the units exercise the

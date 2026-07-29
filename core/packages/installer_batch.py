@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The batched multi-plugin INSTALL entry point ("install selected"): apply each package's install
 phases and restart each affected service once at the end. The apply-and-defer machinery lives in
 `batch.py`; this adds the one thing a fresh install needs over an update, settling which of the

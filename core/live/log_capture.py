@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Tail a plugin's service log and pull matches (URLs by default) out of it.
 
 A managed service's stdout/stderr is redirected by the adapter to `$BESPOK3D/var/log/<name>.log`

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Patches: apply a plugin's unified diffs to stock source, with CRLF handling, legible failure
 diagnostics, and a baseline of every original so teardown can restore it.
 

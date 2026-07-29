@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Deactivate and teardown: take Bespok3d off the printer, reversibly or completely.
 
 deactivate_all stops every plugin and removes the include hooks but KEEPS the plugin files, writing

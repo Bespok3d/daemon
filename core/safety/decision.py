@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The evidence the daemon gathers after a risky restart, and the verdict + decision over it.
 
 Pure: `is_healthy` and the fixers judge this data; the daemon does the I/O that fills it in.

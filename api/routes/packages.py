@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The pack/multi-plugin command routes that are NOT multipart uploads: recover (re-apply all
 installed plugins) and uninstall-batch (a set). Both act on more than one plugin and live under
 `/packages/`; the multipart batch-apply routes (update-batch, install-batch) live in `batch.py`, and

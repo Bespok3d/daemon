@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 from fastapi import APIRouter
 
 from core import jinni_client
@@ -8,11 +10,15 @@ from version import DAEMON_VERSION
 
 from ..schemas import (
     CapabilitiesResponse,
+    LicenseResponse,
     OomReportResponse,
     PluginDrift,
     SelfCheckResponse,
     StatusResponse,
 )
+
+DAEMON_LICENSE = "AGPL-3.0-or-later"
+DAEMON_SOURCE_URL = "https://github.com/Bespok3d/daemon"
 
 router = APIRouter()
 
@@ -63,3 +69,27 @@ async def selfcheck() -> SelfCheckResponse:
 async def oom() -> OomReportResponse:
     report = jinni_client.oom_report()
     return OomReportResponse(kills=report.kills, token=report.token, detail=report.detail)
+
+
+@router.get(
+    "/license",
+    response_model=LicenseResponse,
+    summary="Licence and source offer for the running daemon",
+    description=(
+        "Read-only, and answerable without a token, because the offer it carries is owed to anyone "
+        "talking to this daemon over the network. Names the licence, the version answering, and "
+        "the repository holding the complete source for that version."
+    ),
+)
+async def license_offer() -> LicenseResponse:
+    return LicenseResponse(
+        version=DAEMON_VERSION,
+        license=DAEMON_LICENSE,
+        source=DAEMON_SOURCE_URL,
+        notice=(
+            f"This daemon is version {DAEMON_VERSION}, free software under the GNU Affero General "
+            f"Public License, version 3 or any later version. Its complete source is at "
+            f"{DAEMON_SOURCE_URL}, where every release is tagged with its version. There is no "
+            f"warranty, to the extent permitted by law."
+        ),
+    )

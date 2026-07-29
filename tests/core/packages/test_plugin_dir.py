@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """One resolver stands between an outside-supplied plugin id and the filesystem: core/packages/
 plugin_dir.py. The daemon runs as root, so each of these tests pins a call site that used to join an
 unvalidated id onto a root and then delete or write through it."""

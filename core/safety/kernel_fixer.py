@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Attribute a kernel-module load failure the jinni classified to the plugin that ships the module.
 
 A kernel-module load fails in its own install phase (never a core-service restart), so it carries no

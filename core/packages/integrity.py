@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Integrity: verify a plugin's on-disk files against the sha256 the packer recorded in the
 manifest, before any placement or ownership phase touches them. `b3-builder`'s `packPlugin` writes
 `sha256` for every entry in `manifest["files"]` at pack time; this module is the daemon-side check

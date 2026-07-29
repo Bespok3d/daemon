@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The variant engine's pure matcher: which condition a set of device facts satisfies, and which
 variant `select_variant` picks. No jinni, no IO; the facts are passed in directly."""
 from core import conditions

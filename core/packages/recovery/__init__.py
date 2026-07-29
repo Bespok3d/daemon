@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Recovery: keep the printer working through a risky op or an OTA firmware update.
 
 The cluster the orchestrator wires when a deferred core-service restart runs: `evidence` gathers the

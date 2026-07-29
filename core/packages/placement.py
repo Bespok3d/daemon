@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Placement: directories, file modes, and resolving the symlink family for the jinni to wire.
 
 A plugin integrates by symlink only (the isolation invariant). The daemon resolves where each placed

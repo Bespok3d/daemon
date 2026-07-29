@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Duck-typed fake jinnis for the daemon's isolation tests: answer the protocol verbs in-process so
 the daemon's orchestration is tested ALONE, exactly as a real jinni would answer over the socket
 (the daemon never imports the jinni runtime). The verb classification lives in `fake_vocab`, the

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The 0x03-framed JSON-over-Unix-socket protocol shared by the printer's Klipper and Moonraker API
 sockets: encode a request and run one request/response exchange. Each client decodes the reply its
 own way (Klipper wants the first frame; Moonraker reads past interleaved notifications), so decoding

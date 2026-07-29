@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Lay the daemon out as a plugin source dir so b3-builder can pack, stamp and SIGN it exactly like
 # every other plugin ("b3 zero", ADR-0030). The daemon keeps its natural Python layout at the repo
 # root (version.py, daemon.py, api/, core/, protocol/, the autostart scripts), which is not the shape

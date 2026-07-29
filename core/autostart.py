@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Wire a generated boot script (a managed service, a kernel-module loader) into the autostart dir.
 
 A managed service (ADR-0026/0029) and a kernel-module loader (ADR-0039) are each realized by the

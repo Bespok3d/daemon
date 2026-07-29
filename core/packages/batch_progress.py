@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The live progress a batch publishes while it runs: which plugin it is on, and each install phase
 as it finishes. Split out of `batch.py` so the apply engine holds only the applying.
 """

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Regression guard for ADR-0036 packaging: a plugin's root Python-dep declaration must ship in the
 `.b3`.
 

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Removing several plugins in one go, restarting affected services only once at the end.
 
 Mirrors the batched update (updater.py) for the removal path: each selected plugin's effect is taken

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """A fresh single-plugin install: unpack a .b3, refuse it up front if it conflicts with or lacks a
 required service, then apply its install (modes, dirs, templates, service scripts, symlinks,
 patches, ownership, baked deps, start commands) through the shared phase runner

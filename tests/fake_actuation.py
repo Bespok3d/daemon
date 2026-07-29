@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The in-process filesystem + command actuation a fake jinni performs.
 
 The daemon's isolated tests need the real effect (a symlink lands), but the realm boundary forbids

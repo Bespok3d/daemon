@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The jinni seam: the daemon's single door to the jinni over the protocol.
 
 These lock the delegation contract: each verb hands off to the (injected) jinni and returns its

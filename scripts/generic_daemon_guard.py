@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Guard: the daemon and the jinni share ONLY the protocol; no `core/` code imports the jinni
 runtime, and the shared protocol contract carries only generic shapes, never device vocabulary.
 

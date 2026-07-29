@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """HTTP and websocket routes, grouped by concern.
 
 Each submodule owns one route group on its own `APIRouter`; this package aggregates them into the

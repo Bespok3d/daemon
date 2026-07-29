@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Establish the STOCK baseline a plugin's diffs are applied to, self-healing a file that is already
 patched.
 

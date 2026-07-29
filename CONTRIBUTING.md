@@ -107,3 +107,24 @@ reviewable and blocks the release.
 - The maintainer owns git history and releases; submit changes as a PR.
 - Do not weaken the invariants in architecture.md (printer-never-broken, venv isolation, auth on every
   route, version single-source).
+
+## Signing off your work
+
+Every commit must carry a `Signed-off-by` line. It is your statement that you wrote the change, or
+that you otherwise have the right to contribute it, under the terms of the Developer Certificate of
+Origin (<https://developercertificate.org/>). Git writes the line for you:
+
+```sh
+git commit -s -m "your message"
+```
+
+A pull request whose commits are not signed off cannot be merged.
+
+## Licence
+
+This repository is under the GNU Affero General Public License, version 3 or any later version. The
+full text is in [LICENSE](LICENSE).
+
+By contributing you agree that your contribution is licensed under those same terms. You keep the
+copyright in what you write. There is no copyright assignment and no contributor licence agreement to
+sign.

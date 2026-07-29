@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Translate the intent-based install block into the mechanism operations the executor runs.
 
 ADR-0026 frames the manifest as four named sections that declare WHAT lands where, never a

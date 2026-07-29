@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The one resolver from an outside-supplied plugin id to the directory it names.
 
 The daemon runs as root, so every id that arrives from a route path param, a request body, or a

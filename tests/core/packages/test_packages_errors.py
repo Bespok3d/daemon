@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The package-install errors have a canonical home in core.packages.errors and stay reachable from
 the core.packages namespace, where api.routes and the rest of the suite reference them as
 packages.ConflictError / packages.DependentsError."""

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The actuation half of the jinni contract surface (ADR-0037): the verbs that MUTATE the device.
 
 Each serializes through the jinni's actuation queue on the other side (the jinni service's

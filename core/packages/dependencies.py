@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The plugin dependency graph: which installed plugins provide and require which services,
 who depends on or conflicts with whom, and the topological order recover applies them in.
 

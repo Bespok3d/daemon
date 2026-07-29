@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Turning an install the printer declined into the response body the app switches on.
 
 A refusal is not a bad request and not a daemon fault: the package was understood and rejected, so

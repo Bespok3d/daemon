@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Services: generate the managed-service init scripts the adapter knows how to write.
 
 A service script is only generated when the printer's jinni advertises managed-service support; the

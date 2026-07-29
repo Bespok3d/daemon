@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The read/resolve half of the jinni contract surface (ADR-0037): the typed wrappers the daemon's
 `core/` calls to ask a semantic question or for a realized path (never to mutate the device).
 

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Kernel modules: generate the loader scripts the adapter knows how to write, and run the load.
 
 A plugin that ships a `.ko` places it (the `kernel-module` destination class) and declares an

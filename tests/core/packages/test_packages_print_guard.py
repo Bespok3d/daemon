@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Print-guard behavior: which ops the guard checks, and that it refuses with blocked-action TOKENS
 (ADR-0037) while a print runs. The live blocked-set itself is the jinni's, tested in
 tests/jinni/test_print_active.py; here the guard decides which ops need the check and raises a

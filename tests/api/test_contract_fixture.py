@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Golden-fixture pin for the app<->daemon JSON contract.
 
 The committed `contract_fixture.json` is a representative sample of every response whose shape the

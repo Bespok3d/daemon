@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The multipart batch-apply routes: update-batch and install-batch. Both stream N .b3 uploads to
 the daemon, which applies them all and restarts affected services once, publishing live progress on
 the install-progress hub. Split from `packages.py` (recover + uninstall-batch) so each route file

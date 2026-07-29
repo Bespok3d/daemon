@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The in-process integration teardown a fake jinni performs: prune dead include links, remove the
 bespok3d include lines, and prune the bespok3d config dir. Mirrors the jinni's integration facet in
 plain stdlib (the daemon test suite cannot import the jinni runtime). The fake's verb methods

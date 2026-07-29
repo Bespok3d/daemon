@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """OTA per-plugin re-apply: rebuild one installed plugin's effect on the system after an OTA wipe.
 
 `recover_one` is the unit the orchestrator's `recover()` runs per plugin in dependency order: skip

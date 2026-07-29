@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The batched uninstall lives in core/packages/batch_uninstaller.py: remove several plugins with
 their core-service restart deferred, deduped, and run once, isolating one plugin's removal failure
 and refusing a plugin still depended on by an installed plugin outside the selection unless cascade.

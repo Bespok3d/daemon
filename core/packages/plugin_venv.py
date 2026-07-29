@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The per-plugin venv side of ADR-0036: build one at `$BESPOK3D/venv-plugins/<id>` from the wheels
 CI baked into the package, and tear it down again. The other dep mode (baked packages symlinked into
 the system site-packages for Klipper/Moonraker) lives in `python_deps.py`, which owns the policy

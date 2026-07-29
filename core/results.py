@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The result vocabulary shared by every operation: an `item` (one step) and a `phase` (a group of
 steps that is ok only if all its items are). Kept as a leaf module so the package executor and the
 safety net build identical shapes without depending on each other.

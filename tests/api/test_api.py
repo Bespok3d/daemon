@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import io
 import json
 import zipfile
@@ -16,6 +18,7 @@ from api.routes import health as routes_health
 from api.routes.plugins import plugin_config
 from core import auth, capabilities, jinni_client, packages, printer_identity
 from core.packages.integrity import ESCAPING_PLUGIN_ID, UNDECLARED_MEMBER
+from version import DAEMON_VERSION
 
 
 class _MockAdapter:
@@ -186,6 +189,24 @@ async def test_docs_endpoint_accessible_without_auth(
 ) -> None:
     response = await unauthed_client.get("/docs")
     assert response.status_code == 200
+
+
+async def test_license_offer_is_reachable_without_a_token(
+    unauthed_client: httpx.AsyncClient,
+) -> None:
+    response = await unauthed_client.get("/license")
+    assert response.status_code == 200
+
+
+async def test_license_offer_names_the_running_version_and_its_source(
+    client: httpx.AsyncClient,
+) -> None:
+    body = (await client.get("/license")).json()
+    assert body["version"] == DAEMON_VERSION
+    assert body["license"] == "AGPL-3.0-or-later"
+    assert body["source"] == "https://github.com/Bespok3d/daemon"
+    assert DAEMON_VERSION in body["notice"]
+    assert "or any later version" in body["notice"]
 
 
 def _noop_vars(_: dict[str, str]) -> None:

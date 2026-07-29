@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The batched-application engine: apply each package's install phases, deferring every core-service
 restart so the whole batch restarts once at the end, streaming per-plugin and per-phase progress to
 a sink. Two entry points share this engine: the multi-plugin UPDATE (`updater.py`) and the

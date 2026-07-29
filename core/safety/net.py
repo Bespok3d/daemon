@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Decide what is wrong and who to blame. Pure: the daemon gathers evidence and acts on the verdict.
 
 `decide` walks the fixer chain and returns the first hit; the chain ends in a catch-all so a

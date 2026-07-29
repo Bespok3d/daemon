@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The klipper-jinni vocabulary a fake emits, as the daemon receives it over the socket: placement
 classes, restart commands, and command classification. Plain strings the daemon relays and never
 authors. Kept apart from the fake jinni classes so each stays small.

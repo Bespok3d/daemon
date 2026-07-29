@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import os
 from collections.abc import Awaitable, Callable
 
@@ -7,9 +9,11 @@ from starlette.responses import JSONResponse, Response
 
 from core.auth import is_authorized_token
 
-# /access/request is the one unauthenticated window: a not-yet-authorized client posts an access
-# request that an existing client then approves. The pending cap in core.auth is its abuse limit.
-_EXEMPT = frozenset({"/docs", "/redoc", "/openapi.json", "/access/request"})
+# /access/request is the one unauthenticated command window: a not-yet-authorized client posts an
+# access request that an existing client then approves. The pending cap in core.auth is its abuse
+# limit. /license is read-only and open because the AGPL offer it carries is owed to anyone reaching
+# this daemon over the network, which a token would defeat.
+_EXEMPT = frozenset({"/docs", "/redoc", "/openapi.json", "/access/request", "/license"})
 
 
 def _dev_open() -> bool:

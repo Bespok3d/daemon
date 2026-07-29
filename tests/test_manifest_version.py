@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The published package must never advertise a version the running daemon does not report.
 
 manifest.json is what the app and the printer read to decide whether a newer daemon exists;

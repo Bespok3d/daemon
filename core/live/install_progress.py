@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Live install-progress fan-out.
 
 The install runs off the event loop (`asyncio.to_thread`) so its phases can be streamed as they

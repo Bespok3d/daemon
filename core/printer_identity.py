@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The printer's stable identity: a uuid4 minted once at first daemon startup and persisted in the
 data root, so it survives OTA and every computer keys its per-printer state to the same printer.
 Reported by GET /status; never regenerated while the identity file holds a value."""

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The chain of fixers: each recognises ONE class of failure and names the culprit (or that no
 plugin is at fault). They are pure - they read the gathered evidence and the operation context and
 return a `Decision` or None. The daemon walks the chain and acts on the first hit; the catch-all at

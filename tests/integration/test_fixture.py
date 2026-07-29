@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The Python half of the adapter test contract: resolve an adapter's testkit/fixture.json
 placeholders against its jinni/paths.json, mirroring the TS loadFixture and the daemon's own
 _expand semantics. The daemon integration layer uses this to build a fake-device workspace

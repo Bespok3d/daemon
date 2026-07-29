@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The uninstall family lives in core/packages/uninstaller.py: remove a plugin (and its installed
 dependents, dependents-first) and run the core-service restart hooks the removal declares, so a
 deleted [section] or web location actually leaves the running service."""

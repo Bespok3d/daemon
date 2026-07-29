@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Map a failure signal back to the plugin that caused it.
 
 Pure decision logic: the daemon gathers what each installed plugin placed on the system (its symlink

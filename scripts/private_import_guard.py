@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Guard: a name imported across files is public, so it must not start with `_`.
 
 The `_` prefix means "private to the file that defines it". When one module imports a `_name` from

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The daemon's single door to the jinni (ADR-0037).
 
 The daemon is generic: it orchestrates and never names a device or printer service. The device half

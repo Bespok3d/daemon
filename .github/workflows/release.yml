@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 name: build-and-release
 
 # On a push to main that changes the daemon source, manifest, version, or build scripts: run the

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Gather the printer's post-restart state as data for the safety net to judge.
 
 What one plugin placed (symlink destinations, baked modules) becomes the attribution index; the

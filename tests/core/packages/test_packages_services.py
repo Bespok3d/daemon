@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Managed-service script generation has a canonical home in core.packages.services. These guard the
 not-supported guard a service script honours before touching the printer and the $VAR expansion of
 its command and args."""

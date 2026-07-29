@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The row a batch hands back for one plugin: the whole account the user gets of that plugin's
 turn. A row has to end up saying what installing that plugin on its own would have said, which
 includes the last word the single restart at the end of the batch has on it.

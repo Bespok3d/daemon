@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Run the deferred core-service restarts once, then verify each restarted service came back up.
 
 Restarts are deduped into one batch so a multi-plugin op bounces each service a single time. The

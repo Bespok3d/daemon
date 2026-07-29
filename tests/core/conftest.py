@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """A device-like jinni for the core tests.
 
 The seam (`core.jinni_client`) asks the loaded jinni for the device's placement classes, restart

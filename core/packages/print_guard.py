@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Print-safety guards: refuse a plugin op whose action is blocked on the printer right now.
 
 The daemon decides nothing about printing and never translates (ADR-0037). The jinni owns both sides

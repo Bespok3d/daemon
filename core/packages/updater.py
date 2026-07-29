@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The batched multi-plugin UPDATE entry point: apply each package's install phases and restart each
 affected service exactly once at the end. The apply-and-defer machinery lives in `batch.py`; this is
 the thin entry point that drives it as an update.

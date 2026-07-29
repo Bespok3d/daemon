@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Size ratchet: a god file is a failing, visible check, so a concern-mixing file cannot re-form
 unnoticed (the ADR-0037 cleanup must not regress). Reads size-baseline.json and enforces:
 

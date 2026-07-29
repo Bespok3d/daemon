@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The detached manifest signature a .b3 carries, as it survives on the printer.
 
 `manifest.json.sig` is extracted with the rest of the archive and never removed, so a plugin the
