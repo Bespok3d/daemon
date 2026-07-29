@@ -1,5 +1,11 @@
 # bespok3d-daemon
 
+[![licence](https://img.shields.io/badge/licence-AGPL--3.0-blue)](LICENSE)
+[![release](https://img.shields.io/github/v/release/Bespok3d/daemon)](https://github.com/Bespok3d/daemon/releases)
+[![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FBespok3d%2Fdaemon%2Fmain%2Fmanifest.json&query=%24.version&label=version&color=blue)](manifest.json)
+![runtime](https://img.shields.io/badge/runtime-Python%203.11-informational)
+![stock firmware](https://img.shields.io/badge/stock%20firmware-no%20flashing-brightgreen)
+
 The on-printer daemon for the Bespok3d plugin manager. See [doc/README.md](doc/README.md) for what it
 does and how it is deployed, and [doc/CHANGELOG.md](doc/CHANGELOG.md) for the version history.
 
@@ -83,3 +89,8 @@ not, see <https://www.gnu.org/licenses/>. The full text is in [LICENSE](LICENSE)
 
 Bespok3d is a project of the Bespok3d Organisation, which is not a legal entity. Copyright is held by
 the individual authors named above.
+
+## Support this project
+
+Bespok3d is built and maintained in the open, on stock printer firmware. If it saved you an
+afternoon, you can [buy me a coffee](https://buymeacoffee.com/unlucio).
