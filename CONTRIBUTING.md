@@ -10,6 +10,12 @@ The rules are software-engineering rules (naming, nesting, separation of concern
 device boundary, rule of three, resilience), not Python style preferences, and they are enforced. The
 architecture doc tells you where a new concern belongs so you grow the right file instead of a god file.
 
+[doc/story-obligations.md](doc/story-obligations.md) is where the work is: it lists what this repo
+owes the user stories. Read it before you propose something new, because the idea you have may
+already be a story with a shape, and delivering an obligation the code does not meet yet helps more
+than adding another point. The page says what is owed, not what is already done, so check a row
+against the code before you pick it up.
+
 If you use an AI assistant for your change (many contributors do), point it at [CLAUDE.md](CLAUDE.md): it
 encodes the same rules and the working procedure so the assistant produces a change the review will
 accept.
