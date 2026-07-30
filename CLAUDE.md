@@ -26,8 +26,10 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
    type, position, or a role-free abbreviation. No `a`/`b`, `tmp`, `data`, single letters.
 2. **Nesting beyond one level is suspicious.** Flatten by default: guard clauses, early returns, extracted
    named functions, a named lookup instead of a nested ternary. When you must nest, comment why.
-3. **Separation of concerns.** One responsibility per file and function. A concern gets a directory named
-   for it. Worry at ~80 to 100 lines and treat ~150 as the ceiling; a file past that is doing too much.
+3. **Separation of concerns.** One responsibility per file and function; if describing a function's job
+   needs the word "and", it is that many functions. A concern gets a directory named for it, and the tree
+   runs abstract at the top, concrete in the leaves.
+   Worry at ~80 to 100 lines and treat ~150 as the ceiling; a file past that is doing too much.
    Split by concern into sibling files, not into many functions in one file. Each file has a sensible
    public/private split: a name another file imports is public (no `_`); only single-file internals carry
    `_`. No file is made of only `_`-private names.
@@ -37,10 +39,13 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
    bug. "No premature abstraction" forbids generalizing for one caller; it does not excuse copy-paste.
 6. **The printer is never left broken.** Every error path leaves the printer usable; the auto-deactivate
    safety net runs on every op that restarts a core service. No silent excepts: act or report.
-7. **Write less first.** The cheapest code is the code you do not write: question whether it needs to
+7. **A class only when there is real state to hold.** Default to plain functions with data flowing
+   through them. A class earns its keep when an instance owns state that changes over its lifetime; a
+   class whose methods only take arguments and return results is a module with extra ceremony.
+8. **Write less first.** The cheapest code is the code you do not write: question whether it needs to
    exist, prefer stdlib / native / an existing helper, then write the smallest clear solution. A means to
    readability, never code-golf; it never overrides 1 and 2 and never adds "upgrade path" comments.
-8. **RULE ZERO: no em-dash or en-dash, anywhere.** Use a comma, colon, semicolon, parentheses, or two
+9. **RULE ZERO: no em-dash or en-dash, anywhere.** Use a comma, colon, semicolon, parentheses, or two
    sentences. A hyphen in a compound word is fine. Enforced by the shared em-dash guard in the gate.
 
 ## How to work a change

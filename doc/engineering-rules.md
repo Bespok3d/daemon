@@ -77,8 +77,10 @@ Worked example, a `line_similarity(a, b)` helper:
 Forbidden regardless of how small the scope is (a short scope is not a licence to be unreadable; the
 reader still pays):
 
-- single-character names (`p`, `d`, `e`, `s`, `r`, `f`, `x`), except a classic numeric loop index with no
-  domain meaning;
+- single-character names (`p`, `d`, `e`, `s`, `r`, `f`, `i`, `n`), with one exception: `x`, `y` and `z`
+  when they really are coordinates or dimensions. A loop index is not an exception: if the thing being
+  counted carries any meaning beyond "how many times round", it gets a real name
+  (`for attempt in range(...)`, `for line_number, line in enumerate(...)`);
 - positional suffixes (`line_a`/`line_b`, `arg1`/`arg2`, `first`/`second`) when a domain word exists;
 - role-free abbreviations (`ev`, `ep`, `pl`, `cb`, `fn`, `tmp`, `val`, `idx` when a better word exists);
 - type-only names (`str_`, `arr`, `obj`, `data` when it actually means something specific, `lst`, `dct`).
@@ -147,6 +149,14 @@ concern, so a reader has to hunt through unrelated code to find the part they ne
   they cover, the test tree mirrors the source tree (`tests/core/packages/` tests `core/packages/`), so a
   test is as findable as the code it guards.
 
+- **The tree runs abstract at the top, concrete in the leaves.** Depth is an abstraction axis, not a
+  filing cabinet. The files a reader meets first say *what happens*; each level down says more about
+  *how*, until the leaves hold the mechanism. A reader changing the shape of the output should never have
+  to walk through the algorithm to find it, and a reader who wants the concept should find it stated
+  without the implementation noise. The test: open the top of a directory cold and you learn what it
+  does; you visit a leaf only when you actually need that level of detail. A tree that forces
+  implementation on a reader first is upside down, whatever its names are.
+
 - **A specific concern gets a room of its own.** A cluster that is *specific*, not general to the layer it
   sits in, does not lie flat among the general siblings: it gets its own directory. The general layer then
   stays uniform (a reader scanning `core/packages/` meets only the shared package-ops vocabulary), and the
@@ -189,7 +199,10 @@ concern, so a reader has to hunt through unrelated code to find the part they ne
 - **Supporting files for low-value helpers.** Trivial one-line normalizers and adapters aid readability
   but add entropy in large, prominent, contributor-facing files. Relocate them into a context-chosen
   supporting file (a `helpers` or `lib` or `<concept>` module) and keep the named call site. Keep the
-  upper layers a contributor meets first low-entropy; the rarely-visited machinery lives deeper.
+  upper layers a contributor meets first low-entropy; the rarely-visited machinery lives deeper. A
+  helper sits at the **bottom of the dependency chain**: everything may import it, it imports nothing of
+  ours. A "helper" that reaches back into business logic is not a helper, it is business logic filed
+  under the wrong name, and it will become an import cycle.
 
 - **Public and private must make sense; no file is all-private.** The `_` prefix means "private to this
   file": used only inside the module that defines it. If another file imports a name, that name is public,
@@ -211,9 +224,30 @@ concern, so a reader has to hunt through unrelated code to find the part they ne
 - **Functional core, isolated side effects.** Internal logic is pure functions. Side effects (the
   filesystem, subprocesses, sockets, HTTP) are isolated at the outermost boundary. A pure core is the part
   that is cheap to test and safe to reason about; do not bloat it.
-- **Short functions.** If a function needs a paragraph to explain it, it is two (or more) functions.
+- **A function does exactly one thing.** The test is the word "and": if describing the job needs it
+  ("validates the order **and** totals it **and** emails the customer"), it is that many functions. The
+  caller then reads as a list of named steps, which is the documentation.
+- **Short functions.** If a function needs a paragraph to explain it, it is two (or more) functions. 40
+  lines is the ceiling, matching the app's gated limit; a function that regularly runs longer has failed
+  the "and" test above and is telling you so.
+- **A class only when there is real state to hold.** Default to plain functions with data flowing through
+  them. A class earns its keep when an instance owns state that changes over its lifetime (a live
+  connection, an in-progress install, a queue). A class whose methods only take arguments and return
+  results is a module with extra ceremony: make it functions. This is the same rule as "as stateless as
+  possible", stated where it bites in Python.
 - **Edge cases first, canonical path after.** Open with guards for the special, error, and edge cases,
-  then fall into the normal path. It makes what the function protects against obvious at a glance.
+  then fall into the normal path, ordered from the most specific case down to the most general. It makes
+  what the function protects against obvious at a glance, and the default case needs the least
+  explanation, so it reads last.
+- **Constants at the top, before the logic.** A function reads like a proof: state the knowns first. A
+  threshold or a surcharge invented halfway down a branch (`if weight > 50: surcharge = 20`) hides both
+  the number and its meaning inside a condition. Name it above the logic, then use the name.
+- **Iterate declaratively.** A comprehension or a generator says *what* you want; a hand-managed index
+  says *how* to get it step by step. Prefer a comprehension for a bounded result, a generator for a large
+  or lazy sequence, and a plain `for` when the body does real work. Never a `while` with a
+  hand-incremented counter. Recursion suits tree-shaped data and is never a substitute for a data loop:
+  Python caps the stack around a thousand frames, so recursing over a data set is a crash waiting for a
+  big enough input, not a style choice.
 - **Permissive input, strict output.** Be liberal in what you accept, exact in what you return.
 - **Idempotency as a design goal.** An operation should be safe to run twice. The daemon's install,
   recover, and teardown paths rely on this.
@@ -242,6 +276,9 @@ run on every operation that restarts a core service, not only on recover.
 - **No comments**, with one exception: a single line explaining a genuinely non-obvious **why** (a
   constraint, or why a form that looks wrong is the only correct one). Code that needs a comment to be
   understood is code that needs rewriting; the names and the structure carry the meaning.
+- **The urge to write a comment is a signal, and the signal is not "write it".** Wanting to explain
+  *what* a line or a block does means a name is lying or the structure is wrong. Rename the thing or pull
+  the block into a named function, and the comment becomes unnecessary. Only a *why* survives that test.
 - **Listen to the code.** Every line justifies its existence, its form, and its location. A large file is
   telling you it holds multiple concerns: split it. A construct that looks smelly is probably wrong.
 
