@@ -8,6 +8,7 @@ import pytest
 
 from core import packages
 from core.packages import installer
+from core.packages.deactivation import DEACTIVATED_MARKER
 from core.packages.recovery import reapply
 
 MP = pytest.MonkeyPatch
@@ -100,6 +101,32 @@ def test_recover_one_isolates_an_unexpected_exception(tmp_path: Path, monkeypatc
     assert "jinni wire blew up" in result["reason"]
     assert deferred == []
     assert (plugin_dir / reapply.RECOVERY_FAILURE_MARKER).exists()
+
+
+def test_recover_one_unwires_a_failed_plugin(tmp_path: Path, monkeypatch: MP) -> None:
+    # printer-never-broken, the tail of the OTA arc: a re-apply that gets as far as wiring the
+    # plugin's config into place and THEN fails must leave nothing of that plugin in effect, while
+    # the plugin's own files stay on disk for a fixed version to revive.
+    wired_config = tmp_path / "etc" / "cpu-temp.cfg"
+    manifest = _installed_plugin(
+        tmp_path, "cpu-temp",
+        install={"dirs": [], "patches": [], "start": [],
+                 "symlinks": [{"from": "files/cpu-temp.cfg", "to": str(wired_config)}]},
+    )
+    plugin_dir = tmp_path / "cpu-temp"
+    (plugin_dir / "files").mkdir()
+    (plugin_dir / "files" / "cpu-temp.cfg").write_text("[cpu_temp]\n")
+    monkeypatch.setattr(installer, "apply_patches",
+                        lambda *_a, **_kw: {"id": "patches", "ok": False, "items": []})
+
+    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+
+    assert result["ok"] is False
+    assert "install phase failed" in result["reason"]  # it got past the wire, so the wire happened
+    assert deferred == []
+    assert not wired_config.exists()
+    assert (plugin_dir / "files" / "cpu-temp.cfg").exists()
+    assert (plugin_dir / DEACTIVATED_MARKER).exists()
 
 
 def test_recover_one_deactivates_when_a_phase_fails(tmp_path: Path, monkeypatch: MP) -> None:
