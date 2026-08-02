@@ -67,7 +67,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.20-dev"
+    assert body["version"] == "0.12.20"
 
 
 async def test_status_reports_the_persisted_printer_uuid(

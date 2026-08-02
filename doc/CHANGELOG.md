@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.20
+
+The `-dev` suffix is gone from the version number. Every release up to `0.12.19-dev` carried it,
+including the published ones, which said "unreleased" about software that was on printers. From
+here the daemon is plain semantic versioning and nothing else. No behaviour changed with this
+number; the entries below keep the suffix because that is what those releases were called.
+
+Anything declaring a `min_daemon_version` lost the suffix at the same time, so a constraint that
+read `0.10.1-dev` now reads `0.10.1`. No printer changes behaviour because of it: the app reads only
+the numeric release when it compares a daemon against a constraint and ignores everything after the
+dash, so a printer still running a `-dev` daemon satisfies exactly what it satisfied before.
+
 ## 0.12.18-dev
 
 Out-of-memory detection for the constrained-board safety net. A new

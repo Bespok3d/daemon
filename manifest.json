@@ -1,7 +1,7 @@
 {
   "name": "bespok3d-daemon",
   "title": "Bespok3d daemon",
-  "version": "0.12.20-dev",
+  "version": "0.12.20",
   "description": "The on-printer daemon for the Bespok3d plugin manager: a small FastAPI service that installs, updates, and removes plugins, reports printer capabilities, refuses any operation mid-print, and self-heals a plugin that breaks a service so the printer is never left unusable. It is plugin zero: the adapter bootstraps it over SSH at enrollment (cert-pinned HTTPS, bearer-token auth), not through the normal plugin install pipeline, so the install block below is intentionally empty. This package is the publishable, versioned artifact the app reads to know when a newer daemon is available.",
   "tagline": "The on-printer service that installs plugins and keeps the printer safe.",
   "category": "system",
