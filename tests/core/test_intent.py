@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
 
-from core import autostart, intent
+from core import autostart, intent, jinni_client
 
 
 def test_placement_becomes_symlink_into_class_destination() -> None:
@@ -140,8 +140,9 @@ def test_kmodule_wires_an_s05_loader_that_sorts_before_the_s65_services() -> Non
     assert service_link in ops["symlinks"]
     # ANY s05 module sorts before ANY s65 service, so the boot runner (`ls | sort`) loads the module
     # before the service that needs it, even when the module name sorts after the service name.
-    module_script = autostart.kmodule_script_name({"name": "zzz"})
-    service_script = autostart.service_script_name({"name": "aaa"})
+    module_tier, service_tier = autostart.BOOT_TIERS_IN_START_ORDER
+    module_script = jinni_client.service_status("zzz", module_tier)["script"]
+    service_script = jinni_client.service_status("aaa", service_tier)["script"]
     assert module_script < service_script
 
 

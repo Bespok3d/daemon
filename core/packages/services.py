@@ -9,7 +9,7 @@ script body itself comes from the jinni so the daemon names no concrete init for
 from pathlib import Path
 
 from .. import jinni_client
-from ..autostart import service_script_name
+from ..autostart import service_placement
 from ..results import item, phase
 from .init_scripts import write_init_script
 from .user_vars import expand
@@ -24,11 +24,11 @@ def _expand_service(service: dict, vars: dict[str, str]) -> dict:
 
 
 def _write_one_service_script(service: dict, plugin_dir: Path, vars: dict[str, str], flags: set[str]) -> dict:  # noqa: E501
-    script_name = service_script_name(service)
+    placement = service_placement(service)
     if "managed-service" not in flags:
-        return item(f"{script_name}: managed services not supported on this printer", ok=False)
+        return item(f"{placement['script']}: managed services not supported on this printer", ok=False)  # noqa: E501
     return write_init_script(
-        plugin_dir, script_name,
+        plugin_dir, placement,
         lambda: jinni_client.render_service_script(_expand_service(service, vars), vars),
     )
 

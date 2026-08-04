@@ -1,52 +1,48 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Wire a generated boot script (a managed service, a kernel-module loader) into the autostart dir.
+"""The order a plugin's boot scripts start in: the daemon's only say in the init system.
 
 A managed service (ADR-0026/0029) and a kernel-module loader (ADR-0039) are each realized by the
-adapter generating an init script the daemon writes under the plugin's `etc/init.d` and wires into
-the autostart dir. The script CONTENT is the adapter's HOW; the wiring here is core vocabulary over
-the daemon's own $BESPOK3D tree, so it names no device value and stays in core. A service takes an
-s65 prefix; a module loader takes s05 so it loads BEFORE the services. The daemon drives both with
-`restart` (unload/stop then load/start), so an update shipping a changed script or `.ko` reloads at
-once, not after a reboot; the boot runner still drives them with plain `start`. `intent.py` folds
-the produced symlinks/starts/stops in.
+adapter generating a boot script the daemon writes under the plugin and registers for boot. The
+daemon's whole contribution is the ORDER: a module is loaded before a service is started, so a
+service that needs the module finds it there. It says that by naming the tier and nothing more; the
+jinni answers where the script lives and which words drive it (ADR-0037), so no init system, no
+prefix and no registration path is named in core.
+
+Both tiers are driven with `restart` (unload/stop then load/start), so an update shipping a changed
+script or `.ko` takes effect at once, not after a reboot; the boot runner still drives them with
+plain `start`. `intent.py` folds the produced symlinks/starts/stops in.
 """
 from collections.abc import Callable
 
-SERVICE_SCRIPT_DIR = "etc/init.d"
-SERVICE_AUTOSTART_DEST = "$BESPOK3D/etc/init.d/autostart/{script}"
+from core import jinni_client
+
+BOOT_TIER_KERNEL_MODULE = "kernel-module"
+BOOT_TIER_SERVICE = "service"
+BOOT_TIERS_IN_START_ORDER = (BOOT_TIER_KERNEL_MODULE, BOOT_TIER_SERVICE)
 
 
-def service_script_name(service: dict) -> str:
-    return f"s65{service['name']}"
+def service_placement(service: dict) -> dict[str, str]:
+    return jinni_client.service_status(service["name"], BOOT_TIER_SERVICE)
 
 
-def kmodule_script_name(kmodule: dict) -> str:
-    """A kernel-module loader takes an s05 prefix so S99bespok3d loads it BEFORE the s65 services
-    (the boot runner starts the autostart dir sorted ascending): a service that needs the module
-    finds it already loaded."""
-    return f"s05{kmodule['name']}"
+def kmodule_placement(kmodule: dict) -> dict[str, str]:
+    return jinni_client.service_status(kmodule["name"], BOOT_TIER_KERNEL_MODULE)
 
 
-def _autostart_ops(script: str, active: bool) -> tuple[dict, str | None, str]:
-    """Return (autostart_symlink, start_command_or_None, stop_command) for one boot script.
-
-    Shared by managed services and kernel-module loaders. The script content is the adapter's, so
-    here we only wire it into the autostart dir and hook start/stop. The start hook uses `restart`
-    (not `start`) so a re-apply reloads the changed script or module in place."""
-    source = f"{SERVICE_SCRIPT_DIR}/{script}"
-    destination = SERVICE_AUTOSTART_DEST.format(script=script)
-    symlink = {"from": source, "to": destination}
-    start = f"{destination} restart" if active else None
-    return symlink, start, f"{destination} stop"
+def _autostart_ops(name: str, tier: str, active: bool) -> tuple[dict, str | None, str]:
+    """Return (registration_symlink, start_command_or_None, stop_command) for one boot script."""
+    start = jinni_client.service_control(name, tier, "restart") if active else None
+    stop = jinni_client.service_deregister(name, tier)["stop"]
+    return jinni_client.service_register(name, tier), start, stop
 
 
 def service_ops(service: dict) -> tuple[dict, str | None, str]:
-    return _autostart_ops(service_script_name(service), bool(service.get("autostart")))
+    return _autostart_ops(service["name"], BOOT_TIER_SERVICE, bool(service.get("autostart")))
 
 
 def kmodule_ops(kmodule: dict) -> tuple[dict, str | None, str]:
-    return _autostart_ops(kmodule_script_name(kmodule), bool(kmodule.get("autoload")))
+    return _autostart_ops(kmodule["name"], BOOT_TIER_KERNEL_MODULE, bool(kmodule.get("autoload")))
 
 
 def autostart_additions(

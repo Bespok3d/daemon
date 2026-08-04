@@ -36,7 +36,9 @@ SUBSCRIBE_BLOCKED_ACTIONS = "subscribe-blocked-actions"
 CONTRACT_VERBS = frozenset({
     HELLO, SUBSCRIBE_BLOCKED_ACTIONS,
     "paths", "capabilities_report", "capability_flags", "variant_facts",
-    "placement_destination", "instrument_destination", "restart_command", "render_service_script",
+    "placement_destination", "instrument_destination", "restart_command",
+    "service_status", "service_register", "service_deregister", "service_control",
+    "render_service_script",
     "render_module_script", "device_node_present", "classify_module_load",
     "classify_commands", "health", "blocked_actions", "oom_report",
     "run_actions", "wire", "unwire",

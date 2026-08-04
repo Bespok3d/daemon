@@ -9,8 +9,9 @@ runtime. On the printer the daemon spawns its jinni child (`supervisor.py`) and 
 over the Unix socket; in dev / tests the jinni is INJECTED, not imported.
 
 The seam splits by concern: `dispatch` (the routing mechanism + the `get_jinni` injection point a
-test overrides), `verbs` (the typed contract surface), `supervisor` (the jinni child lifecycle), and
-`transport` (the in-process-vs-socket switch). This package re-exports them as one facade.
+test overrides), `verbs` and `services` (the typed contract surface), `supervisor` (the jinni
+child lifecycle), and `transport` (the in-process-vs-socket switch). This package re-exports them
+as one facade.
 """
 from . import (
     dispatch,  # noqa: F401  exposes jinni_client.dispatch.get_jinni as the test injection point
@@ -23,6 +24,12 @@ from .actuation import (
     unwire,
     wire,
     write_files,
+)
+from .services import (
+    service_control,
+    service_deregister,
+    service_register,
+    service_status,
 )
 from .supervisor import default_socket_path, start_jinni, stop_jinni
 from .transport import use_in_process, use_socket
@@ -49,6 +56,7 @@ from .verbs import (
 __all__ = [
     "default_socket_path", "start_jinni", "stop_jinni", "use_in_process", "use_socket",
     "placement_destination", "instrument_destination", "restart_command", "render_service_script",
+    "service_status", "service_register", "service_deregister", "service_control",
     "render_module_script", "device_node_present", "classify_module_load",
     "capability_flags", "variant_facts", "classify_commands", "paths", "capabilities_report",
     "health", "blocked_actions", "subscribe_blocked_actions", "oom_report",

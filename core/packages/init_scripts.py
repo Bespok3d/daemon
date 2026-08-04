@@ -4,23 +4,24 @@
 kernel-module loaders.
 
 Both concerns ask the jinni to render a boot script (a service init script, a module loader) and
-drop it under the plugin's `etc/init.d` before the daemon wires the autostart symlink. The gating on
-the printer's capability flag and the script CONTENT belong to each caller; this owns only the write
-mechanic (parent dir, write, executable mode) and the per-script phase item, so the two callers do
-not carry a second copy of it.
+drop it where the jinni says that tier's boot scripts live, before the daemon registers it for
+boot. The gating on the printer's capability flag and the script CONTENT belong to each caller; this
+owns only the write mechanic (parent dir, write, executable mode) and the per-script phase item, so
+the two callers do not carry a second copy of it.
 """
 
 from collections.abc import Callable
 from pathlib import Path
 
-from ..autostart import SERVICE_SCRIPT_DIR
 from ..results import item
 
 
-def write_init_script(plugin_dir: Path, script_name: str, render: Callable[[], str]) -> dict:
-    """Render the script and write it executable under the plugin's init.d dir, reporting the
-    outcome as one phase item. `render` is a thunk so a render error is reported, never raised."""
-    target = plugin_dir / SERVICE_SCRIPT_DIR / script_name
+def write_init_script(plugin_dir: Path, placement: dict[str, str], render: Callable[[], str]) -> dict:  # noqa: E501
+    """Render the script and write it executable where the jinni places that tier's boot scripts,
+    reporting the outcome as one phase item. `render` is a thunk so a render error is reported,
+    never raised."""
+    script_name = placement["script"]
+    target = plugin_dir / placement["source"]
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(render())

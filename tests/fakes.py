@@ -11,9 +11,10 @@ from pathlib import Path
 
 from protocol import ActionResult, CommandEffect, DeviceHealth, OomReport, ServiceHealth
 from tests import fake_actuation, fake_integration, fake_vocab
+from tests.fakes_services import FakeSysVServices
 
 
-class FakeKlipperJinni:
+class FakeKlipperJinni(FakeSysVServices):
     """A klipper printer jinni as the daemon sees it over the socket. `paths_override` lets a test
     point the klipper paths at a real tmp tree, the way a real device jinni's own paths() would."""
     id = "fake-klipper"

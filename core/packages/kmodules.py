@@ -6,7 +6,8 @@ A plugin that ships a `.ko` places it (the `kernel-module` destination class) an
 `install.kmodule` entry: the module, the device nodes it needs (`/dev/net/tun c 10 200`), and
 whether to load it now. The daemon asks the jinni to render a boot loader script (it owns
 insmod/mknod/rmmod, ADR-0037), gates the whole feature on the printer's `kernel-modules` capability,
-and drops the script under the plugin's init.d for `autostart.kmodule_ops` to wire as an s05 link.
+and drops the script where the jinni keeps that tier's boot scripts for `autostart.kmodule_ops` to
+register ahead of the services.
 
 Loading runs immediately in its own phase (`load_modules`), never through the deferred core-service
 restart batch: a kernel module load restarts no core service, and it must precede any service that
@@ -19,7 +20,7 @@ from pathlib import Path
 from protocol import ActionResult
 
 from .. import jinni_client
-from ..autostart import kmodule_script_name
+from ..autostart import kmodule_placement
 from ..results import item, phase
 from .init_scripts import write_init_script
 from .user_vars import expand
@@ -29,11 +30,13 @@ _LOAD_PHASE_ID = "kmodule-load"
 
 
 def _write_one_loader(kmodule: dict, plugin_dir: Path, vars: dict[str, str], flags: set[str]) -> dict:  # noqa: E501
-    script_name = kmodule_script_name(kmodule)
+    placement = kmodule_placement(kmodule)
     if _CAPABILITY_FLAG not in flags:
-        return item(f"{script_name}: kernel modules not supported on this printer", ok=False)
+        return item(
+            f"{placement['script']}: kernel modules not supported on this printer", ok=False
+        )
     return write_init_script(
-        plugin_dir, script_name, lambda: jinni_client.render_module_script(kmodule, vars)
+        plugin_dir, placement, lambda: jinni_client.render_module_script(kmodule, vars)
     )
 
 
