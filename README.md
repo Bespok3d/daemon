@@ -20,7 +20,7 @@ daemon.py             entrypoint
 api/                  FastAPI app, routes, middleware
 core/                 install / uninstall / recovery / safety / intent / auth ...
 protocol/             the contract the daemon and the jinni both import (the jinni runtime is its own
-                      app, adapters/klipper-jinni)
+                      app, adapters/generics/klipper-jinni)
 S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
 wheels/               prebuilt offline runtime deps (pgpy)

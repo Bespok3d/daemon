@@ -109,7 +109,7 @@ token verbatim and deactivates nothing, and the app localizes it. The device fac
 
 The daemon and the jinni are TWO separate apps that communicate over a Unix socket; they share NOTHING
 but the protocol. The daemon repo ships its orchestration (`core/`, `api/`) and the `protocol` package,
-and nothing else. The jinni runtime is its own app, `adapters/klipper-jinni/` (the `jinni` package: the
+and nothing else. The jinni runtime is its own app, `adapters/generics/klipper-jinni/` (the `jinni` package: the
 generic `Jinni` base + the klipper tier `KlipperPrinterJinni` faceted one room per concern,
 `klippy`/`moonraker` comms, klipper health/probing, `KLIPPER_PATH_KEYS`, the port constants, the
 loader, and `service.py` / `__main__.py` / the `klipper_vocab` service-and-token vocabulary). A device
@@ -121,7 +121,7 @@ The seam is `core/jinni_client`: it imports only `protocol` and reaches the jinn
 (`supervisor.py` spawns `python -m jinni`). For the in-process transport (dev / tests) the jinni is
 INJECTED, never imported, so the daemon process and its test suite are free of the jinni runtime. Each
 side has its own gate: `daemon/scripts/check.sh` (tests against duck-typed fakes that answer the
-protocol verbs), `adapters/klipper-jinni/scripts/check.sh` (the jinni alone, plus the daemon-with-jinni
+protocol verbs), `adapters/generics/klipper-jinni/scripts/check.sh` (the jinni alone, plus the daemon-with-jinni
 together tests under `tests/together/`), and `adapters/snapmaker-u1/scripts/check.sh`. The law is gated:
 `generic_daemon_guard.py` fails if any `core/` file imports `jinni.*`, or if the `protocol` contract
 defines a device-vocabulary string constant.
