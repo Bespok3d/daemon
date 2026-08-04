@@ -57,7 +57,9 @@ if command -v python3.11 > /dev/null 2>&1; then
     PYTHON_BIN="$(command -v python3.11)"
 elif command -v uv > /dev/null 2>&1; then
     uv python install 3.11 > /dev/null 2>&1 || true
-    PYTHON_BIN="$(uv python find 3.11 2> /dev/null || true)"
+    # --no-project keeps uv from answering with this repo's own .venv; older uv releases reject the
+    # flag, and there the plain form is still better than no interpreter at all.
+    PYTHON_BIN="$(uv python find --no-project 3.11 2> /dev/null || uv python find 3.11 2> /dev/null || true)"
 fi
 if [ -z "$PYTHON_BIN" ] || ! "$PYTHON_BIN" --version 2>&1 | grep -q "^Python 3\.11\."; then
     echo "ERROR: Python 3.11 (the daemon's target runtime) is required but was not found and could" >&2
@@ -65,8 +67,26 @@ if [ -z "$PYTHON_BIN" ] || ! "$PYTHON_BIN" --version 2>&1 | grep -q "^Python 3\.
     exit 2
 fi
 
-if [ -d "$VENV" ] && ! "$VENV/bin/python" --version 2>&1 | grep -q "^Python 3\.11\."; then
-    echo "Daemon .venv is $("$VENV/bin/python" --version 2>&1), not 3.11; rebuilding..."
+# `venv` records the directory of the interpreter path it was HANDED as the new environment's home, so
+# a shim like ~/.local/bin/python3.11 (uv, pyenv and asdf all plant one) makes a home with no stdlib in
+# it. A relocatable standalone build then falls back to its build-time prefix and every binary in the
+# new .venv dies with "No module named encodings", which is why a fresh clone could not build an
+# environment while a .venv made before the shim appeared kept working. Ask the interpreter where it
+# really lives; _base_executable also unwraps the case where the one we found is itself a venv.
+PYTHON_BIN="$("$PYTHON_BIN" -c \
+    'import os, sys; print(os.path.realpath(getattr(sys, "_base_executable", None) or sys.executable))')"
+
+# `--version` answers even from an environment that cannot import a single module, so a .venv left
+# half built by an interpreter that could not bootstrap looks healthy to a version check and the gate
+# then runs every tool out of a directory that has no pip and no pytest. Make the environment prove it
+# by running code: that answers "is it 3.11" and "does it work at all" in one probe.
+venv_runs_python_3_11() {
+    [ -x "$VENV/bin/python" ] &&
+        "$VENV/bin/python" -c 'import sys; sys.exit(sys.version_info[:2] != (3, 11))' > /dev/null 2>&1
+}
+
+if [ -d "$VENV" ] && ! venv_runs_python_3_11; then
+    echo "Daemon .venv is unusable or is not Python 3.11; rebuilding..."
     rm -rf "$VENV"
 fi
 if [ ! -d "$VENV" ]; then
