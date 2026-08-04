@@ -15,8 +15,10 @@ result is WRITTEN back through the jinni once. `restore` writes the baseline bac
 
 import re
 import shutil
-import subprocess
 from pathlib import Path
+
+import bespok3d_patch
+from bespok3d_patch.types import RejectedHunk
 
 from .. import jinni_client
 from ..results import MAX_OUTPUT_BYTES, item, phase
@@ -51,27 +53,30 @@ def _actual_context(target: Path, patch_file: Path, crlf_was_stripped: bool = Fa
     return f"--- actual file (lines {window_start + 1}-{window_end}){note} ---\n{numbered}"
 
 
-def _collect_rej(work_path: Path) -> str:
-    rej_path = work_path.parent / (work_path.name + ".rej")
-    if not rej_path.exists():
+def _format_rejects(rejects: list[RejectedHunk]) -> str:
+    if not rejects:
         return ""
-    rej_text = rej_path.read_text(errors="replace")
-    rej_path.unlink(missing_ok=True)
-    return f"\n--- rejected hunks ---\n{rej_text}"
+    lines = "\n".join(
+        f"hunk {reject.hunk_id} ({reject.title}): {reject.state}, "
+        f"best match {reject.best_confidence}%"
+        for reject in rejects
+    )
+    return f"\n--- rejected hunks ---\n{lines}"
 
 
 def _apply_fragment(work_path: Path, patch_file: Path, patch_rel: str, crlf_stripped: bool) -> dict:
     """Apply one diff fragment to the working copy IN PLACE, so the next fragment for the same file
     builds on it (the old in-place cumulative patching, now on a bespok3d-tree copy). The item is
     named for the fragment, so a conflict points at the exact diff to re-author."""
-    result = subprocess.run(["patch", "-N", "--strip=1", str(work_path), str(patch_file)],
-                            capture_output=True, check=False)
-    raw = (result.stdout + result.stderr).decode(errors="replace") + _collect_rej(work_path)
-    ok = result.returncode == 0
-    context = _actual_context(work_path, patch_file, crlf_stripped) if not ok else ""
+    hunks = bespok3d_patch.parse_unified_diff(patch_file.read_text(errors="replace"))
+    result = bespok3d_patch.apply(hunks, work_path.read_text(errors="replace"))
+    if result.applied:
+        work_path.write_text(result.text)
+    raw = _format_rejects(result.rejects)
+    context = _actual_context(work_path, patch_file, crlf_stripped) if not result.applied else ""
     raw += f"\n{context}" if context else ""
     output = raw[:MAX_OUTPUT_BYTES] + ("…" if len(raw) > MAX_OUTPUT_BYTES else "")
-    return item(f"patch {Path(patch_rel).name}", ok=ok, output=output.strip())
+    return item(f"patch {Path(patch_rel).name}", ok=result.applied, output=output.strip())
 
 
 def _write_back(target: Path, work_path: Path, pristine_path: Path, plugin_dir: Path, applied: bool) -> dict | None:  # noqa: E501

@@ -13,41 +13,37 @@ is left as-is, and a file that is neither is also left untouched for the normal 
 with an actual-file reject, so a plugin author still sees why their patch did not fit.
 """
 
-import subprocess
-import tempfile
 from pathlib import Path
+
+import bespok3d_patch
 
 from .. import jinni_client
 
 
-def _strip_carriage_returns(text: str) -> bytes:
-    return text.encode().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+def _strip_carriage_returns(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _fragment_applies(work_path: Path, patch_file: Path, reverse: bool) -> bool:
-    """Apply one fragment to the working copy in place and report whether it applied cleanly. `-f`
-    keeps patch from guessing that an already-present change is a reversed patch, so a fragment that
-    does not truly fit the file rejects instead of being silently skipped."""
-    command = ["patch", "-f", "--strip=1", str(work_path), str(patch_file)]
-    if reverse:
-        command.insert(1, "-R")
-    result = subprocess.run(command, capture_output=True, check=False)
-    reject_path = work_path.parent / (work_path.name + ".rej")
-    applied_cleanly = result.returncode == 0 and not reject_path.exists()
-    reject_path.unlink(missing_ok=True)
-    return applied_cleanly
+def _fragment_applies(working_text: str, patch_file: Path, reverse: bool) -> str | None:
+    """Apply one fragment to the in-memory working text and return the result text when it applied
+    cleanly, else None. `reverse` un-applies the fragment, matching the old `-R` flag."""
+    hunks = bespok3d_patch.parse_unified_diff(patch_file.read_text(errors="replace"))
+    result = bespok3d_patch.apply(hunks, working_text, reverse=reverse)
+    return result.text if result.applied else None
 
 
 def _probe(source_text: str, fragment_paths: list[Path], reverse: bool) -> str | None:
-    """Run every fragment over a throwaway copy of the source and return the result only if all of
-    them applied cleanly, else None. Reversing un-applies in reverse order, so a patched file lands
-    back on its original."""
+    """Run every fragment over the source text and return the result only if all of them applied
+    cleanly, else None. Reversing un-applies in reverse order, so a patched file lands back on its
+    original."""
     ordered = list(reversed(fragment_paths)) if reverse else fragment_paths
-    with tempfile.TemporaryDirectory() as scratch_dir:
-        work_path = Path(scratch_dir) / "baseline-probe"
-        work_path.write_bytes(_strip_carriage_returns(source_text))
-        applied = all(_fragment_applies(work_path, patch_file, reverse) for patch_file in ordered)
-        return work_path.read_text(errors="replace") if applied else None
+    working_text = _strip_carriage_returns(source_text)
+    for patch_file in ordered:
+        working_text_or_none = _fragment_applies(working_text, patch_file, reverse)
+        if working_text_or_none is None:
+            return None
+        working_text = working_text_or_none
+    return working_text
 
 
 def derive_stock(baseline_path: Path, fragment_paths: list[Path]) -> None:

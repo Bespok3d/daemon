@@ -5,6 +5,9 @@ home in core.packages.patches. These guard the diagnostics that make a failed pa
 restore that teardown relies on."""
 from pathlib import Path
 
+import pytest
+from bespok3d_patch.types import RejectedHunk
+
 from core.packages import baseline, patches
 
 STOCK = "alpha\nbeta\ngamma\ndelta\nepsilon\n"
@@ -57,19 +60,37 @@ def test_actual_context_empty_when_target_missing(tmp_path: Path) -> None:
     assert patches._actual_context(tmp_path / "absent", tmp_path / "p.patch") == ""
 
 
-def test_collect_rej_reads_and_removes_reject_file(tmp_path: Path) -> None:
-    work = tmp_path / "src.py.b3work"
-    work.write_text("working copy\n")
-    rej = tmp_path / "src.py.b3work.rej"
-    rej.write_text("hunk #1 FAILED\n")
-    collected = patches._collect_rej(work)
-    assert "rejected hunks" in collected
-    assert "hunk #1 FAILED" in collected
-    assert not rej.exists()
+def test_format_rejects_lists_hunk_state_and_confidence() -> None:
+    reject = RejectedHunk(hunk_id="h1", title="beta", state="no_match", best_confidence=42)
+    formatted = patches._format_rejects([reject])
+    assert "rejected hunks" in formatted
+    assert "h1" in formatted
+    assert "beta" in formatted
+    assert "42" in formatted
 
 
-def test_collect_rej_empty_when_no_reject(tmp_path: Path) -> None:
-    assert patches._collect_rej(tmp_path / "src.py.b3work") == ""
+def test_format_rejects_empty_when_no_rejects() -> None:
+    assert patches._format_rejects([]) == ""
+
+
+def test_apply_patches_works_without_the_patch_binary_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The old call site shelled out to the `patch` binary, so an empty PATH made every install fail
+    with FileNotFoundError. The bespok3d_patch library call has no such dependency."""
+    monkeypatch.setenv("PATH", "")
+    plugin_dir = tmp_path / "plugin"
+    _write_fragments(plugin_dir / "patches")
+    target = tmp_path / "klippy" / "mod.py"
+    target.parent.mkdir(parents=True)
+    target.write_text(STOCK)
+    patch_defs = [
+        {"file": str(target), "patch": "patches/01-beta.patch"},
+        {"file": str(target), "patch": "patches/02-delta.patch"},
+    ]
+    result = patches.apply_patches(patch_defs, plugin_dir, {})
+    assert result["ok"] is True
+    assert target.read_text() == PATCHED
 
 
 def test_restore_original_files_copies_backup_over_target(tmp_path: Path) -> None:
@@ -130,6 +151,19 @@ def test_apply_patches_self_heals_a_reprovisioned_device(tmp_path: Path) -> None
     assert result["ok"] is True
     assert target.read_text() == PATCHED
     assert (plugin_dir / "patches_orig" / "mod.py").read_text() == STOCK
+
+
+def test_derive_stock_works_without_the_patch_binary_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The old derive_stock shelled out to `patch -f`/`-R`, so an empty PATH made recovery raise
+    FileNotFoundError instead of recovering. The bespok3d_patch call has no such dependency."""
+    monkeypatch.setenv("PATH", "")
+    baseline_file = tmp_path / "mod.py"
+    baseline_file.write_text(PATCHED)
+    fragments = _write_fragments(tmp_path / "patches")
+    baseline.derive_stock(baseline_file, fragments)
+    assert baseline_file.read_text() == STOCK
 
 
 def test_apply_patches_leaves_a_foreign_file_untouched(tmp_path: Path) -> None:
