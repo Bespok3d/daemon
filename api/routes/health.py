@@ -13,6 +13,7 @@ from ..schemas import (
     LicenseResponse,
     OomReportResponse,
     PluginDrift,
+    PrinterProblem,
     SelfCheckResponse,
     StatusResponse,
 )
@@ -43,17 +44,26 @@ async def capabilities() -> CapabilitiesResponse:
 @router.get(
     "/selfcheck",
     response_model=SelfCheckResponse,
-    summary="Compare expected on-printer plugin state to the actual filesystem",
+    summary="Compare the printer's actual state to what it should be",
     description=(
-        "Read-only drift scan. For every active plugin, verifies that the symlinks declared "
-        "in its manifest exist and point at the right source. Returns an empty drift list when "
-        "everything is in order."
+        "Read-only. Checks the conditions that make the printer work at all (its own config still "
+        "includes bespok3d, the tree is whole, no plugin left half removed) and, for every "
+        "active plugin, that the links its manifest declares exist and point at the right source. "
+        "A printer with no plugins is checked just the same. Both lists empty means nothing is "
+        "wrong; everything reported here is something POST /packages/recover puts right."
     ),
 )
 async def selfcheck() -> SelfCheckResponse:
-    drift_raw = run_selfcheck(jinni_client.paths())
-    drift = [PluginDrift(**report) for report in drift_raw]
-    return SelfCheckResponse(ok=len(drift) == 0, drift=drift)
+    report = run_selfcheck(jinni_client.paths())
+    problems = [PrinterProblem(**problem) for problem in report["problems"]]
+    drift = [PluginDrift(**plugin_report) for plugin_report in report["drift"]]
+    return SelfCheckResponse(
+        ok=not problems and not drift,
+        switched_off=report["switched_off"],
+        reboot_required=report["reboot_required"],
+        problems=problems,
+        drift=drift,
+    )
 
 
 @router.get(

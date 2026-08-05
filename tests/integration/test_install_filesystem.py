@@ -27,8 +27,12 @@ MP = pytest.MonkeyPatch
 
 @pytest.fixture
 def workspace(tmp_path: Path, monkeypatch: MP) -> Path:
-    plugin_root = tmp_path / "plugins"
-    plugin_root.mkdir()
+    """A throwaway bespok3d tree shaped like the on-printer one, so the self-check and the repair
+    find the plugins where they live on a real printer."""
+    plugin_root = tmp_path / "usr/local/plugins"
+    plugin_root.mkdir(parents=True)
+    (tmp_path / "etc/init.d/autostart").mkdir(parents=True)
+    monkeypatch.setattr(packages, "DATA_ROOT", tmp_path)
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     return tmp_path
 
@@ -74,14 +78,15 @@ def test_install_creates_declared_directories(workspace: Path) -> None:
 def test_selfcheck_reports_drift_when_a_symlink_is_removed(workspace: Path) -> None:
     klipper = workspace / "klipper"
     klipper.mkdir()
-    vars = {"BESPOK3D_KLIPPER": str(klipper)}
+    vars = {"BESPOK3D": str(workspace), "BESPOK3D_KLIPPER": str(klipper)}
     package_path = build_b3(workspace, "demo", config_symlink_install(), {"files/x.cfg": "DATA"})
     packages.install(package_path, vars)
 
-    assert run_selfcheck(vars) == []
+    assert run_selfcheck(vars) == {"switched_off": False, "reboot_required": [],
+                                   "problems": [], "drift": []}
 
     (klipper / "x.cfg").unlink()
-    drift = run_selfcheck(vars)
+    drift = run_selfcheck(vars)["drift"]
     assert len(drift) == 1
     assert drift[0]["plugin_id"] == "demo"
     assert drift[0]["symlink_issues"]
@@ -90,7 +95,7 @@ def test_selfcheck_reports_drift_when_a_symlink_is_removed(workspace: Path) -> N
 def test_recover_reapplies_a_removed_symlink(workspace: Path) -> None:
     klipper = workspace / "klipper"
     klipper.mkdir()
-    vars = {"BESPOK3D_KLIPPER": str(klipper)}
+    vars = {"BESPOK3D": str(workspace), "BESPOK3D_KLIPPER": str(klipper)}
     package_path = build_b3(workspace, "demo", config_symlink_install(), {"files/x.cfg": "DATA"})
     packages.install(package_path, vars)
 
@@ -132,7 +137,7 @@ def hand_packed_b3(
 
 
 def test_install_refuses_an_undeclared_member_and_installs_nothing(workspace: Path) -> None:
-    plugin_root = workspace / "plugins"
+    plugin_root = workspace / "usr/local/plugins"
     declared = [{"path": "files/x.cfg", "sha256": "irrelevant", "mode": "644"}]
     members = {"files/x.cfg": "DATA", "files/smuggled.cfg": "UNSIGNED"}
     package_path = hand_packed_b3(workspace, "demo", declared, members)
@@ -145,7 +150,7 @@ def test_install_refuses_an_undeclared_member_and_installs_nothing(workspace: Pa
 
 
 def test_install_refuses_an_escaping_member_and_writes_no_payload(workspace: Path) -> None:
-    plugin_root = workspace / "plugins"
+    plugin_root = workspace / "usr/local/plugins"
     traversal = "../victim.cfg"
     declared = [{"path": traversal, "sha256": "irrelevant", "mode": "644"}]
     members = {traversal: "CLOBBERED"}
@@ -164,8 +169,8 @@ def test_refused_escaping_reinstall_keeps_the_existing_install(workspace: Path) 
     # escaping refusal fires before the plugin dir is touched, so the payload already on disk stays.
     klipper = workspace / "klipper"
     klipper.mkdir()
-    vars = {"BESPOK3D_KLIPPER": str(klipper)}
-    plugin_root = workspace / "plugins"
+    vars = {"BESPOK3D": str(workspace), "BESPOK3D_KLIPPER": str(klipper)}
+    plugin_root = workspace / "usr/local/plugins"
     good = build_b3(workspace, "demo", config_symlink_install(), {"files/x.cfg": "DATA"})
     packages.install(good, vars)
     assert (plugin_root / "demo" / "files" / "x.cfg").read_text() == "DATA"
@@ -186,7 +191,7 @@ def test_install_refuses_a_manifest_path_that_escapes_the_plugin_dir(workspace: 
     # paths as root, and installed_files drops doc entries so verify_files never sees this one, so
     # without the containment check on files[] the install would chmod a file outside the sandbox.
     # It is refused before the plugin dir is touched, and the file outside is left as it was.
-    plugin_root = workspace / "plugins"
+    plugin_root = workspace / "usr/local/plugins"
     victim = workspace / "victim.cfg"
     victim.write_text("STOCK")
     victim.chmod(0o644)
@@ -211,10 +216,10 @@ def test_the_shipped_signature_survives_install_and_recover(workspace: Path) -> 
     # still be checked against a key later. Recover re-applies an install, so it must not lose it.
     klipper = workspace / "klipper"
     klipper.mkdir()
-    vars = {"BESPOK3D_KLIPPER": str(klipper)}
+    vars = {"BESPOK3D": str(workspace), "BESPOK3D_KLIPPER": str(klipper)}
     members = {"files/x.cfg": "DATA", "manifest.json.sig": "-----BEGIN PGP SIGNATURE-----"}
     package_path = build_b3(workspace, "demo", config_symlink_install(), members)
-    plugin_root = workspace / "plugins"
+    plugin_root = workspace / "usr/local/plugins"
 
     packages.install(package_path, vars)
     assert plugins_with_stored_signature(plugin_root) == ["demo"]

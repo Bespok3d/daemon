@@ -40,3 +40,11 @@ def test_removal_restart_commands_skips_an_uninstalled_id(tmp_path: Path) -> Non
     commands = uninstaller.removal_restart_commands(tmp_path, ["alpha", "ghost"], {})
 
     assert commands == ["/etc/init.d/S61moonraker restart"]
+
+
+def test_removing_a_plugin_that_is_already_gone_reports_nothing_removed(tmp_path: Path) -> None:
+    # A removal that died partway, or a second click, must converge on the state the caller
+    # asked for instead of failing on something nobody can act on.
+    removed = uninstaller.run_uninstall(tmp_path, "ghost", {})
+
+    assert removed == []

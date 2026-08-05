@@ -19,6 +19,7 @@ from .actuation import (
     prune_bespok3d_config_dir,
     prune_dead_config_links,
     remove_bespok3d_includes,
+    restore_bespok3d_includes,
     run_actions,
     unwire,
     wire,
@@ -27,6 +28,7 @@ from .actuation import (
 from .supervisor import default_socket_path, start_jinni, stop_jinni
 from .transport import use_in_process, use_socket
 from .verbs import (
+    bespok3d_include_status,
     blocked_actions,
     capabilities_report,
     capability_flags,
@@ -39,6 +41,7 @@ from .verbs import (
     oom_report,
     paths,
     placement_destination,
+    reboot_required,
     render_module_script,
     render_service_script,
     restart_command,
@@ -52,7 +55,9 @@ __all__ = [
     "render_module_script", "device_node_present", "classify_module_load",
     "capability_flags", "variant_facts", "classify_commands", "paths", "capabilities_report",
     "health", "blocked_actions", "subscribe_blocked_actions", "oom_report",
+    "bespok3d_include_status", "reboot_required",
     "run_actions", "wire", "unwire",
-    "prune_dead_config_links", "remove_bespok3d_includes", "prune_bespok3d_config_dir",
+    "prune_dead_config_links", "remove_bespok3d_includes", "restore_bespok3d_includes",
+    "prune_bespok3d_config_dir",
     "fetch", "write_files",
 ]

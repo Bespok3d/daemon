@@ -26,6 +26,11 @@ class FakeGenericJinni(FakeKlipperJinni):
     def restart_command(self, hook: str) -> str | None:
         return None
 
+    def bespok3d_include_status(self) -> dict[str, bool]:
+        """A generic box has no config of its own to wire, so it reports nothing to check, exactly
+        as the real generic integration does."""
+        return {}
+
     def capability_flags(self) -> set[str]:
         return set()
 

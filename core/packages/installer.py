@@ -25,7 +25,7 @@ from .dependencies import installed_conflicts, unsatisfied_requirements
 from .errors import ConflictError, RequirementError
 from .integrity import CHECKSUM_MISMATCH, IntegrityError, verify_files
 from .kmodules import generate_module_loaders, load_modules
-from .members import installed_files
+from .members import installed_files, rendered_over
 from .patches import apply_patches
 from .placement import apply_modes, create_dirs, create_symlinks
 from .python_deps import provision_deps_phases
@@ -61,7 +61,8 @@ def apply_install_deferred(
     and update_batch (silent, restart batched)."""
     raw_inst = manifest.get("install", {})
     inst = normalize_install(raw_inst, jinni_client.variant_facts())
-    mismatched = verify_files(plugin_dir, installed_files(manifest.get("files", [])))
+    verifiable = installed_files(manifest.get("files", []), rendered_over(inst["templates"]))
+    mismatched = verify_files(plugin_dir, verifiable)
     if mismatched:
         raise IntegrityError(manifest["name"], CHECKSUM_MISMATCH, mismatched)
     phases = [

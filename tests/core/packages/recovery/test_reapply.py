@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 
 from core import packages
-from core.packages import installer
+from core.packages import installer, repair
 from core.packages.deactivation import DEACTIVATED_MARKER
 from core.packages.recovery import reapply
+from tests.package_fixtures import files_entries
 
 MP = pytest.MonkeyPatch
 
@@ -141,3 +142,66 @@ def test_recover_one_deactivates_when_a_phase_fails(tmp_path: Path, monkeypatch:
     assert "install phase failed" in result["reason"]
     assert deferred == []
     assert (plugin_dir / reapply.RECOVERY_FAILURE_MARKER).exists()
+
+
+def test_recover_one_re_applies_a_rendered_over_file_every_time(tmp_path: Path) -> None:
+    # mainsail and fluidd both ship the file their own template renders over, so the packer's
+    # sha256 covers the pre-render copy. The first re-apply overwrites it; a second one would hash
+    # the rendered text against that pre-render sha256 and deactivate the plugin for tampering.
+    button_source = "files/b3d-tool-buttons.js.tmpl"
+    button_target = "files/html/b3d-tool-buttons.js"
+    manifest = _installed_plugin(
+        tmp_path, "mainsail",
+        install={"dirs": [], "symlinks": [], "patches": [], "start": [],
+                 "templates": [{"from": button_source, "to": button_target}]},
+    )
+    plugin_dir = tmp_path / "mainsail"
+    (plugin_dir / "files" / "html").mkdir(parents=True)
+    (plugin_dir / button_source).write_text("const moonraker = '$MOONRAKER_URL'\n")
+    (plugin_dir / button_target).write_text("const moonraker = '$MOONRAKER_URL'\n")
+    manifest["files"] = files_entries({
+        button_source: (plugin_dir / button_source).read_text(),
+        button_target: (plugin_dir / button_target).read_text(),
+    })
+    vars = {"MOONRAKER_URL": "http://127.0.0.1:7125"}
+
+    first, _ = reapply.recover_one(plugin_dir, manifest, set(), set(), vars)
+    second, _ = reapply.recover_one(plugin_dir, manifest, set(), set(), vars)
+
+    assert first["ok"] is True
+    assert second["ok"] is True, second["reason"]
+    assert (plugin_dir / button_target).read_text() == "const moonraker = 'http://127.0.0.1:7125'\n"
+    assert not (plugin_dir / DEACTIVATED_MARKER).exists()
+
+
+def test_recover_wires_the_printer_config_back_up(tmp_path: Path, monkeypatch: MP) -> None:
+    """Recovery on a live printer must leave klipper actually loading the plugins it re-applied.
+
+    Deactivation strips the `[include bespok3d/...]` lines from the printer's own config, and only
+    the jinni can put them back, so recovery that skipped the call left every plugin installed,
+    linked and ignored.
+    """
+    rewired: list[bool] = []
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path / "plugins")
+    monkeypatch.setattr(packages, "DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(repair.jinni_client, "restore_bespok3d_includes",
+                        lambda: rewired.append(True))
+
+    packages.recover({"BESPOK3D": str(tmp_path)})
+
+    assert rewired == [True]
+
+
+def test_recover_leaves_a_deactivated_printer_unwired(tmp_path: Path, monkeypatch: MP) -> None:
+    data_root = tmp_path / "data"
+    (data_root / "etc").mkdir(parents=True)
+    (data_root / packages.GLOBAL_DEACTIVATED_MARKER).write_text("")
+    rewired: list[bool] = []
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path / "plugins")
+    monkeypatch.setattr(packages, "DATA_ROOT", data_root)
+    monkeypatch.setattr(repair.jinni_client, "restore_bespok3d_includes",
+                        lambda: rewired.append(True))
+
+    packages.recover({"BESPOK3D": str(tmp_path)})
+
+    assert rewired == []

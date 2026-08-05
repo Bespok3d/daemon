@@ -104,10 +104,14 @@ def run_uninstall(plugin_root: Path, plugin_id: str, vars: dict[str, str], casca
     """Remove a plugin. Refuses if installed dependents need it, unless cascade removes them too.
 
     Returns the ids removed, dependents first, target last.
+
+    A plugin that is not there is already in the state the caller asked for, so removing it
+    again reports nothing removed instead of failing: a retry after a removal that died partway,
+    or a second click, must never leave the caller stuck on an error it cannot act on.
     """
     plugin_dir = contained_plugin_dir(plugin_root, plugin_id)
     if not plugin_dir.exists():
-        raise FileNotFoundError(plugin_id)
+        return []
     dependents = installed_dependents(plugin_root, plugin_id)
     if dependents and not cascade:
         raise DependentsError(plugin_id, dependents)

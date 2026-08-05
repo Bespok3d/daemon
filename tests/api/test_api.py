@@ -67,7 +67,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.20"
+    assert body["version"] == "0.12.22"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -244,11 +244,14 @@ async def test_selfcheck_returns_ok_true_when_no_drift(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
-    monkeypatch.setattr(routes_health, "run_selfcheck", lambda _vars: [])
+    monkeypatch.setattr(routes_health, "run_selfcheck",
+                        lambda _vars: {"switched_off": False, "reboot_required": [],
+                                       "problems": [], "drift": []})
     response = await client.get("/selfcheck")
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
+    assert body["problems"] == []
     assert body["drift"] == []
 
 
@@ -271,7 +274,8 @@ async def test_selfcheck_returns_ok_false_with_drift_details(
         }
     ]
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
-    monkeypatch.setattr(routes_health, "run_selfcheck", lambda _vars: sample_drift)
+    drifted = {"switched_off": False, "reboot_required": [], "problems": [], "drift": sample_drift}
+    monkeypatch.setattr(routes_health, "run_selfcheck", lambda _vars: drifted)
     response = await client.get("/selfcheck")
     assert response.status_code == 200
     body = response.json()
@@ -279,6 +283,23 @@ async def test_selfcheck_returns_ok_false_with_drift_details(
     assert len(body["drift"]) == 1
     assert body["drift"][0]["plugin_id"] == "camera-hw-accel"
     assert body["drift"][0]["symlink_issues"][0]["kind"] == "missing"
+
+
+async def test_selfcheck_relays_what_the_printer_says_needs_a_power_cycle(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The printer names its own states that no restart clears; the daemon relays the tokens
+    untouched. A printer asking for a power cycle is still sound, so ok stays true: a caller shows
+    the reason and offers the reboot, and it is never a problem to fix."""
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    wedged = {"switched_off": False, "reboot_required": ["display-pipe-wedged"],
+              "problems": [], "drift": []}
+    monkeypatch.setattr(routes_health, "run_selfcheck", lambda _vars: wedged)
+    response = await client.get("/selfcheck")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reboot_required"] == ["display-pipe-wedged"]
+    assert body["ok"] is True
 
 
 async def test_install_route_returns_ok(
@@ -514,16 +535,16 @@ async def test_uninstall_route_returns_ok(
     assert response.json()["removed"] == ["my-plugin"]
 
 
-async def test_uninstall_route_returns_404_when_plugin_missing(
+async def test_uninstalling_a_plugin_that_is_already_gone_is_not_an_error(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def raise_not_found(plugin_id: str, _vars: dict[str, str], cascade: bool = False) -> None:
-        raise FileNotFoundError(plugin_id)
-
+    # Removing something that is not there has already reached the state the caller asked for.
+    # A retry after a removal that died partway must converge, not hand back an error nobody
+    # can act on.
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
-    monkeypatch.setattr(packages, "uninstall", raise_not_found)
     response = await client.delete("/plugins/missing-plugin")
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()["removed"] == []
 
 
 def _seed_installed_plugin(

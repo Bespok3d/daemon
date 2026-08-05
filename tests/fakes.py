@@ -74,8 +74,16 @@ class FakeKlipperJinni:
         paths = self.paths()
         fake_integration.remove_includes(paths["PRINTER_CFG"], paths["MOONRAKER_CFG"])
 
+    def restore_bespok3d_includes(self) -> None:
+        paths = self.paths()
+        fake_integration.restore_includes(paths["PRINTER_CFG"], paths["MOONRAKER_CFG"])
+
     def prune_bespok3d_config_dir(self) -> None:
         fake_integration.prune_config_dir(self.paths()["BESPOK3D_KLIPPER"])
+
+    def bespok3d_include_status(self) -> dict[str, bool]:
+        paths = self.paths()
+        return fake_integration.include_status(paths["PRINTER_CFG"], paths["MOONRAKER_CFG"])
 
     def render_service_script(self, service: dict, paths: dict[str, str]) -> str:
         return f"#gen {service['name']} {service['command']}"

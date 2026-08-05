@@ -58,6 +58,13 @@ def remove_bespok3d_includes() -> None:
     route("remove_bespok3d_includes", [], timeout=protocol.ACTION_CALL_TIMEOUT_S)
 
 
+def restore_bespok3d_includes() -> None:
+    """Put the bespok3d include lines back in the printer's own config. Deactivation strips them and
+    nothing else writes them after enrollment, so recovery asks the jinni to wire the printer back
+    up (ADR-0037): the daemon never edits the device config itself."""
+    route("restore_bespok3d_includes", [], timeout=protocol.ACTION_CALL_TIMEOUT_S)
+
+
 def prune_bespok3d_config_dir() -> None:
     """Take back the bespok3d include dir on teardown (our symlinks and any now-empty dirs), keeping
     any user files. The jinni knows the dir."""

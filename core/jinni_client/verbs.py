@@ -30,6 +30,21 @@ def instrument_destination(instrument_class: str, name: str) -> str:
     return cast(str, route("instrument_destination", [instrument_class, name]))
 
 
+def bespok3d_include_status() -> dict[str, bool]:
+    """Which of the printer's own configs still carry the bespok3d include line, keyed by the name
+    the device calls that config. A printer can hold every plugin, correctly linked, and still
+    ignore all of them; this is the only way the generic daemon can see that, without learning which
+    configs the device has."""
+    return cast(dict[str, bool], route("bespok3d_include_status", []))
+
+
+def reboot_required() -> list[str]:
+    """The tokens for every state this printer has got into that only a power cycle clears, empty
+    when there is none. Which states those are is device knowledge the daemon must never learn: a
+    printer whose jinni recognises none answers empty and nothing is offered to the user."""
+    return cast(list[str], route("reboot_required", []))
+
+
 def restart_command(hook: str) -> str | None:
     return cast(str | None, route("restart_command", [hook]))
 

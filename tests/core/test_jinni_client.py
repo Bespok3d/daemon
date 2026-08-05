@@ -8,11 +8,13 @@ klipper, the same way). The seam never imports the jinni runtime, so these drive
 duck-typed fakes that answer the protocol verbs. The socket path is covered in the klipper-jinni
 app's together tests.
 """
+import re
 from pathlib import Path
 
 import pytest
 
 from core import jinni_client
+from protocol import wire
 from tests.fakes import FakeKlipperJinni
 from tests.fakes_generic import FakeGenericJinni
 
@@ -93,3 +95,16 @@ def test_health_on_a_generic_target_reports_no_services(monkeypatch: pytest.Monk
     report = jinni_client.health()
     assert report.services == {}
     assert report.healthy is True
+
+
+def test_every_verb_the_daemon_routes_is_on_the_contract() -> None:
+    # A verb the daemon calls but the contract does not list is refused at the wire the moment
+    # it runs against a real jinni, and unit tests that patch the seam never see it. That is how
+    # include restoration reached a printer as a 422 instead of a repair.
+    routed = {
+        match.group(1)
+        for source in (Path(jinni_client.__file__).parent).glob("*.py")
+        for match in re.finditer(r"route\(\s*\"([a-z0-9_]+)\"", source.read_text())
+    }
+    assert routed
+    assert routed <= wire.CONTRACT_VERBS

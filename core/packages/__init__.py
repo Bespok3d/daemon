@@ -34,6 +34,7 @@ from .installer import (
 from .installer_batch import run_install_batch
 from .integrity import IntegrityError  # noqa: F401  re-export for api.routes
 from .lifecycle import (  # noqa: F401  re-export for api.routes
+    GLOBAL_DEACTIVATED_MARKER,
     deactivate_all,
     teardown,
 )
@@ -42,6 +43,7 @@ from .plugin_dir import contained_plugin_dir  # noqa: F401  re-export for api.ro
 from .print_guard import guard_no_print
 from .reconfigurer import run_reconfigure
 from .recovery import recover_one, restart_services
+from .repair import restore_printer_state
 from .uninstaller import run_uninstall
 from .updater import run_update_batch
 from .user_vars import (
@@ -85,8 +87,11 @@ def install_batch(
 
 
 def recover(vars: dict[str, str]) -> list[dict]:
-    """Re-apply all installed, non-deactivated plugins after OTA. Returns per-plugin results."""
+    """Make the printer sound, then re-apply all installed, non-deactivated plugins (after an OTA,
+    or after anything else left the printer half done). Every problem `selfcheck` reports is one
+    this clears. Returns per-plugin results."""
     guard_no_print()
+    restore_printer_state(DATA_ROOT, PLUGIN_ROOT, vars)
     if not PLUGIN_ROOT.exists():
         return []
     plugin_dirs = [

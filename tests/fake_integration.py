@@ -45,6 +45,26 @@ def remove_includes(printer_cfg: str, moonraker_cfg: str) -> None:
             path.write_text("".join(kept))
 
 
+def restore_includes(printer_cfg: str, moonraker_cfg: str) -> None:
+    for cfg_path, include_line in ((printer_cfg, "[include bespok3d/klipper/*.cfg]"),
+                                   (moonraker_cfg, "[include bespok3d/moonraker/*.cfg]")):
+        path = Path(cfg_path)
+        if path.exists() and include_line not in path.read_text():
+            path.write_text(f"{path.read_text()}\n{include_line}\n")
+
+
+def include_status(printer_cfg: str, moonraker_cfg: str) -> dict[str, bool]:
+    return {
+        "printer.cfg": _carries_include(printer_cfg, "[include bespok3d/klipper"),
+        "moonraker.conf": _carries_include(moonraker_cfg, "[include bespok3d/moonraker"),
+    }
+
+
+def _carries_include(cfg_path: str, pattern: str) -> bool:
+    path = Path(cfg_path)
+    return path.exists() and pattern in path.read_text()
+
+
 def prune_config_dir(bespok3d_klipper: str) -> None:
     config_dir = Path(bespok3d_klipper).parent
     if config_dir.name == "bespok3d":

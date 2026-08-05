@@ -18,6 +18,14 @@ MP = pytest.MonkeyPatch
 
 
 @pytest.fixture(autouse=True)
+def _throwaway_data_root(tmp_path: Path, monkeypatch: MP) -> None:
+    """Point the tree root at the test's own directory. Recover repairs the printer before it
+    re-applies anything, and repair creates directories under the root, which on a dev machine is a
+    read-only /userdata."""
+    monkeypatch.setattr(packages, "DATA_ROOT", tmp_path)
+
+
+@pytest.fixture(autouse=True)
 def _healthy_printer(monkeypatch: MP) -> None:
     """Default the HTTP boundary to a healthy printer so a core-service restart's safety check
     passes without real network. A test wanting a broken printer overrides urlopen itself."""
@@ -243,11 +251,12 @@ def test_uninstall_removes_plugin_dir_and_symlinks(tmp_path: Path, monkeypatch: 
     assert not link.exists()
 
 
-def test_uninstall_raises_when_plugin_does_not_exist(tmp_path: Path, monkeypatch: MP) -> None:
+def test_uninstall_converges_when_plugin_does_not_exist(tmp_path: Path, monkeypatch: MP) -> None:
+    # Removing what is already gone has reached the asked-for state; a retry after a removal that
+    # died partway must converge instead of failing.
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
 
-    with pytest.raises(FileNotFoundError):
-        packages.uninstall("nonexistent-plugin", {})
+    assert packages.uninstall("nonexistent-plugin", {}) == []
 
 
 def test_install_replaces_dir_with_dir_symlink(tmp_path: Path, monkeypatch: MP) -> None:

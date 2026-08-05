@@ -20,7 +20,7 @@ from .print_guard import guard_no_print
 from .recovery import restart_services
 from .uninstaller import remove_all_plugins
 
-_GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"
+GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"
 
 
 def _deactivate_plugin_dir(plugin_dir: Path, vars: dict[str, str]) -> None:
@@ -37,7 +37,7 @@ def _deactivate_plugins_in(plugin_root: Path, vars: dict[str, str]) -> None:
 
 
 def _write_deactivated_marker(data_root: Path) -> None:
-    marker = data_root / _GLOBAL_DEACTIVATED_MARKER
+    marker = data_root / GLOBAL_DEACTIVATED_MARKER
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch()
 

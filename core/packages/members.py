@@ -30,14 +30,28 @@ def is_doc_member(name: str) -> bool:
     return name == "doc" or name.startswith("doc/")
 
 
-def installed_files(manifest_files: list[dict]) -> list[dict]:
-    """The manifest entries naming a file that actually reaches the printer.
+def rendered_over(templates: list[dict]) -> frozenset[str]:
+    """The plugin-dir paths install overwrites with a rendered template.
+
+    A plugin may point a template at a path the package also ships, so the shipped copy is a
+    placeholder that install replaces. The replacement's content comes from the `.tmpl` source,
+    which carries its own checksum, so nothing is left unvouched by skipping the target.
+    """
+    return frozenset(str(template_def.get("to", "")) for template_def in templates)
+
+
+def installed_files(manifest_files: list[dict], render_targets: frozenset[str]) -> list[dict]:
+    """The manifest entries naming a file the printer still holds as the packer hashed it.
 
     Checksums answer "is what we wrote what the packer hashed", so an entry for something the daemon
-    deliberately never writes has no on-disk counterpart to compare and would read as tampered.
-    `unpack_package` drops the doc tree, and b3-builder lists it, so doc entries are exactly that.
+    never writes, or writes with different content on purpose, has no comparable on-disk counterpart
+    and would read as tampered. `unpack_package` drops the doc tree, and b3-builder lists it, so doc
+    entries are one such case; a template's render target is the other, because install overwrites
+    it and every later re-apply would hash the rendered file against the pre-render checksum.
     """
-    return [entry for entry in manifest_files if not is_doc_member(str(entry.get("path", "")))]
+    return [entry for entry in manifest_files
+            if not is_doc_member(str(entry.get("path", "")))
+            and str(entry.get("path", "")) not in render_targets]
 
 
 def names_its_own_directory(plugin_id: object) -> TypeGuard[str]:

@@ -27,7 +27,7 @@ from .packages import (
     ReconfigureResponse,
     UninstallResponse,
 )
-from .selfcheck import PluginDrift, SelfCheckResponse, SymlinkIssue
+from .selfcheck import PluginDrift, PrinterProblem, SelfCheckResponse, SymlinkIssue
 
 __all__ = [
     "AccessActionResponse",
@@ -49,6 +49,7 @@ __all__ = [
     "PendingClient",
     "PluginConfigResponse",
     "PluginDrift",
+    "PrinterProblem",
     "PluginRecoveryResult",
     "ReconfigureResponse",
     "SelfCheckResponse",
