@@ -9,10 +9,8 @@ name: build-and-release
 # difference is that the adapter puts it on the printer at enrollment, so it is never installed
 # through the plugin pipeline.
 #
-# D3 (still deferred): whether to ALSO register the atom into Bespok3d/main-index/atoms/ so the daemon
-# appears in the catalog. Kept release-only: a browsable store card would offer an install path the
-# daemon does not have. When D3 is settled, add the main-index register-atoms action here, exactly as
-# the solo-plugin repos do.
+# Plugin zero means plugin zero here too: the run registers the daemon's atom in the org index the
+# same way, on the same trigger, as every plugin repo does.
 on:
   push:
     branches: [main]
@@ -25,7 +23,6 @@ on:
       - 'protocol/**'
       - S99bespok3d
       - s10bespok3d-daemon
-      - 'wheels/**'
       - requirements.txt
       - scripts/**
       - .github/workflows/release.yml
@@ -82,8 +79,10 @@ jobs:
           # Per-repo Actions secret today (GitHub Free cannot org-secret private repos); becomes ONE org
           # secret every repo inherits when the repos go public.
           signing-key: ${{ secrets.REGISTRY_SIGNING_KEY }}
-          # The wheels this package ships are vendored in the repo, so there is nothing to bake.
-          bake: 'false'
+          # ADR-0036: b3-builder downloads the daemon's Python deps as aarch64 wheels into the package,
+          # off the requirements.txt the staging script puts at the package root. This is what lets the
+          # printer install the daemon's venv with no network; nothing is vendored in this repo.
+          bake: 'true'
           atom-repo: ${{ github.repository }}
 
       # The signature is the whole point of routing through b3-builder, so prove it landed rather than
@@ -104,7 +103,7 @@ jobs:
           echo "signed and stamped: publisher ${publisher}"
 
       # b3-builder releases the .b3 itself. The atom rides along on the same release because the app
-      # reads it to learn a newer daemon exists; it is not registered in the catalog (see D3 above).
+      # reads it to learn a newer daemon exists.
       - name: Attach the index atom to the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -112,3 +111,9 @@ jobs:
           name=$(jq -r '.name' manifest.json)
           version=$(jq -r '.version' manifest.json)
           gh release upload "${name}-v${version}" "dist/${name}.atom.json" --clobber
+
+      - uses: Bespok3d/main-index/.github/actions/register-atoms@3d4fa2adb4f39aa22b7112ff26fd9522db7b4827  # main @ 2026-07-26
+        with:
+          # Per-repo Actions secret today (GitHub Free cannot org-secret private repos); becomes ONE org
+          # secret every repo inherits when the repos go public.
+          token: ${{ secrets.MAIN_INDEX_TOKEN }}

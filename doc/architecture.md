@@ -178,7 +178,7 @@ protocol/             the ONE module the daemon and the jinni both import: contr
                       (contracts), the wire format (wire), the 0x03 framed transport (frame)
 S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
-wheels/               prebuilt offline runtime deps (pgpy)
+requirements.txt      runtime deps, and the ADR-0036 declaration b3-builder bakes into wheels
 tests/                test suite (not packed); mirrors the source tree (tests/core/packages/, tests/api/, ...)
 scripts/              check.sh, stage-package.sh, test-daemon-docker.sh (not packed)
 doc/                  README + CHANGELOG (shipped in the .b3); this file + engineering-rules (not shipped)

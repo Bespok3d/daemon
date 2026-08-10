@@ -12,9 +12,10 @@
 #
 # Mirror the staged file list in the adapter deploy walk and package.json extraResources. EXCLUDES
 # tests/, scripts/, .github/, the contributor docs, pyproject.toml, requirements-dev.txt, and every
-# cache. requirements.txt ships inside files/ (the venv provisioning reads it from the installed
-# tree); it deliberately does NOT sit at the staged package root, where it would arm b3-builder's
-# ADR-0036 wheel bake over deps this repo already vendors under wheels/.
+# cache. requirements.txt is staged TWICE because two readers need it in two places: at the package
+# ROOT it is the ADR-0036 declaration that arms b3-builder's wheel bake, which is what puts the
+# daemon's Python deps in the payload so the printer never reaches pypi; inside files/ it is the
+# list the venv provisioning reads back off the installed tree on the printer.
 #
 # Requires: jq.
 set -e
@@ -37,6 +38,8 @@ for top_file in version.py daemon.py S99bespok3d s10bespok3d-daemon requirements
   cp -p "$REPO_DIR/$top_file" "$files_root/$top_file"
 done
 
+cp -p "$REPO_DIR/requirements.txt" "$stage_dir/requirements.txt"
+
 # The jinni runtime is a SEPARATE app (klipper-jinni); the daemon ships only its own halves plus the
 # shared `protocol` package the jinni imports. The adapter deploys the jinni runtime alongside.
 for tree in api core protocol; do
@@ -46,9 +49,6 @@ for tree in api core protocol; do
         cp -p "$REPO_DIR/$rel" "$files_root/$rel"
       done
 done
-
-mkdir -p "$files_root/wheels"
-cp -p "$REPO_DIR"/wheels/*.whl "$files_root/wheels/"
 
 # Ship only the user-facing docs to the printer; the contributor docs (architecture, engineering-rules)
 # stay in doc/ and are not staged.

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.12.23
+
+The daemon's Python dependencies now travel inside the package. They are downloaded as aarch64 wheels
+when the package is built and packed into it, so installing the daemon on a printer needs no network
+beyond the app that is already talking to it. Until now the package carried no wheels and the printer
+fetched them from pypi.org at enrollment, which failed on any printer whose network only opens SSH.
+
+The one dependency this repo used to carry by hand, pgpy, is gone. No daemon code has imported it for
+some time; the wheel and the two doc lines calling it a shipped runtime dependency went with it.
+
+`requirements.txt` now also names pydantic and starlette, which the daemon imports directly and had
+been getting only as dependencies of fastapi.
+
+The release workflow now carries the step that registers the daemon in the org index, so no one has to
+remember it by hand. It runs on a push to main, the same trigger every plugin repo registers on: the
+daemon is plugin zero here too.
+
+## 0.12.22
+
+The self-check was split into a package of its own and package repair was added.
+
+There is no 0.12.21. The version went from 0.12.20 straight to 0.12.22, and no tree was ever released
+as 0.12.21.
+
 ## 0.12.20
 
 The `-dev` suffix is gone from the version number. Every release up to `0.12.19-dev` carried it,
