@@ -7,6 +7,7 @@
   "category": "system",
   "channel": "stable",
   "printer_specific": false,
+  "min_jinni_version": "0.1.10",
   "changelog": "doc/CHANGELOG.md",
   "published_at": "2026-06-14",
   "updated_at": "2026-06-14",

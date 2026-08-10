@@ -25,6 +25,7 @@ from .errors import (
     BlockedActionError,  # noqa: F401  re-export for api.routes
     ConflictError,  # noqa: F401  re-export for api.routes
     DependentsError,  # noqa: F401  re-export for api.routes
+    IncompatiblePairError,  # noqa: F401  re-export for api.routes
     RequirementError,  # noqa: F401  re-export for api.routes
 )
 from .installer import (

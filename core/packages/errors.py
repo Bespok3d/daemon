@@ -39,3 +39,16 @@ class RequirementError(Exception):
         self.plugin_id = plugin_id
         self.missing = missing
         super().__init__(f"{plugin_id} requires uninstalled service(s): {', '.join(missing)}")
+
+
+class IncompatiblePairError(Exception):
+    """A plugin op was refused because the daemon and the jinni on this printer are a pair the
+    daemon will not drive. Carries WHICH SIDE is behind and the two versions as machine values; the
+    daemon relays facts and never prose (ADR-0037), so the client writes the sentence the user
+    reads. The message is for the daemon's own logs."""
+
+    def __init__(self, side: str, required: str, running: str) -> None:
+        self.side = side
+        self.required = required
+        self.running = running
+        super().__init__(f"{side} {running} is older than the required {required}")

@@ -26,6 +26,7 @@ from .errors import ConflictError, RequirementError
 from .integrity import CHECKSUM_MISMATCH, IntegrityError, verify_files
 from .kmodules import generate_module_loaders, load_modules
 from .members import installed_files, rendered_over
+from .pair_guard import guard_compatible_pair
 from .patches import apply_patches
 from .placement import apply_modes, create_dirs, create_symlinks
 from .python_deps import provision_deps_phases
@@ -128,6 +129,7 @@ def run_install(
     user_vars: dict[str, str] | None = None,
     on_phase: PhaseListener | None = None,
 ) -> tuple[str, list[dict]]:
+    guard_compatible_pair()
     manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
     plugin_id: str = manifest["name"]
     _refuse_unmet_dependencies(plugin_root, plugin_dir, plugin_id, manifest)
