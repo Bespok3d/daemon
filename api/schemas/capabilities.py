@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from pydantic import BaseModel, Field
 
+from version import MIN_JINNI_VERSION
+
 
 class Endpoint(BaseModel):
     """A browser-openable address a managed printer exposes (a plugin web UI, the camera stream)."""
@@ -53,6 +55,10 @@ class CapabilitiesResponse(BaseModel):
     )
     jinni_version: str = Field(
         default="unknown", description="Version of the adapter's jinni (its daemon-side half)"
+    )
+    min_jinni_version: str = Field(
+        default=MIN_JINNI_VERSION,
+        description="Oldest jinni this daemon will drive; the app refuses an older pair",
     )
     capability_flags: list[str] = Field(
         default_factory=list, description="Capability flags the jinni advertises (e.g. overlay)"

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .archive import read_manifest
 from .dependencies import order_by_dependency, provided_services
+from .pair_guard import guard_compatible_pair
 from .print_guard import guard_batch_no_print
 from .user_vars import validate_user_vars
 
@@ -83,12 +84,14 @@ def plan_batch(
     package_paths: list[Path],
     vars_by_id: dict[str, dict[str, str]],
 ) -> BatchPlan:
-    """Read each package's manifest and refuse the batch up front if any operation would run during
-    a print. Shared by both batch entry points, so neither can skip the print-safety gate, and
-    neither lets one unreadable package or one unusable setting cost the rest of the call.
+    """Read each package's manifest and refuse the batch up front: on an incompatible daemon/jinni
+    pair, or if any operation would run during a print. Shared by both batch entry points, so
+    neither can skip either gate, and neither lets one unreadable package or one unusable setting
+    cost the rest of the call.
 
     The packages are put in dependency order, providers before the plugins that need them, so the
     order the user happened to pick them in can never be the reason a plugin is left out."""
+    guard_compatible_pair()
     manifests, unreadable = _readable_packages(package_paths)
     guard_batch_no_print(list(manifests.values()))
     ordered = order_by_dependency(list(manifests), manifests)

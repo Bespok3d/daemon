@@ -16,6 +16,8 @@ two kernels that share a release. An unknown dimension fails closed, so a manife
 dimension an older daemon does not know is skipped, never mis-selected.
 """
 
+from .versions import version_at_least, version_at_most
+
 # The install sections whose entries may carry `variants`: a payload file (`place`) or a carried
 # diff (`instrument`) that differs per printer (a kernel module built per kernel, a binary per
 # arch). Services and restart hooks are device-uniform, so they take no variants.
@@ -76,44 +78,7 @@ def _dimension_holds(dimension: str, value: str, facts: dict[str, str]) -> bool:
     if dimension in _EXACT_DIMENSIONS:
         return facts.get(dimension) == value
     if dimension == "fw_min":
-        return _at_least(facts.get("firmware_version", ""), value)
+        return version_at_least(facts.get("firmware_version", ""), value)
     if dimension == "fw_max":
-        return _at_most(facts.get("firmware_version", ""), value)
+        return version_at_most(facts.get("firmware_version", ""), value)
     return False
-
-
-def _at_least(version: str, floor: str) -> bool:
-    order = _compare(version, floor)
-    return order is not None and order >= 0
-
-
-def _at_most(version: str, ceiling: str) -> bool:
-    order = _compare(version, ceiling)
-    return order is not None and order <= 0
-
-
-def _compare(version: str, bound: str) -> int | None:
-    """version against bound as -1 / 0 / 1 by dotted-numeric order, or None when either side is not
-    purely numeric (an 'unknown' or malformed version satisfies no firmware bound)."""
-    version_key, bound_key = _version_key(version), _version_key(bound)
-    if version_key is None or bound_key is None:
-        return None
-    left, right = _padded(version_key, bound_key)
-    return (left > right) - (left < right)
-
-
-def _version_key(version: str) -> tuple[int, ...] | None:
-    # str(): a bound written unquoted (`"fw_min": 1.5`) reaches here as a JSON number; coerce so the
-    # version the author meant compares, rather than crashing on `.split` of a float.
-    parts = str(version).split(".")
-    if not all(part.isdigit() for part in parts):
-        return None
-    return tuple(int(part) for part in parts)
-
-
-def _padded(
-    left: tuple[int, ...], right: tuple[int, ...]
-) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """Zero-pad the shorter key so 1.4 and 1.4.0 compare equal, not 1.4 < 1.4.0."""
-    width = max(len(left), len(right))
-    return left + (0,) * (width - len(left)), right + (0,) * (width - len(right))
