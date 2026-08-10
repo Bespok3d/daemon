@@ -11,7 +11,7 @@ those two disagree ships a package that lies about itself, so the gate refuses t
 import json
 from pathlib import Path
 
-from version import DAEMON_VERSION
+from version import DAEMON_VERSION, MIN_JINNI_VERSION
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -20,3 +20,16 @@ def test_manifest_version_matches_the_running_daemon_version() -> None:
     manifest = json.loads((REPO_ROOT / "manifest.json").read_text())
 
     assert manifest["version"] == DAEMON_VERSION, "bump manifest.json and version.py together"
+
+
+def test_manifest_declares_the_jinni_floor_the_running_daemon_enforces() -> None:
+    """The app refuses a daemon whose jinni floor this printer misses, and it reads that floor off
+    the published package rather than off a printer it has not installed yet. A manifest that omits
+    the floor, or carries a stale one, lets a daemon reach a printer whose jinni it will then refuse
+    to drive, leaving the printer enrolled but unmanageable.
+    """
+    manifest = json.loads((REPO_ROOT / "manifest.json").read_text())
+
+    assert manifest["min_jinni_version"] == MIN_JINNI_VERSION, (
+        "bump manifest.json and version.py together"
+    )

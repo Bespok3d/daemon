@@ -23,6 +23,7 @@ from ...safety import (
 )
 from ...safety.restart_batch import run_restart_batch
 from ..deactivation import deactivate_plugin
+from ..machinery import MACHINERY_PACKAGES, is_machinery
 from ..manifest import installed_manifest_dirs
 from .evidence import gather_evidence
 
@@ -60,17 +61,35 @@ def _recovery_result(deactivated: list[str], decision: Decision,
     return result
 
 
+def _spared_from_blame(culprit: str, plugin_root: Path) -> bool:
+    """Whether an automatic step must pass this culprit over instead of taking it off the printer.
+
+    Two names are passed over: the printer's own machinery, which the owner would be left unable to
+    reach the printer without, and a name that is not an installed plugin, which has nothing to
+    undo and would otherwise leave a deactivation marker for something that was never there.
+    """
+    return is_machinery(culprit) or not (plugin_root / culprit / "manifest.json").exists()
+
+
 def _auto_recover(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, str],
                   ctx: OperationContext, evidence: FailureEvidence) -> dict:
     """Walk the fixer chain: deactivate the named culprit, restart, re-probe, repeat until the
     printer is healthy or no plugin is left to blame."""
     failure = evidence
     deactivated: list[str] = []
+    spared: list[str] = []
+    # The chain can name every installed plugin, plus the machinery, plus the operation's own target
+    # when that is not installed. Each name is passed to the next round as handled, so this many
+    # rounds is enough for every one of them and the loop cannot run on.
+    rounds = len(installed_manifest_dirs(plugin_root)) + len(MACHINERY_PACKAGES) + 1
     decision = decide(evidence, ctx, deactivated)
-    for _attempt in range(len(installed_manifest_dirs(plugin_root)) + 1):
-        decision = decide(evidence, ctx, deactivated)
+    for _attempt in range(rounds):
+        decision = decide(evidence, ctx, deactivated + spared)
         if decision.culprit is None:
             break
+        if _spared_from_blame(decision.culprit, plugin_root):
+            spared.append(decision.culprit)
+            continue
         deactivate_plugin(plugin_root / decision.culprit, vars,
                           f"auto-deactivated: {decision.signal}")
         deactivated.append(decision.culprit)

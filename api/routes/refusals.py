@@ -13,6 +13,7 @@ from core import packages
 
 # Ordered as the app reads them: the reasons an install can be declined rather than failed.
 REFUSALS = (
+    packages.IncompatiblePairError,
     packages.BlockedActionError,
     packages.ConflictError,
     packages.RequirementError,
@@ -21,7 +22,23 @@ REFUSALS = (
 
 
 def refusal_detail(refusal: Exception) -> dict:
-    """The 409 body for a refused install: the discriminator plus what that refusal knows."""
+    """The 409 body for a refused install: the discriminator plus what that refusal knows.
+
+    The first refusal is about the PRINTER, not the package: this daemon and this printer's jinni do
+    not fit together, so no package would have installed. It names the side that is behind and both
+    versions, and the client turns that into the sentence telling the user which half to update."""
+    if isinstance(refusal, packages.IncompatiblePairError):
+        return {
+            "error": "incompatible_pair", "side": refusal.side,
+            "required": refusal.required, "running": refusal.running,
+        }
+
+    return _package_refusal_detail(refusal)
+
+
+def _package_refusal_detail(refusal: Exception) -> dict:
+    """The refusals about the package itself: what it would block, what it collides with, what it
+    needs and has not got, and whether its bytes are what it claims they are."""
     if isinstance(refusal, packages.BlockedActionError):
         return {"error": "blocked", "blocked_actions": refusal.blocked}
     if isinstance(refusal, packages.ConflictError):

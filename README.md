@@ -23,8 +23,7 @@ protocol/             the contract the daemon and the jinni both import (the jin
                       app, adapters/klipper-jinni)
 S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
-wheels/               prebuilt offline runtime deps (pgpy)
-requirements.txt      runtime deps
+requirements.txt      runtime deps, and the ADR-0036 declaration b3-builder bakes into wheels
 tests/                test suite (not packed)
 scripts/              check.sh / stage-package.sh (not packed)
 manifest.json         b3-zero manifest (version mirrors version.py)
