@@ -2,30 +2,27 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: build-and-release
 
-# On a push to main that changes the daemon source, manifest, version, or build scripts: run the
-# daemon gate, stage the daemon as a plugin source dir, then hand it to the one org-wide build Action
-# (b3-builder) that packs, stamps the publisher and SIGNS every other plugin. The daemon is plugin
-# zero (ADR-0030): same package shape, same signature, same release layout as any plugin. The single
-# difference is that the adapter puts it on the printer at enrollment, so it is never installed
-# through the plugin pipeline.
+# On a tag matching daemon-v*: run the daemon gate, stage the daemon as a plugin source dir, then
+# hand it to the one org-wide build Action (b3-builder) that packs, stamps the publisher and SIGNS
+# every other plugin. The daemon is plugin zero (ADR-0030): same package shape, same signature, same
+# release layout as any plugin. The single difference is that the adapter puts it on the printer at
+# enrollment, so it is never installed through the plugin pipeline.
 #
 # Plugin zero means plugin zero here too: the run registers the daemon's atom in the org index the
-# same way, on the same trigger, as every plugin repo does.
+# same way every plugin repo does.
+#
+# Tag-triggered, like the jinni's release workflow. A push to main used to publish, which handed
+# every enrolled printer a daemon built from whatever main happened to hold, work in progress
+# included; a tag is the maintainer saying THIS tree is the release. tests/test_release_trigger.py
+# fails the gate if the trigger is ever widened back to a branch push.
+#
+# The number in the tag must equal DAEMON_VERSION, because everything downstream is stamped from
+# version.py and not from the tag. scripts/tag_version_guard.py refuses the run on a mismatch, so a
+# tag can never publish a package carrying a different number.
 on:
   push:
-    branches: [main]
-    paths:
-      - manifest.json
-      - version.py
-      - daemon.py
-      - 'api/**'
-      - 'core/**'
-      - 'protocol/**'
-      - S99bespok3d
-      - s10bespok3d-daemon
-      - requirements.txt
-      - scripts/**
-      - .github/workflows/release.yml
+    tags:
+      - 'daemon-v*'
   workflow_dispatch:
 
 jobs:
@@ -53,6 +50,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Refuse a tag that disagrees with DAEMON_VERSION
+        run: python scripts/tag_version_guard.py "${{ github.ref_name }}"
 
       - name: Daemon gate (ruff + mypy + pytest on 3.11)
         run: bash scripts/check.sh

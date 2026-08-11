@@ -5,3 +5,5 @@ hypothesis>=6.0
 mutmut>=2.4,<3
 ruff>=0.4
 mypy>=1.10
+pyyaml>=6.0
+types-PyYAML>=6.0

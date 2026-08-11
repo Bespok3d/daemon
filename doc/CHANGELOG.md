@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.24
+
+A daemon is published by a `daemon-v*` tag now, and by nothing else. Until now any push to main that
+touched the daemon source built a package and registered it in the org index, which offered every
+enrolled printer a daemon built from whatever main happened to hold at that moment, work in progress
+included. Tagging is the maintainer saying which tree is the release, and it matches how the jinni
+already releases.
+
+The run is refused before the build if the number in the tag and `DAEMON_VERSION` disagree, so a tag
+can never publish a package stamped with a different number.
+
 ## 0.12.23
 
 The daemon's Python dependencies now travel inside the package. They are downloaded as aarch64 wheels
