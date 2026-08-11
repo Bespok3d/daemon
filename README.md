@@ -62,10 +62,19 @@ Bespok3d app derives its expected version from `version.py` at build time, so th
 
 ## Releasing
 
-A push to `main` touching the daemon source, manifest, version, or scripts triggers
-`.github/workflows/release.yml`: it runs the gate, stages the daemon as a plugin source dir, and hands
-it to the org-wide `b3-builder` Action, which packs the `.b3`, stamps the publisher, signs the manifest
-and publishes a GitHub release with the `.b3` and its index atom attached.
+A pushed tag matching `daemon-v*` triggers `.github/workflows/release.yml`: it runs the gate, stages
+the daemon as a plugin source dir, and hands it to the org-wide `b3-builder` Action, which packs the
+`.b3`, stamps the publisher, signs the manifest and publishes a GitHub release with the `.b3` and its
+index atom attached. Nothing else publishes: a push to `main` builds no package and offers no update
+to a printer.
+
+The number in the tag must equal `DAEMON_VERSION`, or the run is refused before the build
+(`scripts/tag_version_guard.py`): the package is stamped from `version.py`, so a tag carrying another
+number would publish a package it lies about. Bump the version, land it, then tag that commit:
+
+```sh
+git tag daemon-v0.12.24 && git push origin daemon-v0.12.24
+```
 
 The daemon is plugin zero: same package shape, same signature, same release layout as any
 plugin. The single difference is that the adapter puts it on the printer at enrollment, so it is never

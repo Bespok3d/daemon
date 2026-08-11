@@ -24,8 +24,9 @@ VENV="$REPO_DIR/.venv"
 B3D_TOOLING="${B3D_TOOLING:-$REPO_DIR/lib_bespok3d/tooling}"
 # lib_bespok3d is a submodule. A clone made without it leaves an empty directory here, so say what
 # is actually wrong instead of letting every check below fail on a missing file.
-if [ ! -f "$B3D_TOOLING/em-dash-guard.mjs" ]; then
-    echo "The shared gate helpers are missing: the lib_bespok3d submodule is not checked out." >&2
+if [ ! -f "$B3D_TOOLING/em-dash-guard.mjs" ] || [ ! -f "$B3D_TOOLING/release-trigger-detector.mjs" ]; then
+    echo "The shared gate helpers are missing or older than the checks this gate runs:" >&2
+    echo "the lib_bespok3d submodule is not checked out, or is pinned to an older commit." >&2
     echo "Run this once from the repo root, then try again:" >&2
     echo "  git submodule sync --recursive && git submodule update --init --recursive" >&2
     echo "See CONTRIBUTING.md for the full environment setup." >&2
@@ -80,6 +81,7 @@ echo "Daemon gate (Python $("$VENV/bin/python" --version 2>&1 | awk '{print $2}'
 run_check "em-dash / en-dash ban" node "$B3D_TOOLING/em-dash-guard.mjs" "$REPO_DIR" \
     --name S99bespok3d --name s10bespok3d-daemon
 run_check "workflow pinning"      node "$B3D_TOOLING/workflow-pinning-detector.mjs" "$REPO_DIR"
+run_check "release trigger"       node "$B3D_TOOLING/release-trigger-detector.mjs" "$REPO_DIR"
 run_check "cross-file private imports" "$VENV/bin/python" scripts/private_import_guard.py
 run_check "generic-daemon boundary" "$VENV/bin/python" scripts/generic_daemon_guard.py
 run_check "size ratchet" "$VENV/bin/python" scripts/size_ratchet.py
