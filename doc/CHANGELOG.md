@@ -2,6 +2,16 @@
 
 ## 0.12.24
 
+The daemon and the jinni have to be a matched pair, and the daemon now checks before it installs or
+changes a plugin rather than finding out afterwards. It refuses with which of the two is too old, the
+version it needs and the version it found, so the app can say what to update instead of just saying
+no. A version it cannot read is not treated as too old.
+
+When a plugin stops the printer coming back up, the daemon switches plugins off until it does. It
+could switch off itself or the jinni in the process, which left the printer running but no longer
+reachable by Bespok3d, and nothing on the printer able to put the daemon back. Both are now left
+alone.
+
 A daemon is published by a `daemon-v*` tag now, and by nothing else. Until now any push to main that
 touched the daemon source built a package and registered it in the org index, which offered every
 enrolled printer a daemon built from whatever main happened to hold at that moment, work in progress
