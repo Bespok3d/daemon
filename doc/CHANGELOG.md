@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.12.25
+
+Putting the plugins back after a firmware update no longer switches off a plugin whose files another
+plugin had edited on the printer. A plugin that writes into another one's web interface leaves that
+file different from what the package it came in recorded, and that was read as a broken plugin and
+switched off. The plugin is now put back and left running, and the files that differ are reported, so
+the app can offer to install it fresh instead of the user finding it gone. Installing and updating
+still refuse a package whose files do not match what was signed: there the difference means the
+package itself is wrong.
+
+Putting the plugins back also says where it is now. It reports its list and each plugin as it
+finishes on the same feed an install reports on, so the wait shows plugins going past instead of
+nothing.
+
+The daemon's start-up script checks that a process really is the daemon before it signals it. The
+file holding the daemon's process number survives a reboot, and after one that number belongs to
+whatever the printer started next.
+
 ## 0.12.24
 
 The daemon and the jinni have to be a matched pair, and the daemon now checks before it installs or
