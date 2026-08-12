@@ -23,9 +23,9 @@ from .archive import discard_extraction, fix_ownership, unpack_package
 from .deactivation import finalize_install_outcome
 from .dependencies import installed_conflicts, unsatisfied_requirements
 from .errors import ConflictError, RequirementError
-from .integrity import CHECKSUM_MISMATCH, IntegrityError, verify_files
+from .file_drift import refuse_changed_package
+from .integrity import IntegrityError
 from .kmodules import generate_module_loaders, load_modules
-from .members import installed_files, rendered_over
 from .pair_guard import guard_compatible_pair
 from .patches import apply_patches
 from .placement import apply_modes, create_dirs, create_symlinks
@@ -62,10 +62,6 @@ def apply_install_deferred(
     and update_batch (silent, restart batched)."""
     raw_inst = manifest.get("install", {})
     inst = normalize_install(raw_inst, jinni_client.variant_facts())
-    verifiable = installed_files(manifest.get("files", []), rendered_over(inst["templates"]))
-    mismatched = verify_files(plugin_dir, verifiable)
-    if mismatched:
-        raise IntegrityError(manifest["name"], CHECKSUM_MISMATCH, mismatched)
     phases = [
         _emit(apply_modes(plugin_dir, manifest.get("files", [])), notify),
         _emit(create_dirs(inst["dirs"], vars), notify),
@@ -141,6 +137,7 @@ def run_install(
     persist_user_vars(plugin_dir, user_vars or {})
     full_vars = with_plugin_venv(vars, plugin_id)
     try:
+        refuse_changed_package(plugin_dir, manifest)
         log.extend(_install_apply_phases(plugin_root, plugin_dir, manifest, full_vars, notify))
     except IntegrityError as tampered_package:
         _refuse(plugin_dir, tampered_package)

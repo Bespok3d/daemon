@@ -62,6 +62,7 @@ class PluginRecoveryResult(BaseModel):
         description="Plugin(s) the auto-fixer deactivated to bring Klipper/Moonraker back",
     )
     fix_detail: str = Field(default="", description="The log signal that attributed the failure")
+    changed_files: list[str] = Field(default_factory=list, description="The plugin's own files another plugin changed on the printer; recovery reports them and carries on")  # noqa: E501
 
 
 class PackResultsResponse(BaseModel):

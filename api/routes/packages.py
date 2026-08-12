@@ -17,6 +17,7 @@ from ..schemas import (
     PackResultsResponse,
     PluginRecoveryResult,
 )
+from .feeds import install_hub
 from .refusals import refusal_detail
 
 router = APIRouter()
@@ -28,11 +29,29 @@ router = APIRouter()
     summary="Re-apply all installed plugins after OTA firmware update",
 )
 async def recover_packages() -> PackResultsResponse:
+    install_hub.bind_loop(asyncio.get_running_loop())
+    install_hub.begin()
+    try:
+        results = await _recover_or_refuse()
+    except HTTPException:
+        install_hub.publish({"type": "done", "ok": False})
+        raise
+    ok = all(item["ok"] or item.get("skipped", False) for item in results)
+    install_hub.publish({"type": "done", "ok": ok})
+
+    return PackResultsResponse(
+        ok=ok,
+        results=[PluginRecoveryResult(**item) for item in results],
+    )
+
+
+async def _recover_or_refuse() -> list[dict]:
+    """Re-apply everything installed, reporting a refusal as its own status rather than a 500."""
     try:
         # Off the event loop: recover re-applies every plugin over many blocking socket calls and
         # can run for tens of seconds; on the loop it would starve the live feeds (the
         # /ws/print-state relay), tear their async generators down mid-await, and wedge the jinni.
-        results = await asyncio.to_thread(packages.recover, jinni_client.paths())
+        return await asyncio.to_thread(packages.recover, jinni_client.paths(), install_hub.publish)
     except packages.BlockedActionError as exc:
         raise HTTPException(status_code=409, detail={"error": "blocked", "blocked_actions": exc.blocked}) from exc  # noqa: E501
     except ValueError as exc:
@@ -41,10 +60,6 @@ async def recover_packages() -> PackResultsResponse:
         # Defense in depth: recover_one already isolates per-plugin failures, so reaching here is a
         # top-level fault (the closing restart could not reach the jinni). Report, never a 500.
         raise HTTPException(status_code=422, detail=f"{type(exc).__name__}: {exc}") from exc
-    return PackResultsResponse(
-        ok=all(item["ok"] or item.get("skipped", False) for item in results),
-        results=[PluginRecoveryResult(**item) for item in results],
-    )
 
 
 class UninstallBatchBody(BaseModel):

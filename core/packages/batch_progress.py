@@ -23,6 +23,11 @@ class BatchProgress:
     def __init__(self, publish: ProgressSink) -> None:
         self._publish = publish
 
+    def plan(self, plugin_ids: list[str]) -> None:
+        """The ordered set the run will work through. A batch's plan is decided by the app, so only
+        recovery (which decides its own set, from what is on the printer) announces one."""
+        self._publish({"type": "plan", "ids": plugin_ids})
+
     def plugin(self, plugin_id: str, index: int, total: int) -> None:
         self._publish({"type": "plugin", "plugin_id": plugin_id, "index": index, "total": total})
 

@@ -4,14 +4,18 @@
 
 The cluster the orchestrator wires when a deferred core-service restart runs: `evidence` gathers the
 post-restart state, `restart` drives the core.safety brain to verify it and auto-deactivate the
-culprit, and `reapply` re-applies every installed plugin after an OTA wipe.
+culprit, `reapply` re-applies one plugin after an OTA wipe, and `run` walks the whole installed set
+in dependency order.
 """
-from .reapply import recover_one
+from .reapply import ServiceLedger, recover_one
 from .restart import op_context, restart_phases, restart_services
+from .run import run_recovery
 
 __all__ = [
     "op_context",
+    "ServiceLedger",
     "recover_one",
+    "run_recovery",
     "restart_phases",
     "restart_services",
 ]

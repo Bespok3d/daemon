@@ -19,11 +19,29 @@ from .batch_progress import BatchProgress
 from .batch_rows import failed_result, install_error, settle_after_safety_net
 from .deactivation import deactivate_plugin, finalize_install_outcome
 from .dependencies import provided_services
+from .file_drift import refuse_changed_package
 from .installer import PhaseListener, apply_install_deferred
 from .integrity import IntegrityError
 from .left_out import services_already_on_the_printer, skipped_result, why_not_applied
 from .recovery import restart_services
 from .user_vars import persist_user_vars, with_plugin_venv
+
+
+def _unpacked_for_apply(
+    plugin_root: Path,
+    base_vars: dict[str, str],
+    package_path: Path,
+    user_vars: dict[str, str],
+    notify: PhaseListener,
+) -> tuple[dict, Path, dict[str, str], dict]:
+    """Put one package's files on disk, save the config the user typed with them, and announce the
+    extract phase: everything the apply below needs before it runs a single install phase."""
+    manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
+    full_vars = with_plugin_venv({**base_vars, **user_vars}, manifest["name"])
+    persist_user_vars(plugin_dir, user_vars)
+    extract = phase("extract", "Unpack", [item(f"Extracted {file_count} files", ok=True)])
+    notify(extract)
+    return manifest, plugin_dir, full_vars, extract
 
 
 def _apply_one(
@@ -36,13 +54,12 @@ def _apply_one(
     """Apply one package's install, deferring its restart. A failure is contained to this plugin
     (recover_one's pattern): a raised or failed-phase apply deactivates it and returns a failed
     result, so the rest of the batch still completes."""
-    manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
+    manifest, plugin_dir, full_vars, extract = _unpacked_for_apply(
+        plugin_root, base_vars, package_path, user_vars, notify,
+    )
     plugin_id = manifest["name"]
-    full_vars = with_plugin_venv({**base_vars, **user_vars}, plugin_id)
-    persist_user_vars(plugin_dir, user_vars)
-    extract = phase("extract", "Unpack", [item(f"Extracted {file_count} files", ok=True)])
-    notify(extract)
     try:
+        refuse_changed_package(plugin_dir, manifest)
         phases, deferred = apply_install_deferred(
             plugin_root, plugin_dir, manifest, full_vars, notify,
         )

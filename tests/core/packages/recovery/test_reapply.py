@@ -10,6 +10,7 @@ from core import packages
 from core.packages import installer, repair
 from core.packages.deactivation import DEACTIVATED_MARKER
 from core.packages.recovery import reapply
+from core.packages.recovery.reapply import ServiceLedger
 from tests.package_fixtures import files_entries
 
 MP = pytest.MonkeyPatch
@@ -40,7 +41,7 @@ def test_recover_one_skips_when_a_dependency_is_unsatisfied(tmp_path: Path) -> N
     manifest = _installed_plugin(tmp_path, "spoolman", require=[{"service": "rfid"}])
 
     result, deferred = reapply.recover_one(
-        tmp_path / "spoolman", manifest, set(), {"rfid"}, {}
+        tmp_path / "spoolman", manifest, ServiceLedger(set(), {"rfid"}), {}
     )
 
     assert result["skipped"] is True
@@ -58,7 +59,7 @@ def test_recover_one_succeeds_and_clears_a_stale_marker(tmp_path: Path) -> None:
     plugin_dir = tmp_path / "cpu-temp"
     (plugin_dir / reapply.RECOVERY_FAILURE_MARKER).write_text("{}")
 
-    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+    result, deferred = reapply.recover_one(plugin_dir, manifest, ServiceLedger(set(), set()), {})
 
     assert result["ok"] is True
     assert deferred == [klipper_restart]
@@ -75,12 +76,32 @@ def test_recover_one_delegates_to_the_install_spine(tmp_path: Path) -> None:
     )
     plugin_dir = tmp_path / "cpu-temp"
 
-    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+    result, deferred = reapply.recover_one(plugin_dir, manifest, ServiceLedger(set(), set()), {})
 
     assert result["ok"] is True
     assert deferred == [klipper_restart]
     phase_ids = {entry["id"] for entry in result["log"]}
     assert {"modes", "dirs", "ownership"} <= phase_ids
+
+
+def test_recover_one_keeps_a_plugin_whose_files_another_plugin_edited(tmp_path: Path) -> None:
+    # A UI injector rewrites the web front end it is pointed at, and that front end is another
+    # plugin's package directory. Recovery used to call that tampering, refuse and deactivate, which
+    # cost the user a working plugin: the printer keeps no packaged copy to put back. It now reports
+    # the edited files and carries on, and the app offers the reinstall.
+    manifest = _installed_plugin(tmp_path, "fluidd")
+    plugin_dir = tmp_path / "fluidd"
+    front_page = plugin_dir / "files" / "fluidd" / "index.html"
+    front_page.parent.mkdir(parents=True)
+    manifest["files"] = files_entries({"files/fluidd/index.html": "<html>as packed</html>"})
+    front_page.write_text("<html>as packed</html><script src='oe/ui.js'></script>")
+
+    result, deferred = reapply.recover_one(plugin_dir, manifest, ServiceLedger(set(), set()), {})
+
+    assert result["ok"] is True
+    assert result["changed_files"] == ["files/fluidd/index.html"]
+    assert deferred == []
+    assert not (plugin_dir / DEACTIVATED_MARKER).exists()
 
 
 def test_recover_one_isolates_an_unexpected_exception(tmp_path: Path, monkeypatch: MP) -> None:
@@ -95,7 +116,7 @@ def test_recover_one_isolates_an_unexpected_exception(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(installer, "create_symlinks", explode)
 
-    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+    result, deferred = reapply.recover_one(plugin_dir, manifest, ServiceLedger(set(), set()), {})
 
     assert result["ok"] is False
     assert "recover error" in result["reason"]
@@ -120,7 +141,7 @@ def test_recover_one_unwires_a_failed_plugin(tmp_path: Path, monkeypatch: MP) ->
     monkeypatch.setattr(installer, "apply_patches",
                         lambda *_a, **_kw: {"id": "patches", "ok": False, "items": []})
 
-    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+    result, deferred = reapply.recover_one(plugin_dir, manifest, ServiceLedger(set(), set()), {})
 
     assert result["ok"] is False
     assert "install phase failed" in result["reason"]  # it got past the wire, so the wire happened
@@ -136,7 +157,7 @@ def test_recover_one_deactivates_when_a_phase_fails(tmp_path: Path, monkeypatch:
     monkeypatch.setattr(installer, "render_templates",
                         lambda *_a, **_kw: {"id": "templates", "ok": False, "items": []})
 
-    result, deferred = reapply.recover_one(plugin_dir, manifest, set(), set(), {})
+    result, deferred = reapply.recover_one(plugin_dir, manifest, ServiceLedger(set(), set()), {})
 
     assert result["ok"] is False
     assert "install phase failed" in result["reason"]
@@ -165,8 +186,8 @@ def test_recover_one_re_applies_a_rendered_over_file_every_time(tmp_path: Path) 
     })
     vars = {"MOONRAKER_URL": "http://127.0.0.1:7125"}
 
-    first, _ = reapply.recover_one(plugin_dir, manifest, set(), set(), vars)
-    second, _ = reapply.recover_one(plugin_dir, manifest, set(), set(), vars)
+    first, _ = reapply.recover_one(plugin_dir, manifest, ServiceLedger(set(), set()), vars)
+    second, _ = reapply.recover_one(plugin_dir, manifest, ServiceLedger(set(), set()), vars)
 
     assert first["ok"] is True
     assert second["ok"] is True, second["reason"]
@@ -190,6 +211,27 @@ def test_recover_wires_the_printer_config_back_up(tmp_path: Path, monkeypatch: M
     packages.recover({"BESPOK3D": str(tmp_path)})
 
     assert rewired == [True]
+
+
+def test_recover_announces_its_plan_and_every_plugin(tmp_path: Path, monkeypatch: MP) -> None:
+    """The app names the plugin recovery is putting back while it runs, so recovery publishes the
+    same live events a batch install does. Its plan is announced here because recovery, unlike a
+    batch, decides the set and its order itself.
+    """
+    plugin_root = tmp_path / "plugins"
+    _installed_plugin(plugin_root, "spoolman", require=[{"service": "rfid"}])
+    _installed_plugin(plugin_root, "rfid-ntag", provides=[{"service": "rfid"}])
+    monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
+    monkeypatch.setattr(packages, "DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(repair.jinni_client, "restore_bespok3d_includes", lambda: None)
+    published: list[dict] = []
+
+    packages.recover({"BESPOK3D": str(tmp_path)}, published.append)
+
+    started = [event["plugin_id"] for event in published if event["type"] == "plugin"]
+    assert published[0] == {"type": "plan", "ids": ["rfid-ntag", "spoolman"]}
+    assert started == ["rfid-ntag", "spoolman"]
+    assert any(event["type"] == "phase" for event in published)
 
 
 def test_recover_leaves_a_deactivated_printer_unwired(tmp_path: Path, monkeypatch: MP) -> None:

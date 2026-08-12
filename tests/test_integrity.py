@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """verify_files must match a plugin's on-disk files against the sha256 the packer recorded in the
-manifest, and apply_install_deferred must refuse a mismatch before its phase list is even built
+manifest, and an install must refuse a mismatch before a single phase runs
 (tmp_path-based style, no custom fixture, per tests/test_generic_daemon_guard.py)."""
 
 import hashlib
@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from core.packages import installer
+from core.packages.file_drift import changed_files, refuse_changed_package
 from core.packages.integrity import CHECKSUM_MISMATCH, IntegrityError, verify_files
 
 
@@ -54,37 +55,41 @@ def test_a_missing_file_is_flagged(tmp_path: Path) -> None:
     assert verify_files(plugin_dir, manifest_files) == ["sub/b.txt"]
 
 
-def test_apply_install_deferred_refuses_a_corrupted_file_before_any_phase_runs(
-    tmp_path: Path,
-) -> None:
+def test_an_install_refuses_a_corrupted_file(tmp_path: Path) -> None:
     plugin_dir = tmp_path / "plug"
     manifest_files = _write_plugin(plugin_dir)
     (plugin_dir / "a.txt").write_bytes(b"tampered")
     manifest = {"name": "plug", "install": {}, "files": manifest_files}
-    seen: list[dict] = []
 
     with pytest.raises(IntegrityError) as excinfo:
-        installer.apply_install_deferred(tmp_path, plugin_dir, manifest, {}, seen.append)
+        refuse_changed_package(plugin_dir, manifest)
 
     assert excinfo.value.reason == CHECKSUM_MISMATCH
     assert excinfo.value.paths == ["a.txt"]
-    assert seen == []
 
 
-def test_apply_install_deferred_accepts_a_manifest_that_lists_the_doc_tree(
-    tmp_path: Path,
-) -> None:
+def test_the_phase_runner_no_longer_judges_the_files_it_applies(tmp_path: Path) -> None:
+    """Recovery re-applies the tree already on the printer, where another plugin may have edited a
+    file, so the verdict belongs to install and update and never to the shared phase runner."""
+    plugin_dir = tmp_path / "plug"
+    manifest_files = _write_plugin(plugin_dir)
+    (plugin_dir / "a.txt").write_bytes(b"edited by another plugin")
+    manifest = {"name": "plug", "install": {}, "files": manifest_files}
+
+    phases, _ = installer.apply_install_deferred(tmp_path, plugin_dir, manifest, {})
+
+    assert phases
+
+
+def test_a_manifest_that_lists_the_doc_tree_is_not_called_changed(tmp_path: Path) -> None:
     """b3-builder lists doc/ in files[] and unpack_package deletes it, so hashing every listed entry
     would call every doc-carrying package tampered and let no such plugin install at all."""
     plugin_dir = tmp_path / "plug"
     manifest_files = _write_plugin(plugin_dir)
     unwritten_doc = {"path": "doc/guide.md", "sha256": _digest(b"never unpacked"), "mode": "644"}
     manifest = {"name": "plug", "install": {}, "files": [*manifest_files, unwritten_doc]}
-    seen: list[dict] = []
 
-    phases, _ = installer.apply_install_deferred(tmp_path, plugin_dir, manifest, {}, seen.append)
-
-    assert phases
+    assert changed_files(plugin_dir, manifest) == []
 
 
 def _pack_tampered_package(package_path: Path) -> None:

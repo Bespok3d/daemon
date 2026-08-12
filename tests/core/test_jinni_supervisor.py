@@ -8,6 +8,7 @@ attempts rather than looping forever. The real-subprocess end-to-end lives in
 tests/integration/test_jinni_supervisor.py.
 """
 import signal
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,21 @@ from core.jinni_client import supervisor, transport
 @pytest.fixture
 def socket_path(tmp_path: Path) -> str:
     return str(tmp_path / "jinni.sock")
+
+
+@pytest.fixture
+def process_table(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Stands in for /proc, so a test can say what the pidfile's number is running right now."""
+    root = tmp_path / "proc"
+    root.mkdir()
+    monkeypatch.setattr(supervisor, "_PROC_ROOT", root)
+    return root
+
+
+def record_running(process_table: Path, pid: int, arguments: list[str]) -> None:
+    entry = process_table / str(pid)
+    entry.mkdir()
+    (entry / "cmdline").write_bytes("\0".join([*arguments, ""]).encode())
 
 
 @pytest.fixture(autouse=True)
@@ -39,11 +55,12 @@ def test_a_missing_or_garbage_pidfile_reads_as_none(socket_path: str) -> None:
 
 
 def test_recycle_orphan_kills_the_recorded_pid_and_clears_the_files(
-    monkeypatch: pytest.MonkeyPatch, socket_path: str,
+    monkeypatch: pytest.MonkeyPatch, socket_path: str, process_table: Path,
 ) -> None:
     killed: list[tuple[int, int]] = []
     monkeypatch.setattr(supervisor.os, "kill", lambda pid, sig: killed.append((pid, sig)))
     supervisor._write_pidfile(socket_path, 777)
+    record_running(process_table, 777, [sys.executable, "-m", "jinni", socket_path])
     Path(socket_path).write_text("")
 
     supervisor._recycle_orphan(socket_path)
@@ -51,6 +68,49 @@ def test_recycle_orphan_kills_the_recorded_pid_and_clears_the_files(
     assert killed == [(777, signal.SIGKILL)]
     assert supervisor._read_pidfile(socket_path) is None
     assert not Path(socket_path).exists()
+
+
+def test_recycle_orphan_spares_the_process_a_reboot_gave_that_number_to(
+    monkeypatch: pytest.MonkeyPatch, socket_path: str, process_table: Path,
+) -> None:
+    """The pidfile survives a reboot; the jinni does not. What answers to its number afterwards is a
+    stranger, and the enrollment step that watches the daemon start is one of the candidates."""
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor.os, "kill", lambda pid, sig: killed.append(pid))
+    supervisor._write_pidfile(socket_path, 777)
+    record_running(process_table, 777, ["sh", "-c", "sleep 5 && kill -0 $(cat daemon.pid)"])
+
+    supervisor._recycle_orphan(socket_path)
+
+    assert killed == []
+    assert supervisor._read_pidfile(socket_path) is None
+
+
+def test_recycle_orphan_spares_a_jinni_serving_a_different_socket(
+    monkeypatch: pytest.MonkeyPatch, socket_path: str, process_table: Path,
+) -> None:
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor.os, "kill", lambda pid, sig: killed.append(pid))
+    supervisor._write_pidfile(socket_path, 777)
+    another_socket = "/somewhere/else/jinni.sock"
+    record_running(process_table, 777, [sys.executable, "-m", "jinni", another_socket])
+
+    supervisor._recycle_orphan(socket_path)
+
+    assert killed == []
+
+
+def test_recycle_orphan_spares_a_number_no_process_answers_to(
+    monkeypatch: pytest.MonkeyPatch, socket_path: str, process_table: Path,
+) -> None:
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor.os, "kill", lambda pid, sig: killed.append(pid))
+    supervisor._write_pidfile(socket_path, 777)
+
+    supervisor._recycle_orphan(socket_path)
+
+    assert killed == []
+    assert supervisor._read_pidfile(socket_path) is None
 
 
 def test_recycle_orphan_is_a_noop_without_a_pidfile(

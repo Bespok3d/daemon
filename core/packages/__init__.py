@@ -5,9 +5,8 @@
 Re-exports the public package API the routes import and owns the plugin root, injecting it into the
 worker modules. Install and reconfigure live in `installer.py`; the batched-apply engine in
 `batch.py` drives the batched update (`updater.py`) and the batched install (`installer_batch.py`);
-the uninstall family in `uninstaller.py`, and the deactivate/teardown lifecycle in `lifecycle.py`;
-recover still lives here pending its own decision (it currently stays as facade wiring, like the
-recover() precedent).
+the uninstall family in `uninstaller.py`, the deactivate/teardown lifecycle in `lifecycle.py`, and
+the post-OTA re-apply in `recovery/run.py`.
 
 A .b3 package is a zip of manifest.json plus the plugin file tree. Signature verification is
 deferred until packages are signed.
@@ -16,11 +15,13 @@ deferred until packages are signed.
 from pathlib import Path
 
 from ..data_root import DATA_ROOT
-from ..safety import OperationContext, OperationKind
 from .batch_progress import ProgressSink  # noqa: F401  re-export for api.routes
 from .batch_uninstaller import run_uninstall_batch
-from .deactivation import DEACTIVATED_MARKER
-from .dependencies import provided_services, topo_sort
+from .deactivation import DEACTIVATED_MARKER  # noqa: F401  re-export for api.routes
+from .dependencies import (  # noqa: F401  re-export for api.routes
+    provided_services,
+    topo_sort,
+)
 from .errors import (
     BlockedActionError,  # noqa: F401  re-export for api.routes
     ConflictError,  # noqa: F401  re-export for api.routes
@@ -39,12 +40,15 @@ from .lifecycle import (  # noqa: F401  re-export for api.routes
     deactivate_all,
     teardown,
 )
-from .manifest import manifest_at
+from .manifest import manifest_at  # noqa: F401  re-export for api.routes
 from .plugin_dir import contained_plugin_dir  # noqa: F401  re-export for api.routes
-from .print_guard import guard_no_print
+from .print_guard import guard_no_print  # noqa: F401  re-export for api.routes
 from .reconfigurer import run_reconfigure
-from .recovery import recover_one, restart_services
-from .repair import restore_printer_state
+from .recovery import (  # noqa: F401  re-export for api.routes
+    recover_one,
+    restart_services,
+    run_recovery,
+)
 from .uninstaller import run_uninstall
 from .updater import run_update_batch
 from .user_vars import (
@@ -87,39 +91,8 @@ def install_batch(
     return run_install_batch(PLUGIN_ROOT, base_vars, package_paths, vars_by_id, publish)
 
 
-def recover(vars: dict[str, str]) -> list[dict]:
-    """Make the printer sound, then re-apply all installed, non-deactivated plugins (after an OTA,
-    or after anything else left the printer half done). Every problem `selfcheck` reports is one
-    this clears. Returns per-plugin results."""
-    guard_no_print()
-    restore_printer_state(DATA_ROOT, PLUGIN_ROOT, vars)
-    if not PLUGIN_ROOT.exists():
-        return []
-    plugin_dirs = [
-        plugin_dir for plugin_dir in PLUGIN_ROOT.iterdir()
-        if plugin_dir.is_dir()
-        and (plugin_dir / "manifest.json").exists()
-        and not (plugin_dir / DEACTIVATED_MARKER).exists()
-    ]
-    if not plugin_dirs:
-        return []
-    ordered = topo_sort(plugin_dirs)
-    manifests = {plugin_dir: manifest_at(plugin_dir) for plugin_dir in ordered}
-    all_provided: set[str] = set()
-    for manifest in manifests.values():
-        all_provided.update(provided_services(manifest))
-    satisfied: set[str] = set()
-    results: list[dict] = []
-    deferred_restarts: list[str] = []
-    for plugin_dir in ordered:
-        result, deferred = recover_one(plugin_dir, manifests[plugin_dir], satisfied, all_provided, vars)  # noqa: E501
-        results.append(result)
-        if result["ok"]:
-            deferred_restarts.extend(deferred)
-    unique_restarts = list(dict.fromkeys(deferred_restarts))
-    if unique_restarts:
-        results.append(restart_services(PLUGIN_ROOT, unique_restarts, vars, OperationContext(OperationKind.RECOVER)))  # noqa: E501
-    return results
+def recover(vars: dict[str, str], publish: ProgressSink | None = None) -> list[dict]:
+    return run_recovery(DATA_ROOT, PLUGIN_ROOT, vars, publish)
 
 
 def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> list[str]:

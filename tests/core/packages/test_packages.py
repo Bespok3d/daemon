@@ -1941,15 +1941,12 @@ def test_install_batch_leaves_nothing_behind_when_a_package_fails_its_checksums(
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     camera = make_package_file(tmp_path, "camera")
     tampered = make_package_file(tmp_path, "rfid-ntag")
-    real_apply = batch.apply_install_deferred
 
-    def refuse_the_tampered_one(plugin_root_arg: Path, plugin_dir: Path, manifest: dict,
-                                vars: dict[str, str], notify: object) -> tuple[list[dict], list[str]]:  # noqa: E501
+    def refuse_the_tampered_one(plugin_dir: Path, manifest: dict) -> None:
         if plugin_dir.name == "rfid-ntag":
             raise IntegrityError("rfid-ntag", CHECKSUM_MISMATCH, ["rfid.py"])
-        return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(batch, "apply_install_deferred", refuse_the_tampered_one)
+    monkeypatch.setattr(batch, "refuse_changed_package", refuse_the_tampered_one)
 
     rows = rows_by_plugin(packages.install_batch({}, [camera, tampered], {}))
 

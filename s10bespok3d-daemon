@@ -6,6 +6,18 @@ PID_FILE=/userdata/bespok3d/run/bespok3d-daemon.pid
 LOG_FILE=/userdata/bespok3d/var/log/daemon.log
 PYTHON=/userdata/bespok3d/venv/bin/python3
 PORT=4269
+PROC_ROOT=${PROC_ROOT:-/proc}
+
+# The pidfile lives under /userdata and outlives a reboot, after which its number belongs to whatever
+# process the kernel handed it to next. Signal it only while its command line is still our daemon.
+kill_if_our_daemon() {
+  pid="$1"
+  [ -n "$pid" ] || return 0
+  case "$(tr '\0' ' ' < "$PROC_ROOT/$pid/cmdline" 2>/dev/null)" in
+    *daemon.py*) kill "$pid" 2>/dev/null ;;
+  esac
+  return 0
+}
 
 free_port() {
   pids=$(ps w 2>/dev/null | grep '[d]aemon\.py' | awk '{print $1}')
@@ -24,8 +36,7 @@ rotate_log() {
 
 case "$1" in
   start)
-    pid=$(cat "$PID_FILE" 2>/dev/null)
-    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    kill_if_our_daemon "$(cat "$PID_FILE" 2>/dev/null)"
     free_port
     rotate_log
     sleep 1
@@ -35,8 +46,7 @@ case "$1" in
     echo $! > "$PID_FILE"
     ;;
   stop)
-    pid=$(cat "$PID_FILE" 2>/dev/null)
-    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    kill_if_our_daemon "$(cat "$PID_FILE" 2>/dev/null)"
     free_port
     rm -f "$PID_FILE"
     ;;

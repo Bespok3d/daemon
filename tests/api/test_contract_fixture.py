@@ -63,6 +63,7 @@ def _sample_recovery() -> PluginRecoveryResult:
         "log": _sample_phases(),
         "auto_deactivated": None,
         "fix_detail": "",
+        "changed_files": ["files/fluidd/index.html"],
     })
 
 

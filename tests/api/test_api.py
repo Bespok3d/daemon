@@ -67,7 +67,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.24"
+    assert body["version"] == "0.12.25"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -381,12 +381,23 @@ async def test_install_route_returns_400_on_bad_vars(
 async def test_recover_route_returns_ok(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    given_progress_sinks: list[packages.ProgressSink | None] = []
+
+    def recover_without_plugins(
+        _vars: dict[str, str], publish_progress: packages.ProgressSink | None = None
+    ) -> list[dict]:
+        given_progress_sinks.append(publish_progress)
+
+        return []
+
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
-    monkeypatch.setattr(packages, "recover", lambda _vars: [])
+    monkeypatch.setattr(packages, "recover", recover_without_plugins)
     response = await client.post("/packages/recover")
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert response.json()["results"] == []
+    # Recovery reports each plugin as it goes, so the route must hand it the live progress feed.
+    assert given_progress_sinks == [routes_feeds.install_hub.publish]
 
 
 async def test_recover_route_reports_a_top_level_fault_as_422_not_500(
@@ -394,7 +405,9 @@ async def test_recover_route_reports_a_top_level_fault_as_422_not_500(
 ) -> None:
     # A top-level recover fault (e.g. the closing restart cannot reach the jinni) must surface as a
     # reported error, never a contentless 500 (printer-never-broken: act or report).
-    def boom(_vars: dict[str, str]) -> list:
+    def boom(
+        _vars: dict[str, str], _publish_progress: packages.ProgressSink | None = None
+    ) -> list:
         raise RuntimeError("no reply from the jinni for 'write_files'")
 
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)

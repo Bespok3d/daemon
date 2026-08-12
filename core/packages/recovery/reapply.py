@@ -7,10 +7,16 @@ if a dependency is unsatisfied or a required variable is missing, else re-apply 
 the shared install spine (`installer.apply_install_deferred`, the same pipeline a fresh install and
 a batched update run) so recovery cannot drift from install, deferring core-service restarts. A
 plugin whose re-apply fails is deactivated and its failure recorded, so the printer stays usable.
+
+A file another plugin edited at runtime is reported in the result and does NOT stop the re-apply:
+the tree on the printer is the only copy there is, so refusing it would cost the user a working
+plugin and restore nothing. The app offers the reinstall that puts the plugin's own files back.
 """
 
 import json
 import shutil
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from ...safety import OperationKind
@@ -21,11 +27,30 @@ from ..deactivation import (
     load_failure_reason,
 )
 from ..dependencies import provided_services, required_services
+from ..file_drift import changed_files
 from ..user_vars import load_user_vars, missing_required_vars, with_plugin_venv
 
+# Same shape as installer.PhaseListener, declared here because importing installer at module top
+# would hit it half-loaded (it imports this package).
+PhaseAnnouncer = Callable[[dict], None]
 
-def _apply_plugin(plugin_dir: Path, manifest: dict,
-                  full_vars: dict[str, str]) -> tuple[list[dict], list[str]]:
+
+def announce_nothing(_finished_phase: dict) -> None:
+    return None
+
+
+@dataclass
+class ServiceLedger:
+    """What recovery knows about services while it walks the plugins in dependency order: which are
+    back up already, and which any installed plugin provides at all. A requirement no installed
+    plugin provides belongs to nothing on this printer, so it never holds a re-apply back."""
+
+    satisfied: set[str]
+    provided_by_installed: set[str]
+
+
+def _apply_plugin(plugin_dir: Path, manifest: dict, full_vars: dict[str, str],
+                  announce_phase: PhaseAnnouncer) -> tuple[list[dict], list[str]]:
     # Function-local: installer imports the recovery package at module load, so importing
     # apply_install_deferred at module top would hit a partially-initialized installer and raise.
     from ..installer import apply_install_deferred
@@ -33,24 +58,27 @@ def _apply_plugin(plugin_dir: Path, manifest: dict,
     patches_orig = plugin_dir / "patches_orig"
     if patches_orig.exists():
         shutil.rmtree(patches_orig)
-    return apply_install_deferred(plugin_dir.parent, plugin_dir, manifest, full_vars)
+    return apply_install_deferred(
+        plugin_dir.parent, plugin_dir, manifest, full_vars, announce_phase,
+    )
 
 
 def recover_one(
     plugin_dir: Path,
     manifest: dict,
-    satisfied: set[str],
-    all_provided: set[str],
+    services: ServiceLedger,
     vars: dict[str, str],
+    announce_phase: PhaseAnnouncer = announce_nothing,
 ) -> tuple[dict, list[str]]:
     plugin_id = plugin_dir.name
     full_vars = with_plugin_venv({**vars, **load_user_vars(plugin_dir)}, plugin_id)
-    precondition = _precondition_skip(plugin_id, manifest, full_vars, satisfied, all_provided)
+    precondition = _precondition_skip(plugin_id, manifest, full_vars, services)
     if precondition is not None:
         return precondition
 
+    edited = changed_files(plugin_dir, manifest)
     try:
-        phase_log, deferred = _apply_plugin(plugin_dir, manifest, full_vars)
+        phase_log, deferred = _apply_plugin(plugin_dir, manifest, full_vars, announce_phase)
     except Exception as exc:  # noqa: BLE001 - one plugin's recover error must NOT abort the rest
         # printer-never-broken: deactivate just this plugin and report the real error in its result,
         # so recover completes for the others and the app shows what failed (not a bare 500).
@@ -60,20 +88,21 @@ def recover_one(
         reason = load_failure_reason(phase_log, OperationKind.RECOVER, plugin_id, "install phase failed")  # noqa: E501
         return _record_failure(plugin_dir, vars, reason, {"phases": phase_log}, phase_log), []
 
-    satisfied.update(provided_services(manifest))
+    services.satisfied.update(provided_services(manifest))
     clear_failure_markers(plugin_dir)
-    recovered = {"plugin_id": plugin_id, "ok": True, "skipped": False, "reason": "", "log": phase_log}  # noqa: E501
+    recovered = {"plugin_id": plugin_id, "ok": True, "skipped": False, "reason": "",
+                 "log": phase_log, "changed_files": edited}
     return recovered, deferred
 
 
 def _precondition_skip(
-    plugin_id: str, manifest: dict, full_vars: dict[str, str],
-    satisfied: set[str], all_provided: set[str],
+    plugin_id: str, manifest: dict, full_vars: dict[str, str], services: ServiceLedger,
 ) -> tuple[dict, list[str]] | None:
     """A skip (a dependency another recovered plugin should provide is not satisfied) or a fail (a
     required variable is missing), or None to proceed with the re-apply."""
     missing_deps = [service for service in required_services(manifest)
-                    if service in all_provided and service not in satisfied]
+                    if service in services.provided_by_installed
+                    and service not in services.satisfied]
     if missing_deps:
         reason = f"dependency not satisfied: {', '.join(missing_deps)}"
         return {"plugin_id": plugin_id, "ok": False, "skipped": True, "reason": reason, "log": []}, []  # noqa: E501

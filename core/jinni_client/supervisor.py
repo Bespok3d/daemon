@@ -22,6 +22,7 @@ import protocol
 from . import transport
 
 _DAEMON_ROOT = Path(__file__).resolve().parents[2]
+_PROC_ROOT = Path("/proc")
 _HANDSHAKE_TIMEOUT_S = 10.0
 _HANDSHAKE_POLL_S = 0.1
 _STOP_TIMEOUT_S = 5.0
@@ -94,9 +95,21 @@ def _handshake_ok(socket_path: str) -> bool:
 
 def _recycle_orphan(socket_path: str) -> None:
     pid = _read_pidfile(socket_path)
-    if pid is not None:
+    if pid is not None and _pid_is_our_jinni(pid, socket_path):
         _kill_pid(pid)
     _clear_runtime_files(socket_path)
+
+
+def _pid_is_our_jinni(pid: int, socket_path: str) -> bool:
+    """The pidfile lives on storage that outlives a reboot, and after one its number belongs to
+    whatever the kernel handed it to next, so a recorded number on its own proves nothing. Kill it
+    only while its command line is still the jinni serving this socket."""
+    try:
+        command_line = (_PROC_ROOT / str(pid) / "cmdline").read_bytes()
+    except OSError:
+        return False
+    arguments = command_line.decode("utf-8", "replace").split("\0")
+    return "jinni" in arguments and socket_path in arguments
 
 
 def _kill_child(process: subprocess.Popen[bytes]) -> None:
