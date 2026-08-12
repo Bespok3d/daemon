@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.25
+## 0.12.24
 
 Putting the plugins back after a firmware update no longer switches off a plugin whose files another
 plugin had edited on the printer. A plugin that writes into another one's web interface leaves that
@@ -17,8 +17,6 @@ nothing.
 The daemon's start-up script checks that a process really is the daemon before it signals it. The
 file holding the daemon's process number survives a reboot, and after one that number belongs to
 whatever the printer started next.
-
-## 0.12.24
 
 The daemon and the jinni have to be a matched pair, and the daemon now checks before it installs or
 changes a plugin rather than finding out afterwards. It refuses with which of the two is too old, the
