@@ -67,7 +67,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.24"
+    assert body["version"] == "0.12.25"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -378,6 +378,79 @@ async def test_install_route_returns_400_on_bad_vars(
     assert "allows only" in response.json()["detail"]
 
 
+async def test_install_route_takes_a_number_or_a_toggle_as_a_setting(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A manifest declares a field's type, and a `number` field's 5 or a `toggle` field's true is
+    how JSON writes what those types mean, so the app sends them unquoted. The printer takes them
+    and writes them into the plugin's config as text."""
+    settings_installed: dict[str, str] = {}
+
+    def record_user_vars(
+        _path: Path, _all_vars: dict[str, str], user_vars: dict[str, str] | None = None,
+        on_phase: object = None,
+    ) -> tuple[str, list]:
+        settings_installed.update(user_vars or {})
+        return "filaman", []
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "install", record_user_vars)
+    response = await client.post(
+        "/plugins/install",
+        files={"file": ("filaman.b3", _minimal_b3(), "application/octet-stream")},
+        data={"vars_json": json.dumps(
+            {"SYNC_RATE": 5, "DEFAULT_DENSITY": 1.24, "REPUSH_ON_STARTUP": True}
+        )},
+    )
+    assert response.status_code == 200
+    assert settings_installed == {
+        "SYNC_RATE": "5", "DEFAULT_DENSITY": "1.24", "REPUSH_ON_STARTUP": "true",
+    }
+
+
+async def test_reconfigure_route_takes_a_number_as_a_setting(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings_written: dict[str, str] = {}
+
+    def record_user_vars(
+        plugin_id: str, _all_vars: dict[str, str], user_vars: dict[str, str]
+    ) -> tuple[str, list]:
+        settings_written.update(user_vars)
+        return plugin_id, []
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "reconfigure", record_user_vars)
+    response = await client.post("/plugins/filaman/reconfigure", json={"SYNC_RATE": 5})
+    assert response.status_code == 200
+    assert settings_written == {"SYNC_RATE": "5"}
+
+
+async def test_reconfigure_route_still_takes_a_quoted_setting(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every plugin shipping today writes its settings quoted, so the quoted value has to reach the
+    plugin exactly as it was sent, unchanged by the rendering that lets an unquoted one through."""
+    settings_written: dict[str, str] = {}
+
+    def record_user_vars(
+        plugin_id: str, _all_vars: dict[str, str], user_vars: dict[str, str]
+    ) -> tuple[str, list]:
+        settings_written.update(user_vars)
+        return plugin_id, []
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "reconfigure", record_user_vars)
+    response = await client.post(
+        "/plugins/spoolman/reconfigure",
+        json={"SPOOLMAN_SERVER": "printer.local:7912", "SYNC_RATE": "5", "REPUSH": "true"},
+    )
+    assert response.status_code == 200
+    assert settings_written == {
+        "SPOOLMAN_SERVER": "printer.local:7912", "SYNC_RATE": "5", "REPUSH": "true",
+    }
+
+
 async def test_recover_route_returns_ok(
     client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -472,6 +545,29 @@ async def test_update_batch_route_settles_a_bad_setting_per_plugin(
     assert response.status_code == 200
     assert staged == ["alpha.b3"]
     assert response.json()["results"][0]["skipped"] is True
+
+
+async def test_update_batch_route_takes_a_number_as_a_setting(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings_by_plugin: dict[str, dict[str, str]] = {}
+
+    def record_vars_by_id(
+        _vars: dict[str, str], _paths: list[Path], vars_by_id: dict[str, dict[str, str]],
+        _publish: object = None,
+    ) -> list[dict]:
+        settings_by_plugin.update(vars_by_id)
+        return [{"plugin_id": "alpha", "ok": True, "skipped": False, "reason": "", "log": []}]
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "update_batch", record_vars_by_id)
+    response = await client.post(
+        "/packages/update-batch",
+        files=[("files", ("alpha.b3", _minimal_b3(), "application/octet-stream"))],
+        data={"vars_json": json.dumps({"alpha": {"SYNC_RATE": 5, "REPUSH_ON_STARTUP": False}})},
+    )
+    assert response.status_code == 200
+    assert settings_by_plugin == {"alpha": {"SYNC_RATE": "5", "REPUSH_ON_STARTUP": "false"}}
 
 
 async def test_install_batch_route_returns_per_plugin_results(

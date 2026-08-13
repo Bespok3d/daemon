@@ -60,7 +60,7 @@ async def install_plugin(
     file: UploadFile,
     vars_json: str = Form(""),
 ) -> InstallResponse:
-    user_vars: dict[str, str] = json.loads(vars_json) if vars_json else {}
+    user_vars = packages.user_vars_as_text(json.loads(vars_json) if vars_json else {})
     all_vars = {**jinni_client.paths(), **user_vars}
     tmp = tempfile.NamedTemporaryFile(suffix=".b3", delete=False)
     tmp_path = Path(tmp.name)
@@ -90,7 +90,8 @@ async def install_plugin(
     response_model=ReconfigureResponse,
     summary="Re-render one plugin's config from new values and restart it",
 )
-async def reconfigure_plugin(plugin_id: str, user_vars: dict[str, str]) -> ReconfigureResponse:
+async def reconfigure_plugin(plugin_id: str, supplied_vars: dict[str, object]) -> ReconfigureResponse:  # noqa: E501
+    user_vars = packages.user_vars_as_text(supplied_vars)
     all_vars = {**jinni_client.paths(), **user_vars}
     try:
         packages.validate_user_vars(user_vars)

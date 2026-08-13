@@ -48,7 +48,11 @@ async def _serve_batch(files: list[UploadFile], vars_json: str, runner: BatchRun
     blocking apply off the loop, then always close the hub and clean the temp files. A batch is only
     refused as a whole when it must not run at all, which is a print in progress; anything else is
     the runner's own HTTPException."""
-    vars_by_id: dict[str, dict[str, str]] = json.loads(vars_json) if vars_json else {}
+    supplied_by_id: dict[str, dict[str, object]] = json.loads(vars_json) if vars_json else {}
+    vars_by_id = {
+        plugin_id: packages.user_vars_as_text(supplied)
+        for plugin_id, supplied in supplied_by_id.items()
+    }
     staging = Path(tempfile.mkdtemp(prefix="b3-batch-"))
     install_hub.bind_loop(asyncio.get_running_loop())
     install_hub.begin()

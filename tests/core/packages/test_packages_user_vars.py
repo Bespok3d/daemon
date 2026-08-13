@@ -23,6 +23,24 @@ def test_validate_user_vars_accepts_valid_and_rejects_metacharacters() -> None:
         user_vars.validate_user_vars({"KEY": "value; rm -rf /"})
 
 
+def test_user_vars_as_text_renders_a_number_and_a_toggle() -> None:
+    rendered = user_vars.user_vars_as_text(
+        {"SYNC_RATE": 5, "DENSITY": 1.24, "REPUSH": True, "CLEAR_ON_RUNOUT": False,
+         "SERVER": "printer.local"}
+    )
+    assert rendered == {"SYNC_RATE": "5", "DENSITY": "1.24", "REPUSH": "true",
+                        "CLEAR_ON_RUNOUT": "false", "SERVER": "printer.local"}
+    user_vars.validate_user_vars(rendered)
+
+
+def test_user_vars_as_text_leaves_an_unusable_value_to_the_validator() -> None:
+    """Rendering never decides a value is acceptable, so a shape no config file can hold still gets
+    refused, by the one check that names the setting the user has to fix."""
+    rendered = user_vars.user_vars_as_text({"EVENTS": ["complete", "error"]})
+    with pytest.raises(ValueError, match="EVENTS"):
+        user_vars.validate_user_vars(rendered)
+
+
 def test_expand_replaces_longest_key_first() -> None:
     vars = {"BESPOK3D": "/root", "BESPOK3D_KLIPPER": "/root/klipper"}
     assert user_vars.expand("$BESPOK3D_KLIPPER/main.cfg", vars) == "/root/klipper/main.cfg"

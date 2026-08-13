@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.25
+
+A plugin with a numeric setting or an on/off switch now installs. It stopped with "expected string or
+bytes-like object, got 'int'", which named no setting, so there was nothing the user could act on and
+nothing telling the plugin's author what to change. A setting the printer cannot use is still refused,
+by name, as before.
+
 ## 0.12.24
 
 Putting the plugins back after a firmware update no longer switches off a plugin whose files another

@@ -54,6 +54,7 @@ from .updater import run_update_batch
 from .user_vars import (
     USER_VARS_FILE,  # noqa: F401  re-export for tests
     load_user_vars,  # noqa: F401  re-export for api.routes
+    user_vars_as_text,  # noqa: F401  re-export for api.routes
     validate_user_vars,  # noqa: F401  re-export for api.routes
 )
 

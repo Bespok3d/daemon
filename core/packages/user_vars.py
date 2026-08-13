@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""User variables: validation, the $VAR expander, persistence, the per-plugin venv var, and the
-required-variable check.
+"""User variables: rendering to text, validation, the $VAR expander, persistence, the per-plugin
+venv var, and the required-variable check.
 
 A plugin's install templates and commands interpolate `$NAME` values the user supplied at install
 time. These are persisted next to the plugin so reconfigure, update, and recover can re-expand them.
@@ -22,6 +22,27 @@ _SAFE_VAR_RE = re.compile(r'^[A-Za-z0-9 .,\-:/_@]+$')
 _SAFE_VAR_ALLOWED = "letters, numbers, spaces, and . , - : / _ @"
 
 USER_VARS_FILE = "user_vars.json"
+
+
+def user_vars_as_text(supplied: dict[str, object]) -> dict[str, str]:
+    """The text form of the values a client sent, which is the only form anything downstream sees.
+
+    A setting is substituted into config text, so it ends up as text whatever it started as. A
+    manifest declares a field's type, and a `number` field's value of 5 or a `toggle` field's value
+    of true is JSON's own way of writing what those field types mean, so both arrive unquoted and
+    both are accepted here rather than refused at the door. Anything the daemon cannot write into a
+    config file lands on validate_user_vars, which names the setting the user has to fix.
+    """
+    return {key: _setting_as_text(value) for key, value in supplied.items()}
+
+
+def _setting_as_text(value: object) -> str:
+    # A toggle is rendered lowercase because that is what a manifest declares as its on/off value.
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    return str(value)
 
 
 def validate_user_vars(user_vars: dict[str, str]) -> None:
