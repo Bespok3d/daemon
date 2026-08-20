@@ -29,8 +29,12 @@ def _strip_carriage_returns(text: str) -> bytes:
 def _fragment_applies(work_path: Path, patch_file: Path, reverse: bool) -> bool:
     """Apply one fragment to the working copy in place and report whether it applied cleanly. `-f`
     keeps patch from guessing that an already-present change is a reversed patch, so a fragment that
-    does not truly fit the file rejects instead of being silently skipped."""
-    command = ["patch", "-f", "--strip=1", str(work_path), str(patch_file)]
+    does not truly fit the file rejects instead of being silently skipped. `-F0` allows no fuzz:
+    proving a file is these diffs' original means every context line matched, and a hunk placed by
+    ignoring its context is exactly the unproven original that must never be adopted. Without it the
+    answer depends on which patch the machine ships, which decided this one way on a maintainer's
+    Mac and the other way on the Linux runner."""
+    command = ["patch", "-f", "-F0", "--strip=1", str(work_path), str(patch_file)]
     if reverse:
         command.insert(1, "-R")
     result = subprocess.run(command, capture_output=True, check=False)
