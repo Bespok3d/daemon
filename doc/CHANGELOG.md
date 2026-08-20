@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.0
+## 0.13.1
 
 Switching a plugin off is now refused when another installed plugin needs it, and the answer names
 the plugins that need it. Before, it switched off and the plugins that depend on it were left
