@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The batched multi-plugin UPDATE entry point: apply each package's install phases and restart each
-affected service exactly once at the end. The apply-and-defer machinery lives in `batch.py`; this is
-the thin entry point that drives it as an update.
+affected service exactly once at the end. The apply-and-defer machinery lives in `batch.py` and what
+the printer will not accept in `batch_refusals.py`; this is the thin entry point that drives the two
+as an update.
 """
 
 from pathlib import Path
@@ -11,6 +12,7 @@ from ..safety import OperationKind
 from .batch import run_batch
 from .batch_plan import plan_batch
 from .batch_progress import ProgressSink, make_progress
+from .batch_refusals import settle_refusals
 
 
 def run_update_batch(
@@ -32,4 +34,6 @@ def run_update_batch(
         return []
     progress = make_progress(publish)
     plan = plan_batch(base_vars, package_paths, vars_by_id)
-    return run_batch(plugin_root, plan, progress, OperationKind.UPDATE)
+    settled = settle_refusals(plugin_root, plan, package_paths)
+
+    return run_batch(plugin_root, settled, progress, OperationKind.UPDATE)

@@ -44,6 +44,14 @@ class UninstallResponse(BaseModel):
     )
 
 
+class PluginDeactivateResponse(BaseModel):
+    ok: bool = Field(description="True on success")
+    deactivated: list[str] = Field(
+        default_factory=list,
+        description="Plugin ids deactivated, dependents first then the target",
+    )
+
+
 class PluginConfigResponse(BaseModel):
     vars: dict[str, str] = Field(
         default_factory=dict,

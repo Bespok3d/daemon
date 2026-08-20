@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.13.0
+
+Switching a plugin off is now refused when another installed plugin needs it, and the answer names
+the plugins that need it. Before, it switched off and the plugins that depend on it were left
+broken with nothing said. When the printer switches a plugin off by itself to stay usable, it now
+names every plugin that went off with it, instead of only the one that failed.
+
+Updating several plugins at once now runs the same checks installing runs. An update that needs a
+plugin this printer does not have, or that clashes with one it does have, is refused before a single
+file is written.
+
+A package now says which daemon it needs, and the printer checks that itself rather than trusting
+the app to have checked. A package built for a newer daemon used to install and then quietly do
+nothing; it is refused, and the answer says which version the package wants and which one this
+printer runs.
+
+A package too big to unpack on this printer is refused before unpacking starts, so a large plugin
+can no longer fill the printer's storage part way through installing.
+
+A package with a file that unpacks to more than it says it does is refused, and nothing it started
+writing is left on the printer. Before, unpacking stopped part way through and the half-written
+plugin stayed on the printer, so it was listed as installed when it never was.
+
+Uninstalling a plugin that had patched two files of the same name in different folders now puts both
+originals back where they belong. Before, the second file overwrote the first one's saved copy, so
+uninstall could put the wrong file back.
+
+A plugin that says it brings its own Python libraries but does not actually carry them is refused,
+and it is removed from the printer instead of being left behind half installed.
+
+A plugin restart no longer stops the printer's safety net. When a service was restarted and the
+printer did not report back on it, the check that switches a bad plugin off failed instead of
+running, which left the plugin in place and the printer with no safety net.
+
 ## 0.12.25
 
 A plugin with a numeric setting or an on/off switch now installs. It stopped with "expected string or

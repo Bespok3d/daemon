@@ -19,6 +19,8 @@ from pathlib import Path
 
 from .. import jinni_client
 
+STOCK_COPIES_DIR = "patches_orig"
+
 
 def _strip_carriage_returns(text: str) -> bytes:
     return text.encode().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
@@ -50,16 +52,63 @@ def _probe(source_text: str, fragment_paths: list[Path], reverse: bool) -> str |
         return work_path.read_text(errors="replace") if applied else None
 
 
+def is_stock(source_text: str, fragment_paths: list[Path]) -> bool:
+    """Whether none of these diffs is on this text yet: they all still apply cleanly to it, so it is
+    the original they were written against (or close enough to patch)."""
+    return _probe(source_text, fragment_paths, reverse=False) is not None
+
+
+def without_patches(source_text: str, fragment_paths: list[Path]) -> str | None:
+    """This text with these diffs reversed back off it, or None when it is not their applied output.
+    The recovered text is re-probed forward, so a reversal that lands on something the diffs no
+    longer fit is reported as no recovery rather than passed off as the original."""
+    recovered_stock = _probe(source_text, fragment_paths, reverse=True)
+    if recovered_stock is None or not is_stock(recovered_stock, fragment_paths):
+        return None
+    return recovered_stock
+
+
+def stock_copies(plugin_dir: Path) -> Path:
+    """Where a plugin keeps the stock originals of the files it patches, one per target file."""
+    return plugin_dir / STOCK_COPIES_DIR
+
+
+def _mirrored_path(target_path: Path) -> Path:
+    """The target's own path made relative, so the kept copies mirror the tree they were taken from
+    and no two of them can land on the same name."""
+    named_parts = [part for part in target_path.parts if part not in ("/", "..", ".")]
+    return Path(*named_parts) if named_parts else Path(target_path.name)
+
+
+def kept_original(orig_dir: Path, target: str | Path) -> Path:
+    """Where a plugin keeps the stock original of ONE patched file.
+
+    Keyed by the file's own path, because a printer holds more than one file of a given name: a
+    plugin patching `moonraker/moonraker.conf` and `klipper/moonraker.conf` keyed by name alone
+    would capture one over the other, and uninstall would then write the wrong file back over one
+    of the two.
+
+    A printer patched by an earlier daemon keeps its copies under the bare name, and that copy is
+    the only record of what that file looked like stock. It is used wherever it is still there, so
+    updating the daemon never orphans the copy the printer needs to get back to stock.
+    """
+    target_path = Path(target)
+    kept_under_the_bare_name = orig_dir / target_path.name
+    if kept_under_the_bare_name.is_file():
+        return kept_under_the_bare_name
+    return orig_dir / _mirrored_path(target_path)
+
+
 def derive_stock(baseline_path: Path, fragment_paths: list[Path]) -> None:
     """Rewrite `baseline_path` to the stock original WHEN it is currently the already-patched output
     of these diffs, so the pipeline never patches an already-patched file. A file the diffs apply
     cleanly to is left as-is (it is stock, or close enough to patch). A file that is neither is left
     untouched too, so the normal apply reports its own reject instead of being pre-empted here."""
     source_text = baseline_path.read_text(errors="replace")
-    if _probe(source_text, fragment_paths, reverse=False) is not None:
+    if is_stock(source_text, fragment_paths):
         return
-    recovered_stock = _probe(source_text, fragment_paths, reverse=True)
-    if recovered_stock is not None and _probe(recovered_stock, fragment_paths, reverse=False) is not None:  # noqa: E501
+    recovered_stock = without_patches(source_text, fragment_paths)
+    if recovered_stock is not None:
         baseline_path.write_text(recovered_stock)
 
 
@@ -72,6 +121,7 @@ def _capture_if_absent(target: Path, baseline_path: Path) -> str | None:
     content = jinni_client.fetch(str(target))
     if content is None:
         return "target file not found"
+    baseline_path.parent.mkdir(parents=True, exist_ok=True)
     baseline_path.write_text(content)
     return None
 

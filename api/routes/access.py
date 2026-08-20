@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from fastapi import APIRouter, HTTPException
 
-from core import auth
+from core import access_requests, auth
 from core.data_root import DATA_ROOT
 
 from ..schemas import (
@@ -34,7 +34,7 @@ async def access_request(body: AccessRequestBody) -> AccessRequestResponse:
         raise HTTPException(status_code=400, detail="invalid access request")
     entry = {"identity": body.identity, "label": body.label,
              "public_key": body.public_key or "", "token": body.token}
-    if not auth.add_pending(entry):
+    if not access_requests.add_pending(entry):
         raise HTTPException(status_code=429, detail="too many pending access requests")
     return AccessRequestResponse(ok=True, cert=_server_cert())
 
@@ -47,7 +47,7 @@ async def access_request(body: AccessRequestBody) -> AccessRequestResponse:
 async def access_clients() -> AccessClientsResponse:
     return AccessClientsResponse(
         clients=[AccessClient(**client) for client in auth.list_clients()],
-        pending=[PendingClient(**item) for item in auth.list_pending()],
+        pending=[PendingClient(**item) for item in access_requests.list_pending()],
     )
 
 
@@ -57,7 +57,7 @@ async def access_clients() -> AccessClientsResponse:
     summary="Approve a pending access request (any authorized client may grant)",
 )
 async def access_grant(body: AccessIdentityBody) -> AccessActionResponse:
-    entry = auth.pop_pending(body.identity)
+    entry = access_requests.pop_pending(body.identity)
     if entry is None:
         raise HTTPException(status_code=404, detail="no such pending request")
     auth.grant_key(body.identity, entry["token"], role="user", label=entry.get("label", ""))

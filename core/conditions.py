@@ -31,9 +31,13 @@ _VARIANT_SECTIONS = ("place", "instrument")
 _EXACT_DIMENSIONS = frozenset({"adapter", "arch", "board_class", "kernel_release", "vermagic"})
 
 
-def matches(condition: dict, facts: dict[str, str]) -> bool:
+def matches(condition: object, facts: dict[str, str]) -> bool:
     """True when every dimension the condition names is satisfied by the facts. An empty condition
-    matches anything (the catch-all fallback variant); an unknown dimension fails closed."""
+    matches anything (the catch-all fallback variant); an unknown dimension fails closed, and so
+    does a `when` that is not a set of dimensions at all: nothing validates a manifest before this
+    runs, so one mistyped entry must cost that entry and never the whole printer's variant pass."""
+    if not isinstance(condition, dict):
+        return False
     return all(_dimension_holds(dimension, value, facts) for dimension, value in condition.items())
 
 

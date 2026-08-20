@@ -19,7 +19,12 @@ from .print_guard import guard_no_print_during_restart
 from .recovery import op_context, restart_phases
 from .start_commands import run_plugin_start_commands
 from .templates import render_templates
-from .user_vars import persist_user_vars, with_plugin_venv
+from .user_vars import (
+    persist_user_vars,
+    refuse_missing_settings,
+    with_declared_defaults,
+    with_plugin_venv,
+)
 
 
 def run_reconfigure(
@@ -39,9 +44,11 @@ def run_reconfigure(
     manifest = manifest_at(plugin_dir)
     guard_no_print_during_restart(manifest)
 
-    full_vars = with_plugin_venv(vars, plugin_id)
+    settings = with_declared_defaults(manifest, user_vars)
+    full_vars = with_plugin_venv({**vars, **settings}, plugin_id)
+    refuse_missing_settings(manifest, full_vars)
     inst = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
-    persist_user_vars(plugin_dir, user_vars)
+    persist_user_vars(plugin_dir, settings)
     start_phase, deferred = run_plugin_start_commands(inst.get("start", []), full_vars)
     ctx = op_context(OperationKind.RECONFIGURE, manifest)
     phases = [

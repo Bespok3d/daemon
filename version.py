@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
-DAEMON_VERSION = "0.12.25"
+DAEMON_VERSION = "0.13.0"
 
 # The oldest jinni this daemon will drive. One floor, no ceiling: a jinni newer than this daemon is
 # always fine, because the adapter side only ever adds verbs. The daemon publishes this on

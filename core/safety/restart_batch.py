@@ -23,6 +23,17 @@ def _run_items(commands: list[str]) -> list[dict]:
             for command, result in zip(commands, results)]
 
 
+_UNREPORTED = ServiceHealth(ready=False, detail="the printer did not report on this service")
+
+
+def _health_of(reported: dict[str, ServiceHealth], name: str) -> ServiceHealth:
+    """The verdict for one service the daemon just restarted. The health report is a second answer
+    from the jinni and it may not list every service that was restarted; an unlisted one counts as
+    not back up, so the safety net runs and takes the plugin out of the way, rather than failing on
+    the lookup and leaving the printer with no safety net at all."""
+    return reported.get(name, _UNREPORTED)
+
+
 def _service_item(name: str, service: ServiceHealth) -> dict:
     return item(f"wait for {name} to come back up", ok=service.ready,
                 output=service.detail[:MAX_OUTPUT_BYTES].strip())
@@ -39,8 +50,8 @@ def _verify_restarted(restarted: list[str], deferred_cmds: list[str]) -> tuple[l
     earlier uninstall that breaks the include glob) and re-run the restarts EXACTLY ONCE more, then
     re-read. No second prune: a still-down service then has a cause outside our config, so stop."""
     device = jinni_client.health()
-    items = [_service_item(name, device.services[name]) for name in restarted]
-    if all(device.services[name].ready for name in restarted):
+    items = [_service_item(name, _health_of(device.services, name)) for name in restarted]
+    if all(_health_of(device.services, name).ready for name in restarted):
         return items, device.signals.log_tails
     removed = jinni_client.prune_dead_config_links()
     if not removed:
@@ -48,7 +59,7 @@ def _verify_restarted(restarted: list[str], deferred_cmds: list[str]) -> tuple[l
     jinni_client.run_actions(deferred_cmds)
     device = jinni_client.health()
     items = [item("removed dead config links", ok=True, output=", ".join(removed)),
-             *(_service_item(name, device.services[name]) for name in restarted)]
+             *(_service_item(name, _health_of(device.services, name)) for name in restarted)]
     return items, device.signals.log_tails
 
 

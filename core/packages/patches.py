@@ -75,8 +75,11 @@ def _apply_fragment(work_path: Path, patch_file: Path, patch_rel: str, crlf_stri
 
 
 def _write_back(target: Path, work_path: Path, pristine_path: Path, plugin_dir: Path, applied: bool) -> dict | None:  # noqa: E501
-    """Write the cumulative patched content back to the device through the jinni once, only if a
-    fragment applied. Returns a failed item if the jinni write failed, so the install settles it."""
+    """Write the cumulative patched content back to the device through the jinni once, only when
+    EVERY fragment applied. One rejected fragment means the work copy is half edited, and a half
+    edited Klipper file can stop the printer booting, so nothing reaches the device: the phase
+    already fails on the rejected fragment and the caller rolls the install back from the untouched
+    live file. Returns a failed item if the jinni write failed, so the install settles it."""
     if not applied:
         return None
     write = {"path": str(target), "content": work_path.read_text(errors="replace"),
@@ -92,7 +95,7 @@ def _patch_target(target: str, fragments: list[dict], plugin_dir: Path, vars: di
     pristine baseline is fetched once and kept only for restore; the fragments build on a working
     copy of it, never re-applying against the original."""
     target_path = Path(target)
-    pristine_path = orig_dir / target_path.name
+    pristine_path = baseline.kept_original(orig_dir, target_path)
     fragment_paths = [plugin_dir / fragment["patch"] for fragment in fragments]
     fetch_failure = baseline.establish(target_path, pristine_path, fragment_paths)
     if fetch_failure is not None:
@@ -104,7 +107,7 @@ def _patch_target(target: str, fragments: list[dict], plugin_dir: Path, vars: di
     items = [_apply_fragment(work_path, plugin_dir / fragment["patch"], fragment["patch"], crlf_stripped)  # noqa: E501
              for fragment in fragments]
     write_failure = _write_back(target_path, work_path, pristine_path, plugin_dir,
-                                any(fragment_item["ok"] for fragment_item in items))
+                                all(fragment_item["ok"] for fragment_item in items))
     work_path.unlink(missing_ok=True)
     return [*items, write_failure] if write_failure else items
 
@@ -119,7 +122,7 @@ def _group_by_target(patches: list[dict], vars: dict[str, str]) -> dict[str, lis
 
 
 def apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) -> dict:
-    orig_dir = plugin_dir / "patches_orig"
+    orig_dir = baseline.stock_copies(plugin_dir)
     orig_dir.mkdir(parents=True, exist_ok=True)
     items: list[dict] = []
     for target, fragments in _group_by_target(patches, vars).items():
@@ -129,15 +132,18 @@ def apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) -
 
 def restore_original_files(patches: list[dict], orig_dir: Path, vars: dict[str, str]) -> None:
     """Write each kept pristine baseline back over its target through the jinni, undoing the patch.
-    Deduped by target: several fragments for one file share one baseline, so it is restored once."""
+    Deduped by target: several fragments for one file share one baseline, so it is restored once.
+    An empty kept baseline is skipped: a copy torn by a power cut mid capture would blank a file the
+    printer boots from, and leaving the file patched is what a missing copy already does."""
     plugin_dir = orig_dir.parent
     writes = []
     seen: set[str] = set()
     for patch_def in patches:
         target = str(Path(expand(patch_def["file"], vars)))
-        pristine_path = orig_dir / Path(target).name
-        if target not in seen and pristine_path.exists():
+        pristine_path = baseline.kept_original(orig_dir, target)
+        pristine = pristine_path.read_text(errors="replace") if pristine_path.exists() else ""
+        if target not in seen and pristine:
             seen.add(target)
-            writes.append({"path": target, "content": pristine_path.read_text(errors="replace")})
+            writes.append({"path": target, "content": pristine})
     if writes:
         jinni_client.write_files(str(plugin_dir), writes)

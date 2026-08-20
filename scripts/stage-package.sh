@@ -11,7 +11,7 @@
 # package on the printer at enrollment, the daemon never installs itself.
 #
 # Mirror the staged file list in the adapter deploy walk and package.json extraResources. EXCLUDES
-# tests/, scripts/, .github/, the contributor docs, pyproject.toml, requirements-dev.txt, and every
+# tests/, tests_invitro/, scripts/, .github/, the contributor docs, pyproject.toml, requirements-dev.txt, and every
 # cache. requirements.txt is staged TWICE because two readers need it in two places: at the package
 # ROOT it is the ADR-0036 declaration that arms b3-builder's wheel bake, which is what puts the
 # daemon's Python deps in the payload so the printer never reaches pypi; inside files/ it is the

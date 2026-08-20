@@ -11,11 +11,12 @@ deactivate/teardown in `lifecycle`, and the access-control flow in `access`.
 """
 from fastapi import APIRouter
 
-from . import access, batch, feeds, health, lifecycle, packages, plugins
+from . import access, batch, feeds, health, lifecycle, packages, plugin_install, plugins
 
 router = APIRouter()
 router.include_router(health.router)
 router.include_router(feeds.router)
+router.include_router(plugin_install.router)
 router.include_router(plugins.router)
 router.include_router(batch.router)
 router.include_router(packages.router)

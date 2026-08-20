@@ -8,7 +8,7 @@ the printer at the moment its turn comes.
 from pathlib import Path
 
 from ..safety import OperationKind
-from .dependencies import installed_provided_services, required_services
+from .dependencies import required_services, services_the_printer_can_serve
 
 
 def skipped_result(plugin_id: str, reason: str) -> dict:
@@ -16,11 +16,11 @@ def skipped_result(plugin_id: str, reason: str) -> dict:
 
 
 def services_already_on_the_printer(plugin_root: Path, batch_ids: frozenset[str]) -> set[str]:
-    """The services an installed, active plugin outside this batch supplies, so a plugin is never
-    left out over a service the printer can already serve. What a plugin IN the batch owes is
-    decided by the batch itself and never by what is on disk, since one of those plugins may still
-    fail and be deactivated while the batch runs."""
-    return installed_provided_services(plugin_root, batch_ids)
+    """The services this printer can already serve (an active plugin outside this batch, or the
+    daemon itself), so a plugin is never left out over a service the printer can already serve.
+    What a plugin IN the batch owes is decided by the batch itself and never by what is on disk,
+    since one of those plugins may still fail and be deactivated while the batch runs."""
+    return services_the_printer_can_serve(plugin_root, batch_ids)
 
 
 def _waiting_on(provider_id: str, kind: OperationKind) -> str:

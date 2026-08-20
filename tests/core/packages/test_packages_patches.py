@@ -129,7 +129,8 @@ def test_apply_patches_self_heals_a_reprovisioned_device(tmp_path: Path) -> None
     result = patches.apply_patches(patch_defs, plugin_dir, {})
     assert result["ok"] is True
     assert target.read_text() == PATCHED
-    assert (plugin_dir / "patches_orig" / "mod.py").read_text() == STOCK
+    kept = baseline.kept_original(baseline.stock_copies(plugin_dir), target)
+    assert kept.read_text() == STOCK
 
 
 def test_apply_patches_leaves_a_foreign_file_untouched(tmp_path: Path) -> None:

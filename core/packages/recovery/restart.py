@@ -22,7 +22,7 @@ from ...safety import (
     is_healthy,
 )
 from ...safety.restart_batch import run_restart_batch
-from ..deactivation import deactivate_plugin
+from ..deactivator import deactivate_with_dependents
 from ..machinery import MACHINERY_PACKAGES, is_machinery
 from ..manifest import installed_manifest_dirs
 from .evidence import gather_evidence
@@ -73,8 +73,8 @@ def _spared_from_blame(culprit: str, plugin_root: Path) -> bool:
 
 def _auto_recover(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, str],
                   ctx: OperationContext, evidence: FailureEvidence) -> dict:
-    """Walk the fixer chain: deactivate the named culprit, restart, re-probe, repeat until the
-    printer is healthy or no plugin is left to blame."""
+    """Walk the fixer chain: deactivate the named culprit and whatever still needs it, restart,
+    re-probe, repeat until the printer is healthy or no plugin is left to blame."""
     failure = evidence
     deactivated: list[str] = []
     spared: list[str] = []
@@ -90,9 +90,8 @@ def _auto_recover(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, s
         if _spared_from_blame(decision.culprit, plugin_root):
             spared.append(decision.culprit)
             continue
-        deactivate_plugin(plugin_root / decision.culprit, vars,
-                          f"auto-deactivated: {decision.signal}")
-        deactivated.append(decision.culprit)
+        deactivated.extend(deactivate_with_dependents(plugin_root, decision.culprit, vars,
+                                                      f"auto-deactivated: {decision.signal}"))
         run_restart_batch(deferred_cmds)
         evidence = gather_evidence(plugin_root, vars)
         if is_healthy(evidence):

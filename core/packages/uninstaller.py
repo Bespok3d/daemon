@@ -18,6 +18,7 @@ from pathlib import Path
 from .. import jinni_client
 from ..intent import normalize_install
 from ..safety import OperationContext, OperationKind
+from .baseline import stock_copies
 from .deactivation import run_stop_commands
 from .dependencies import installed_dependents
 from .errors import DependentsError
@@ -38,7 +39,7 @@ def _uninstall_from_manifest(plugin_dir: Path, vars: dict[str, str]) -> None:
     full_vars = {**vars, **load_user_vars(plugin_dir)}
     run_stop_commands(install_spec["stops"] + manifest.get("stop", []), full_vars)
     remove_plugin_symlinks(install_spec["symlinks"], plugin_dir, full_vars)
-    restore_original_files(install_spec["patches"], plugin_dir / "patches_orig", full_vars)
+    restore_original_files(install_spec["patches"], stock_copies(plugin_dir), full_vars)
 
 
 def _remove_one(plugin_dir: Path, vars: dict[str, str]) -> None:

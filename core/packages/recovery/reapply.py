@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ...safety import OperationKind
+from ..baseline import stock_copies
 from ..deactivation import (
     RECOVERY_FAILURE_MARKER,
     clear_failure_markers,
@@ -28,7 +29,12 @@ from ..deactivation import (
 )
 from ..dependencies import provided_services, required_services
 from ..file_drift import changed_files
-from ..user_vars import load_user_vars, missing_required_vars, with_plugin_venv
+from ..user_vars import (
+    load_user_vars,
+    missing_required_vars,
+    with_declared_defaults,
+    with_plugin_venv,
+)
 
 # Same shape as installer.PhaseListener, declared here because importing installer at module top
 # would hit it half-loaded (it imports this package).
@@ -55,9 +61,9 @@ def _apply_plugin(plugin_dir: Path, manifest: dict, full_vars: dict[str, str],
     # apply_install_deferred at module top would hit a partially-initialized installer and raise.
     from ..installer import apply_install_deferred
 
-    patches_orig = plugin_dir / "patches_orig"
-    if patches_orig.exists():
-        shutil.rmtree(patches_orig)
+    kept_stock = stock_copies(plugin_dir)
+    if kept_stock.exists():
+        shutil.rmtree(kept_stock)
     return apply_install_deferred(
         plugin_dir.parent, plugin_dir, manifest, full_vars, announce_phase,
     )
@@ -71,8 +77,9 @@ def recover_one(
     announce_phase: PhaseAnnouncer = announce_nothing,
 ) -> tuple[dict, list[str]]:
     plugin_id = plugin_dir.name
-    full_vars = with_plugin_venv({**vars, **load_user_vars(plugin_dir)}, plugin_id)
-    precondition = _precondition_skip(plugin_id, manifest, full_vars, services)
+    settings = with_declared_defaults(manifest, load_user_vars(plugin_dir))
+    full_vars = with_plugin_venv({**vars, **settings}, plugin_id)
+    precondition = _precondition_skip(plugin_dir, manifest, full_vars, services, vars)
     if precondition is not None:
         return precondition
 
@@ -96,10 +103,12 @@ def recover_one(
 
 
 def _precondition_skip(
-    plugin_id: str, manifest: dict, full_vars: dict[str, str], services: ServiceLedger,
+    plugin_dir: Path, manifest: dict, full_vars: dict[str, str], services: ServiceLedger,
+    vars: dict[str, str],
 ) -> tuple[dict, list[str]] | None:
     """A skip (a dependency another recovered plugin should provide is not satisfied) or a fail (a
-    required variable is missing), or None to proceed with the re-apply."""
+    required setting is missing), or None to proceed with the re-apply."""
+    plugin_id = plugin_dir.name
     missing_deps = [service for service in required_services(manifest)
                     if service in services.provided_by_installed
                     and service not in services.satisfied]
@@ -108,8 +117,11 @@ def _precondition_skip(
         return {"plugin_id": plugin_id, "ok": False, "skipped": True, "reason": reason, "log": []}, []  # noqa: E501
     missing_vars = missing_required_vars(manifest, full_vars)
     if missing_vars:
+        # printer-never-broken: a setting recovery cannot supply leaves the plugin unable to
+        # finish its config, so it is switched off like every other recover failure instead of
+        # staying wired on the printer half applied.
         reason = f"missing required variable(s): {', '.join(missing_vars)}; reinstall the plugin"
-        return {"plugin_id": plugin_id, "ok": False, "skipped": False, "reason": reason, "log": []}, []  # noqa: E501
+        return _record_failure(plugin_dir, vars, reason, {"missing_vars": missing_vars}, []), []
     return None
 
 

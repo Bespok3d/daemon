@@ -105,7 +105,18 @@ def parse_result(verb: str, raw: bytes | None) -> Any:
         raise ProtocolError(f"unreadable reply frame for {verb!r}: {exc}") from exc
     if not message.get("ok"):
         raise ProtocolError(message.get("error", "jinni reported an error"))
-    return decode_result(verb, message.get("result"))
+    return _contracted_result(verb, message.get("result"))
+
+
+def _contracted_result(verb: str, payload: Any) -> Any:
+    """The verb's typed result, refused as a ProtocolError when the reply is well framed and valid
+    JSON but not the shape the verb's contract declares. A jinni one version out of step is a bad
+    reply like any other and the daemon recycles it; it never surfaces as a raw KeyError thrown from
+    inside a decoder."""
+    try:
+        return decode_result(verb, payload)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProtocolError(f"reply for {verb!r} does not match its contract: {exc}") from exc
 
 
 def call(socket_path: str, verb: str, args: list[Any], timeout: float = frame.DEFAULT_TIMEOUT_S) -> Any:  # noqa: E501

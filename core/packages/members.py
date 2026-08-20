@@ -54,16 +54,19 @@ def installed_files(manifest_files: list[dict], render_targets: frozenset[str]) 
             and str(entry.get("path", "")) not in render_targets]
 
 
-def names_its_own_directory(plugin_id: object) -> TypeGuard[str]:
-    """Whether the manifest's plugin name is usable as the directory the package unpacks into.
+def stays_inside_its_parent_dir(chosen_name: object) -> TypeGuard[str]:
+    """Whether a name the package chose is usable as one entry inside the directory it is joined to.
 
     Containment measures every member against the plugin directory, and that directory is named by
     the package itself, so an id of `../../etc/init.d` would relocate the whole extraction and leave
-    each member "inside" the relocated root. The id has to be one plain directory name and no more.
+    each member "inside" the relocated root. A generated init script is the same story one level
+    down: its file name also comes from the manifest, and the plugin's own `etc/init.d` is what it
+    must stay inside. The name has to be one plain entry and no more, so an empty name (pathlib
+    drops it on join, leaving the parent directory itself) is refused with the rest.
     """
-    if not isinstance(plugin_id, str) or plugin_id in {".", ".."}:
+    if not isinstance(chosen_name, str) or chosen_name in {".", ".."}:
         return False
-    return Path(plugin_id).parts == (plugin_id,)
+    return Path(chosen_name).parts == (chosen_name,)
 
 
 def undeclared_members(archive_members: list[str], manifest_files: object) -> list[str]:

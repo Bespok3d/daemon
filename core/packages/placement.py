@@ -63,10 +63,22 @@ def create_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]
     return phase("symlinks", "Symlinks", items)
 
 
+def _is_still_wired_to_this_plugin(destination: str, plugin_dir: Path) -> bool:
+    """Whether the destination is not a symlink some OTHER plugin has since taken over. Unwiring
+    such a destination would drop the live plugin's link and write this plugin's stock copy over
+    the file it wired, leaving the printer running neither plugin's version."""
+    link = Path(destination)
+    if not link.is_symlink():
+        return True
+    return points_into(link, plugin_dir)
+
+
 def remove_plugin_symlinks(symlinks: list[dict], plugin_dir: Path, vars: dict[str, str]) -> None:
     """Resolve each symlink's destination and ask the jinni to unwire it (drop the symlink, restore
-    any backed-up stock original)."""
-    destinations = [str(Path(expand(link["to"], vars))) for link in symlinks]
+    any backed-up stock original), leaving alone any destination another plugin now owns."""
+    resolved = [str(Path(expand(link["to"], vars))) for link in symlinks]
+    destinations = [destination for destination in resolved
+                    if _is_still_wired_to_this_plugin(destination, plugin_dir)]
     if destinations:
         jinni_client.unwire(str(plugin_dir), destinations)
 

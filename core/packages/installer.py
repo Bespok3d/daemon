@@ -13,17 +13,19 @@ worker stays independent of where plugins live on disk.
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import NoReturn
 
 from .. import jinni_client
 from ..intent import normalize_install
 from ..results import item, phase
 from ..safety import OperationKind
-from .archive import discard_extraction, fix_ownership, unpack_package
+from .archive import fix_ownership, unpack_package
 from .deactivation import finalize_install_outcome
-from .dependencies import installed_conflicts, unsatisfied_requirements
-from .errors import ConflictError, RequirementError
 from .file_drift import refuse_changed_package
+from .install_refusals import (
+    refuse_and_discard,
+    refuse_unmet_dependencies,
+    refuse_unset_settings,
+)
 from .integrity import IntegrityError
 from .kmodules import generate_module_loaders, load_modules
 from .pair_guard import guard_compatible_pair
@@ -34,7 +36,11 @@ from .recovery import op_context, restart_phases
 from .services import generate_service_scripts
 from .start_commands import run_plugin_start_commands
 from .templates import render_templates
-from .user_vars import persist_user_vars, with_plugin_venv
+from .user_vars import (
+    persist_user_vars,
+    with_declared_defaults,
+    with_plugin_venv,
+)
 
 PhaseListener = Callable[[dict], None]
 
@@ -95,29 +101,6 @@ def _install_apply_phases(
     return phases
 
 
-def _refuse(plugin_dir: Path, refusal: Exception) -> NoReturn:
-    """A refused install takes its own extraction with it."""
-    discard_extraction(plugin_dir)
-    raise refusal
-
-
-def _refuse_unmet_dependencies(
-    plugin_root: Path,
-    plugin_dir: Path,
-    plugin_id: str,
-    manifest: dict,
-) -> None:
-    """Up-front refusals, before a single file is placed: a plugin that collides with an installed
-    one, or one whose required service is absent."""
-    conflicts = installed_conflicts(plugin_root, plugin_id, manifest)
-    if conflicts:
-        _refuse(plugin_dir, ConflictError(plugin_id, conflicts))
-
-    missing = unsatisfied_requirements(plugin_root, plugin_id, manifest)
-    if missing:
-        _refuse(plugin_dir, RequirementError(plugin_id, missing))
-
-
 def run_install(
     plugin_root: Path,
     package_path: Path,
@@ -128,18 +111,20 @@ def run_install(
     guard_compatible_pair()
     manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
     plugin_id: str = manifest["name"]
-    _refuse_unmet_dependencies(plugin_root, plugin_dir, plugin_id, manifest)
+    refuse_unmet_dependencies(plugin_root, plugin_dir, plugin_id, manifest)
 
     notify = on_phase or _noop_phase
     extract_items = [item(f"Extracted {file_count} files", ok=True)]
     log: list[dict] = [_emit(phase("extract", "Unpack", extract_items), notify)]
 
-    persist_user_vars(plugin_dir, user_vars or {})
-    full_vars = with_plugin_venv(vars, plugin_id)
+    settings = with_declared_defaults(manifest, user_vars or {})
+    full_vars = with_plugin_venv({**vars, **settings}, plugin_id)
+    refuse_unset_settings(plugin_dir, manifest, full_vars)
+    persist_user_vars(plugin_dir, settings)
     try:
         refuse_changed_package(plugin_dir, manifest)
         log.extend(_install_apply_phases(plugin_root, plugin_dir, manifest, full_vars, notify))
     except IntegrityError as tampered_package:
-        _refuse(plugin_dir, tampered_package)
+        refuse_and_discard(plugin_dir, tampered_package)
     finalize_install_outcome(plugin_dir, full_vars, log)
     return plugin_id, log

@@ -181,7 +181,8 @@ s10bespok3d-daemon    autostart script
 requirements.txt      runtime deps, and the ADR-0036 declaration b3-builder bakes into wheels
 tests/                test suite (not packed); mirrors the source tree (tests/core/packages/, tests/api/, ...)
 scripts/              check.sh, stage-package.sh, test-daemon-docker.sh (not packed)
-doc/                  README + CHANGELOG (shipped in the .b3); this file + engineering-rules (not shipped)
+doc/                  README + CHANGELOG (shipped in the .b3); this file, engineering-rules,
+                      story-obligations and doc/internals/ (contributor docs, not shipped)
 ```
 
 ## Where each concern lives
@@ -193,6 +194,10 @@ New code lands in the right concern, never in a growing god file, and never name
   split by concern (`placement`, `patches`, `templates`, `services`, `installer`, `updater`,
   `uninstaller`, `lifecycle`, `print_guard`, `python_deps`, `archive`, `manifest`, `dependencies`,
   `start_commands`, `deactivation`, `recovery`).
+  What the printer will and will not accept, and how a patch reaches a device file, are written up
+  separately: [install-and-update.md](internals/install-and-update.md) (the refusal table, the two version floors,
+  what a refused update leaves behind) and [patch-pipeline.md](internals/patch-pipeline.md) (the stock baseline,
+  how it is keyed, patch handover).
 - **`api/routes/`** is thin route registration that delegates to core, one `APIRouter` per concern
   aggregated in `__init__`: `health`, `feeds` (the live websocket handlers), `plugins`, `packages`,
   `lifecycle`, `access`. Handlers stay thin; the shared data-root constant lives in `core/data_root.py`.

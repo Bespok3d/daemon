@@ -11,6 +11,7 @@ from pathlib import Path
 from .. import jinni_client
 from ..intent import normalize_install
 from ..safety import OperationContext, OperationKind, diagnose_module_failure
+from .baseline import stock_copies
 from .manifest import manifest_at
 from .patches import restore_original_files
 from .placement import remove_plugin_symlinks
@@ -65,7 +66,7 @@ def neutralize_plugin(plugin_dir: Path, vars: dict[str, str]) -> None:
     ops = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
     run_stop_commands(ops["stops"] + manifest.get("stop", []), full_vars)
     remove_plugin_symlinks(ops["symlinks"], plugin_dir, full_vars)
-    restore_original_files(ops["patches"], plugin_dir / "patches_orig", full_vars)
+    restore_original_files(ops["patches"], stock_copies(plugin_dir), full_vars)
     remove_plugin_site_links(plugin_dir, full_vars)
     remove_plugin_venv(plugin_dir.name, full_vars)
 

@@ -55,14 +55,15 @@ def _peeled_by_the_safety_net(monkeypatch: pytest.MonkeyPatch, plugin_root: Path
 
         return Decision(culprit=left[0] if left else None, signal="klipper down", fixer="stub")
 
-    def record(plugin_dir: Path, plugin_vars: dict[str, str], reason: str) -> None:
-        peeled.append(plugin_dir.name)
+    def record(root: Path, plugin_id: str, plugin_vars: dict[str, str], reason: str) -> list[str]:
+        peeled.append(plugin_id)
+        return [plugin_id]
 
     def still_down(root: Path, plugin_vars: dict[str, str]) -> FailureEvidence:
         return _printer_down()
 
     monkeypatch.setattr(restart, "decide", blame_in_turn)
-    monkeypatch.setattr(restart, "deactivate_plugin", record)
+    monkeypatch.setattr(restart, "deactivate_with_dependents", record)
     monkeypatch.setattr(restart, "gather_evidence", still_down)
     monkeypatch.setattr(restart, "run_restart_batch", lambda commands: None)
     ctx = restart.op_context(OperationKind.INSTALL, {"name": PLUGIN})

@@ -74,3 +74,65 @@ def test_missing_required_vars_lists_required_and_absent() -> None:
         }
     }
     assert user_vars.missing_required_vars(manifest, {"SERVER": "set"}) == ["TOKEN"]
+
+
+def test_declared_default_fills_a_setting_the_client_never_sent() -> None:
+    manifest = {"name": "spoolman", "requires": {"variables": [
+        {"name": "SPOOLMAN_LOGGING", "required": False, "default": "info"},
+    ]}}
+
+    assert user_vars.with_declared_defaults(manifest, {}) == {"SPOOLMAN_LOGGING": "info"}
+
+
+def test_a_supplied_value_wins_over_the_declared_default() -> None:
+    manifest = {"name": "spoolman", "requires": {"variables": [
+        {"name": "SPOOLMAN_LOGGING", "required": False, "default": "info"},
+    ]}}
+
+    settings = user_vars.with_declared_defaults(manifest, {"SPOOLMAN_LOGGING": "debug"})
+
+    assert settings == {"SPOOLMAN_LOGGING": "debug"}
+
+
+def test_a_setting_the_user_cleared_stays_cleared() -> None:
+    """Clearing a field is the user saying something, not the user saying nothing, so the manifest's
+    default must not creep back in over it."""
+    manifest = {"name": "spoolman", "requires": {"variables": [
+        {"name": "SPOOLMAN_LOCATION", "required": False, "default": "printer"},
+    ]}}
+
+    assert user_vars.with_declared_defaults(manifest, {"SPOOLMAN_LOCATION": ""}) == {
+        "SPOOLMAN_LOCATION": "",
+    }
+
+
+def test_a_non_text_default_is_rendered_the_way_a_config_file_holds_it() -> None:
+    manifest = {"name": "notify", "requires": {"variables": [
+        {"name": "NOTIFY_ENABLED", "required": False, "default": True},
+        {"name": "NOTIFY_PORT", "required": False, "default": 8000},
+    ]}}
+
+    assert user_vars.with_declared_defaults(manifest, {}) == {
+        "NOTIFY_ENABLED": "true", "NOTIFY_PORT": "8000",
+    }
+
+
+def test_refuse_missing_settings_names_the_required_setting_with_no_value() -> None:
+    manifest = {"name": "spoolman", "requires": {"variables": [
+        {"name": "SPOOLMAN_SERVER", "required": True},
+        {"name": "SPOOLMAN_MODE", "required": False, "default": "auto"},
+    ]}}
+
+    with pytest.raises(packages.MissingSettingError) as refused:
+        user_vars.refuse_missing_settings(manifest, {"SPOOLMAN_MODE": "auto"})
+
+    assert refused.value.missing == ["SPOOLMAN_SERVER"]
+    assert refused.value.plugin_id == "spoolman"
+
+
+def test_refuse_missing_settings_passes_when_every_required_setting_has_a_value() -> None:
+    manifest = {"name": "spoolman", "requires": {"variables": [
+        {"name": "SPOOLMAN_SERVER", "required": True},
+    ]}}
+
+    user_vars.refuse_missing_settings(manifest, {"SPOOLMAN_SERVER": "http://spoolman:8000"})

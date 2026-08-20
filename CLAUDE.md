@@ -19,6 +19,12 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
   HTTP-versus-websocket boundary, the invariants, and where each concern lives (and is moving to).
 - [README.md](README.md) for build/version/release mechanics; [CONTRIBUTING.md](CONTRIBUTING.md) for the
   contribution flow.
+- [doc/internals/install-and-update.md](doc/internals/install-and-update.md): every check the printer runs before it accepts
+  a package, the two version floors, and what a refusal leaves behind. An update runs the install
+  checks; there is no relaxed update path.
+- [doc/internals/patch-pipeline.md](doc/internals/patch-pipeline.md): how a plugin's diffs reach a file the printer owns,
+  where the stock original is kept and how it is keyed, and how ownership of a patched file is handed
+  over.
 
 ## The non-negotiables (the floor; full treatment in engineering-rules.md)
 
@@ -78,6 +84,21 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
   update `tests/api/test_api.py`. The app-side `EXPECTED_DAEMON_VERSION` is generated from `version.py`
   at build time, so it needs no manual sync.
 - **Gate must stay green** before any change is considered done.
+- **Never weaken a refusal to make an install go through.** The refusal table in
+  [doc/internals/install-and-update.md](doc/internals/install-and-update.md) is the printer's contract with the user: a
+  package that would leave the printer in a state it would not have accepted at install time is
+  refused, and an update goes through exactly the same `settle_refusals()` step as an install. Do not
+  add an update-only shortcut, do not catch a refusal to continue anyway, and do not delete a name from
+  `DAEMON_SERVICES` (a package on the store keeps requiring it forever).
+- **The version floors are floors, never ceilings, and they never guess.** A package declares
+  `min_daemon_version`; the daemon declares `MIN_JINNI_VERSION` in `version.py` and serves it on
+  `/capabilities`. Only a provably-bad pair is refused: a version that cannot be read is not a refusal.
+  Raising `MIN_JINNI_VERSION` strands every printer whose adapter is older, so it is the maintainer's
+  call, never a side effect of a change.
+- **The diffs are applied to the stock original, never to what is on the printer now.** A plugin's kept
+  originals live in its own `patches_orig/`, keyed by the target's full path with a fallback to the old
+  bare-name key. Never delete a plugin directory on a path that replaces an existing install: that
+  directory holds the only copy of the files the printer needs to get back to stock.
 
 ## When you are unsure
 

@@ -23,45 +23,9 @@ from protocol import ActionResult
 
 from .. import jinni_client, python_env
 from ..results import item, phase
+from .baked_deps import baked_top_level_names
 from .placement import points_into, symlink_owner
 from .plugin_venv import provision_venv_phase
-
-
-def reject_conflicting_dep_files(plugin_dir: Path) -> None:
-    if (plugin_dir / python_env.REQUIREMENTS_FILE).is_file() and (plugin_dir / python_env.KLIPPER_REQUIREMENTS_FILE).is_file():  # noqa: E501
-        raise ValueError(
-            "a plugin ships requirements.txt OR klipper_requirements.txt, not both: the first goes "
-            "in the plugin's own venv, the second into the system Python for Klipper/Moonraker"
-        )
-
-
-def reject_unbaked_deps(plugin_dir: Path) -> None:
-    """A shipped requirements file must come with its baked artifacts (CI bakes them; no pip runs on
-    the printer). An unbaked declaration is a broken build: fail loudly here instead of provisioning
-    nothing and letting the dependent component fail to import at runtime."""
-    declarations = [
-        (python_env.REQUIREMENTS_FILE, python_env.plugin_wheels_dir(plugin_dir)),
-        (python_env.KLIPPER_REQUIREMENTS_FILE, python_env.baked_site_packages_dir(plugin_dir)),
-    ]
-    for declaration, baked in declarations:
-        if (plugin_dir / declaration).is_file() and not (baked.is_dir() and any(baked.iterdir())):
-            raise ValueError(
-                f"{declaration} is present but nothing was baked into {baked.relative_to(plugin_dir)}/; "  # noqa: E501
-                "rebuild so the deps ship with it (CI bakes them; the printer never pips)"
-            )
-
-
-def _is_importable_entry(entry: Path) -> bool:
-    if entry.name in ("bin", "__pycache__") or entry.name.endswith((".dist-info", ".egg-info")):
-        return False
-    return entry.is_dir() or entry.suffix == ".py"
-
-
-def baked_top_level_names(plugin_dir: Path) -> list[str]:
-    baked = python_env.baked_site_packages_dir(plugin_dir)
-    if not baked.is_dir():
-        return []
-    return sorted(entry.name for entry in baked.iterdir() if _is_importable_entry(entry))
 
 
 def _already_importable(module: str) -> bool:

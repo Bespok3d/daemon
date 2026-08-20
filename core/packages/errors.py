@@ -52,3 +52,15 @@ class IncompatiblePairError(Exception):
         self.required = required
         self.running = running
         super().__init__(f"{side} {running} is older than the required {required}")
+
+
+class MissingSettingError(Exception):
+    """A plugin op was refused because a setting the manifest marks required arrived with no value
+    and the manifest declares no default for it. Nothing is placed on the printer: a template
+    rendered without that value would carry the literal placeholder text into a config the printer
+    reads at startup."""
+
+    def __init__(self, plugin_id: str, missing: list[str]) -> None:
+        self.plugin_id = plugin_id
+        self.missing = missing
+        super().__init__(f"{plugin_id} needs a value for: {', '.join(missing)}")

@@ -13,12 +13,13 @@ from pathlib import Path
 from typing import cast
 
 from .. import python_env
+from .errors import MissingSettingError
 from .plugin_dir import contained_plugin_dir
 
 # The comma is allowed for list-valued config (e.g. NOTIFY_EVENTS="complete,error,cancelled"). It is
 # safe in the shell-interpolated `install.start` commands: a bare comma is not a metacharacter, and
 # brace expansion (its only special use) needs `{`/`}`, which this allowlist already blocks.
-_SAFE_VAR_RE = re.compile(r'^[A-Za-z0-9 .,\-:/_@]+$')
+_SAFE_VAR_RE = re.compile(r'[A-Za-z0-9 .,\-:/_@]+')
 _SAFE_VAR_ALLOWED = "letters, numbers, spaces, and . , - : / _ @"
 
 USER_VARS_FILE = "user_vars.json"
@@ -47,7 +48,7 @@ def _setting_as_text(value: object) -> str:
 
 def validate_user_vars(user_vars: dict[str, str]) -> None:
     for key, value in user_vars.items():
-        if not _SAFE_VAR_RE.match(value):
+        if not _SAFE_VAR_RE.fullmatch(value):
             raise ValueError(f"Variable {key!r} allows only {_SAFE_VAR_ALLOWED}. Got: {value!r}")
 
 
@@ -78,6 +79,35 @@ def with_plugin_venv(vars: dict[str, str], plugin_id: str) -> dict[str, str]:
     return {**vars, python_env.PLUGIN_VENV_VAR: str(contained_plugin_dir(venv_root, plugin_id))}
 
 
+def declared_variables(manifest: dict) -> list[dict]:
+    return cast(list[dict], manifest.get("requires", {}).get("variables", []))
+
+
+def with_declared_defaults(manifest: dict, supplied: dict[str, str]) -> dict[str, str]:
+    """The settings an op actually applies: what the client sent, plus the manifest's own default
+    for every setting the client did not send at all.
+
+    A manifest that declares a default is stating what the plugin does when the user says nothing
+    about that setting, so a client that omits it must get that value. Without this the omitted
+    name is in no expansion table, and the config file keeps the literal `$NAME` text.
+
+    A name the client DID send keeps the value it sent, empty string included: clearing a field is
+    the user saying something, not the user saying nothing."""
+    defaults = {spec["name"]: _setting_as_text(spec["default"])
+                for spec in declared_variables(manifest) if "default" in spec}
+    return {**defaults, **supplied}
+
+
 def missing_required_vars(manifest: dict, available: dict[str, str]) -> list[str]:
-    specs = manifest.get("requires", {}).get("variables", [])
-    return [spec["name"] for spec in specs if spec.get("required") and not available.get(spec["name"])]  # noqa: E501
+    specs = declared_variables(manifest)
+    return [spec["name"] for spec in specs
+            if spec.get("required") and not available.get(spec["name"], "").strip()]
+
+
+def refuse_missing_settings(manifest: dict, available: dict[str, str]) -> None:
+    """Refuse the op when a required setting has no value, BEFORE anything is written. The install
+    would otherwise succeed and hand Klipper a config line reading `$SPOOLMAN_SERVER`, which halts
+    the firmware until the printer's own recovery peels the plugin back off."""
+    missing = missing_required_vars(manifest, available)
+    if missing:
+        raise MissingSettingError(manifest["name"], missing)

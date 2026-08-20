@@ -9,6 +9,7 @@ Reads the service model out of each manifest; the manifest IO itself lives in `.
 from pathlib import Path
 from typing import Any
 
+from .daemon_services import DAEMON_SERVICES
 from .deactivation import DEACTIVATED_MARKER
 from .manifest import installed_manifest_dirs, manifest_at
 
@@ -48,15 +49,18 @@ def installed_dependents(plugin_root: Path, plugin_id: str) -> list[str]:
     return [plugin_dir.name for plugin_dir in others if _depends_on_any(plugin_dir, provided)]
 
 
-def installed_provided_services(plugin_root: Path, being_applied: frozenset[str]) -> set[str]:
-    """Every service provided by an installed, non-deactivated plugin, ignoring the plugins named in
-    `being_applied` (the packages this call is applying, whose freshly-unpacked dirs are already
-    present and must not count as providers of what the call itself has yet to deliver)."""
+def services_the_printer_can_serve(plugin_root: Path, being_applied: frozenset[str]) -> set[str]:
+    """Every service a requirement can be met by right now: what an installed, non-deactivated
+    plugin provides, plus what this daemon build serves itself. The plugins named in
+    `being_applied` are ignored (the packages this call is applying, whose freshly-unpacked dirs
+    are already present and must not count as providers of what the call itself has yet to
+    deliver)."""
     active = [
         plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root)
         if plugin_dir.name not in being_applied and not (plugin_dir / DEACTIVATED_MARKER).exists()
     ]
-    return {service for plugin_dir in active for service in provided_services(manifest_at(plugin_dir))}  # noqa: E501
+    provided = {service for plugin_dir in active for service in provided_services(manifest_at(plugin_dir))}  # noqa: E501
+    return provided | DAEMON_SERVICES
 
 
 def unsatisfied_requirements(
@@ -64,7 +68,7 @@ def unsatisfied_requirements(
 ) -> list[str]:
     """The services a package requires that no installed, non-deactivated plugin provides.
     `also_provided` covers the batch case, where a sibling package supplies a required service."""
-    available = installed_provided_services(plugin_root, frozenset([plugin_id])) | also_provided
+    available = services_the_printer_can_serve(plugin_root, frozenset([plugin_id])) | also_provided
     return sorted(service for service in required_services(manifest) if service not in available)
 
 

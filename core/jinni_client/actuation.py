@@ -16,32 +16,54 @@ from protocol import ActionResult
 from .dispatch import route
 
 
+def _paired_results(verb: str, sent: list, reply: object) -> list[ActionResult]:
+    """The reply's results, one for each thing the daemon sent, or a refusal.
+
+    Every actuating verb promises that pairing, and each caller zips its own list against the reply
+    to build its phase log. A short reply therefore pairs results to the wrong commands and
+    drops the tail in silence, reporting a plugin as started or wired when nobody did it.
+    `cast` is a type hint
+    and checks nothing at runtime, so the promise is checked here, once, for every verb that makes
+    it. A jinni that breaks it is a bad jinni and the daemon recycles it, the same as one that died.
+    """
+    if not isinstance(reply, list):
+        raise protocol.ProtocolError(f"the jinni answered {verb!r} with no list of results")
+    if len(reply) != len(sent):
+        raise protocol.ProtocolError(
+            f"the jinni answered {verb!r} with {len(reply)} results for {len(sent)} sent")
+    return cast(list[ActionResult], reply)
+
+
 def run_actions(commands: list[str]) -> list[ActionResult]:
     """Run the resolved device actions (a plugin's start, a core-service restart, a stop command) in
     order, one ActionResult per command. The daemon resolves, groups, and dedupes the commands and
     reports the results; executing one (the device-realm subprocess) is the jinni's (ADR-0037). The
     reply timeout is generous: a restart or a slow start can outlast the default frame budget."""
-    return cast(list[ActionResult], route("run_actions", [commands], timeout=protocol.ACTION_CALL_TIMEOUT_S))  # noqa: E501
+    reply = route("run_actions", [commands], timeout=protocol.ACTION_CALL_TIMEOUT_S)
+    return _paired_results("run_actions", commands, reply)
 
 
 def wire(plugin_dir: str, links: list[dict[str, str]]) -> list[ActionResult]:
     """Symlink each placed file (`{source, destination}`, both resolved by the daemon) into the
     system, backing up any stock original, and record the declarative reversion to the plugin's
     wiring.json. Creating and backing up a device symlink is the jinni's actuation (ADR-0037)."""
-    return cast(list[ActionResult], route("wire", [plugin_dir, links], timeout=protocol.ACTION_CALL_TIMEOUT_S))  # noqa: E501
+    reply = route("wire", [plugin_dir, links], timeout=protocol.ACTION_CALL_TIMEOUT_S)
+    return _paired_results("wire", links, reply)
 
 
 def unwire(plugin_dir: str, destinations: list[str]) -> list[ActionResult]:
     """Drop the symlinks the daemon resolved and restore any stock original from its backup, the
     inverse of wire, when a plugin is taken off the system."""
-    return cast(list[ActionResult], route("unwire", [plugin_dir, destinations], timeout=protocol.ACTION_CALL_TIMEOUT_S))  # noqa: E501
+    reply = route("unwire", [plugin_dir, destinations], timeout=protocol.ACTION_CALL_TIMEOUT_S)
+    return _paired_results("unwire", destinations, reply)
 
 
 def write_files(plugin_dir: str, writes: list[dict]) -> list[ActionResult]:
     """Write each `{path, content, restore_from?}` to the device: a patched source the daemon built,
     or a pristine baseline on restore. Writing the device file is the jinni's actuation; a write
     that carries `restore_from` records its undo in the plugin's wiring.json."""
-    return cast(list[ActionResult], route("write_files", [plugin_dir, writes], timeout=protocol.ACTION_CALL_TIMEOUT_S))  # noqa: E501
+    reply = route("write_files", [plugin_dir, writes], timeout=protocol.ACTION_CALL_TIMEOUT_S)
+    return _paired_results("write_files", writes, reply)
 
 
 def prune_dead_config_links() -> list[str]:

@@ -11,73 +11,16 @@ time rolls the VOP2-wedge dice N times, while one batch bounces it once.
 
 from pathlib import Path
 
-from ..results import SERVICES_PLUGIN_ID, item, phase
+from ..results import SERVICES_PLUGIN_ID
 from ..safety import OperationContext, OperationKind
-from .archive import discard_extraction, unpack_package
+from .batch_one import apply_one
 from .batch_plan import BatchPlan
 from .batch_progress import BatchProgress
 from .batch_rows import failed_result, install_error, settle_after_safety_net
-from .deactivation import deactivate_plugin, finalize_install_outcome
 from .dependencies import provided_services
-from .file_drift import refuse_changed_package
-from .installer import PhaseListener, apply_install_deferred
-from .integrity import IntegrityError
+from .installer import PhaseListener
 from .left_out import services_already_on_the_printer, skipped_result, why_not_applied
 from .recovery import restart_services
-from .user_vars import persist_user_vars, with_plugin_venv
-
-
-def _unpacked_for_apply(
-    plugin_root: Path,
-    base_vars: dict[str, str],
-    package_path: Path,
-    user_vars: dict[str, str],
-    notify: PhaseListener,
-) -> tuple[dict, Path, dict[str, str], dict]:
-    """Put one package's files on disk, save the config the user typed with them, and announce the
-    extract phase: everything the apply below needs before it runs a single install phase."""
-    manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
-    full_vars = with_plugin_venv({**base_vars, **user_vars}, manifest["name"])
-    persist_user_vars(plugin_dir, user_vars)
-    extract = phase("extract", "Unpack", [item(f"Extracted {file_count} files", ok=True)])
-    notify(extract)
-    return manifest, plugin_dir, full_vars, extract
-
-
-def _apply_one(
-    plugin_root: Path,
-    base_vars: dict[str, str],
-    package_path: Path,
-    user_vars: dict[str, str],
-    notify: PhaseListener,
-) -> tuple[dict, list[str]]:
-    """Apply one package's install, deferring its restart. A failure is contained to this plugin
-    (recover_one's pattern): a raised or failed-phase apply deactivates it and returns a failed
-    result, so the rest of the batch still completes."""
-    manifest, plugin_dir, full_vars, extract = _unpacked_for_apply(
-        plugin_root, base_vars, package_path, user_vars, notify,
-    )
-    plugin_id = manifest["name"]
-    try:
-        refuse_changed_package(plugin_dir, manifest)
-        phases, deferred = apply_install_deferred(
-            plugin_root, plugin_dir, manifest, full_vars, notify,
-        )
-    except IntegrityError as tampered_package:
-        # Same cleanup a single install does: a package whose contents do not match what it declares
-        # leaves nothing on the printer, rather than a deactivated tree the daemon never applied.
-        discard_extraction(plugin_dir)
-        return failed_result(plugin_id, install_error(tampered_package), [extract]), []
-    except Exception as exc:  # noqa: BLE001 - one plugin's apply error must NOT abort the batch
-        reason = install_error(exc)
-        deactivate_plugin(plugin_dir, full_vars, reason)
-        return failed_result(plugin_id, reason, [extract]), []
-    log = [extract, *phases]
-    finalize_install_outcome(plugin_dir, full_vars, log)
-    ok = all(logged_phase["ok"] for logged_phase in log)
-    reason = "" if ok else "update phase failed"
-    result = {"plugin_id": plugin_id, "ok": ok, "skipped": False, "reason": reason, "log": log}
-    return result, (deferred if ok else [])
 
 
 def _apply_or_report(
@@ -90,7 +33,7 @@ def _apply_or_report(
     """One plugin's turn, never allowed to end the batch: an error raised before the apply engine
     can contain it still comes back as this plugin's failed result."""
     try:
-        return _apply_one(
+        return apply_one(
             plugin_root, plan.base_vars, package_path, plan.vars_by_id.get(plugin_id, {}),
             notify,
         )

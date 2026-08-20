@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core import auth
+from core import access_requests, auth
 
 
 def test_load_acl_returns_empty_when_file_is_missing(
@@ -84,7 +84,7 @@ def test_is_authorized_token_returns_false_when_acl_is_missing(
 @pytest.fixture
 def acl_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auth, "ACL_PATH", tmp_path / "acl.json")
-    monkeypatch.setattr(auth, "PENDING_PATH", tmp_path / "pending.json")
+    monkeypatch.setattr(access_requests, "PENDING_PATH", tmp_path / "pending.json")
 
 
 def test_grant_appends_without_clobbering_existing_keys(acl_files: None) -> None:
@@ -113,25 +113,27 @@ def test_list_clients_never_exposes_tokens(acl_files: None) -> None:
 
 
 def test_pending_roundtrip_keeps_token_only_for_pop(acl_files: None) -> None:
-    assert auth.add_pending({"identity": "carol", "label": "Carol", "token": "tok-c"})
-    listed = auth.list_pending()
+    assert access_requests.add_pending({"identity": "carol", "label": "Carol", "token": "tok-c"})
+    listed = access_requests.list_pending()
     assert listed[0]["identity"] == "carol"
     assert "token" not in listed[0]
-    popped = auth.pop_pending("carol")
+    popped = access_requests.pop_pending("carol")
     assert popped is not None and popped["token"] == "tok-c"
-    assert auth.list_pending() == []
+    assert access_requests.list_pending() == []
 
 
 def test_add_pending_is_capped(acl_files: None) -> None:
-    for index in range(auth.PENDING_CAP):
-        assert auth.add_pending({"identity": f"id-{index}", "label": "x", "token": f"t-{index}"})
-    assert not auth.add_pending({"identity": "overflow", "label": "x", "token": "t-x"})
+    for index in range(access_requests.PENDING_CAP):
+        request = {"identity": f"id-{index}", "label": "x", "token": f"t-{index}"}
+        assert access_requests.add_pending(request)
+    overflow = {"identity": "overflow", "label": "x", "token": "t-x"}
+    assert not access_requests.add_pending(overflow)
 
 
 def test_add_pending_dedupes_by_identity(acl_files: None) -> None:
-    auth.add_pending({"identity": "carol", "label": "old", "token": "t1"})
-    auth.add_pending({"identity": "carol", "label": "new", "token": "t2"})
-    pending = auth.list_pending()
+    access_requests.add_pending({"identity": "carol", "label": "old", "token": "t1"})
+    access_requests.add_pending({"identity": "carol", "label": "new", "token": "t2"})
+    pending = access_requests.list_pending()
     assert len(pending) == 1
     assert pending[0]["label"] == "new"
 

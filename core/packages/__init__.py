@@ -18,6 +18,7 @@ from ..data_root import DATA_ROOT
 from .batch_progress import ProgressSink  # noqa: F401  re-export for api.routes
 from .batch_uninstaller import run_uninstall_batch
 from .deactivation import DEACTIVATED_MARKER  # noqa: F401  re-export for api.routes
+from .deactivator import run_deactivate
 from .dependencies import (  # noqa: F401  re-export for api.routes
     provided_services,
     topo_sort,
@@ -27,6 +28,7 @@ from .errors import (
     ConflictError,  # noqa: F401  re-export for api.routes
     DependentsError,  # noqa: F401  re-export for api.routes
     IncompatiblePairError,  # noqa: F401  re-export for api.routes
+    MissingSettingError,  # noqa: F401  re-export for api.routes
     RequirementError,  # noqa: F401  re-export for api.routes
 )
 from .installer import (
@@ -98,6 +100,10 @@ def recover(vars: dict[str, str], publish: ProgressSink | None = None) -> list[d
 
 def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> list[str]:
     return run_uninstall(PLUGIN_ROOT, plugin_id, vars, cascade)
+
+
+def deactivate(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> list[str]:
+    return run_deactivate(PLUGIN_ROOT, plugin_id, vars, cascade)
 
 
 def uninstall_batch(

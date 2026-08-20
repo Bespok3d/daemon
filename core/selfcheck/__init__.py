@@ -27,6 +27,7 @@ from .printer_state import (  # noqa: F401  re-export: the vocabulary of a print
     printer_problems,
 )
 from .symlink_drift import (  # noqa: F401  re-export: the vocabulary of a link issue
+    ISSUE_DANGLING_TARGET,
     ISSUE_MISSING,
     ISSUE_NOT_A_SYMLINK,
     ISSUE_WRONG_TARGET,

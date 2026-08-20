@@ -16,7 +16,14 @@ from api import app
 from api.routes import feeds as routes_feeds
 from api.routes import health as routes_health
 from api.routes.plugins import plugin_config
-from core import auth, capabilities, jinni_client, packages, printer_identity
+from core import (
+    access_requests,
+    auth,
+    capabilities,
+    jinni_client,
+    packages,
+    printer_identity,
+)
 from core.packages.integrity import ESCAPING_PLUGIN_ID, UNDECLARED_MEMBER
 from version import DAEMON_VERSION
 
@@ -50,7 +57,7 @@ def test_acl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     }
     (tmp_path / "acl.json").write_text(json.dumps(acl))
     monkeypatch.setattr(auth, "ACL_PATH", tmp_path / "acl.json")
-    monkeypatch.setattr(auth, "PENDING_PATH", tmp_path / "pending.json")
+    monkeypatch.setattr(access_requests, "PENDING_PATH", tmp_path / "pending.json")
 
 
 @pytest.fixture
@@ -67,7 +74,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.12.25"
+    assert body["version"] == "0.13.0"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -753,6 +760,39 @@ async def test_uninstall_batch_route_returns_409_on_dependents(
     detail = response.json()["detail"]
     assert detail["error"] == "dependents"
     assert detail["dependents"] == ["spoolman"]
+
+
+async def test_deactivate_route_returns_the_dependents_refusal_the_app_renders(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The shipped app reads this exact body to say "Still needed by: spoolman"; a different shape
+    # reaches the user as a raw error blob.
+    def raise_dependents(_plugin_id: str, _vars: dict[str, str], cascade: bool = False) -> list[str]:  # noqa: E501
+        raise packages.DependentsError("rfid", ["spoolman"])
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "deactivate", raise_dependents)
+    response = await client.post("/plugins/rfid/deactivate")
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "dependents"
+    assert detail["plugin_id"] == "rfid"
+    assert detail["dependents"] == ["spoolman"]
+
+
+async def test_deactivate_route_with_cascade_reports_every_plugin_it_took_off(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def deactivate_both(plugin_id: str, _vars: dict[str, str], cascade: bool = False) -> list[str]:
+        return ["spoolman", plugin_id] if cascade else [plugin_id]
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "deactivate", deactivate_both)
+    response = await client.post("/plugins/rfid/deactivate?cascade=true")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "deactivated": ["spoolman", "rfid"]}
 
 
 def _anon() -> httpx.AsyncClient:

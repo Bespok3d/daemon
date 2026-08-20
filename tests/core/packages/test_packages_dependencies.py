@@ -5,6 +5,7 @@ from pathlib import Path
 
 from core import packages
 from core.packages import dependencies
+from core.packages.daemon_services import DAEMON_SERVICES
 
 
 def write_plugin(
@@ -55,18 +56,19 @@ def test_installed_conflicts_is_symmetric(tmp_path: Path) -> None:
     assert dependencies.installed_conflicts(tmp_path, "incoming", incoming_manifest) == ["existing"]
 
 
-def test_installed_provided_services_unions_active_providers(tmp_path: Path) -> None:
+def test_the_printer_can_serve_what_its_active_plugins_provide(tmp_path: Path) -> None:
     write_plugin(tmp_path, "tun-module", provides=["tun"])
     write_plugin(tmp_path, "spoolman", provides=["spoolman"])
-    provided = dependencies.installed_provided_services(tmp_path, frozenset(["zerotier"]))
-    assert provided == {"tun", "spoolman"}
+    provided = dependencies.services_the_printer_can_serve(tmp_path, frozenset(["zerotier"]))
+    assert provided == {"tun", "spoolman"} | DAEMON_SERVICES
 
 
-def test_installed_provided_services_excludes_self_and_deactivated(tmp_path: Path) -> None:
+def test_a_plugin_being_applied_or_deactivated_serves_nothing(tmp_path: Path) -> None:
     write_plugin(tmp_path, "zerotier", provides=["zerotier"])
     deactivated = write_plugin(tmp_path, "tun-module", provides=["tun"])
     (deactivated / "deactivated.json").write_text(json.dumps({"reason": "stale kernel module"}))
-    assert dependencies.installed_provided_services(tmp_path, frozenset(["zerotier"])) == set()
+    served = dependencies.services_the_printer_can_serve(tmp_path, frozenset(["zerotier"]))
+    assert served == set(DAEMON_SERVICES)
 
 
 def test_unsatisfied_requirements_flags_a_missing_service(tmp_path: Path) -> None:

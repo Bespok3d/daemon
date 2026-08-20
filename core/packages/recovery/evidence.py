@@ -15,8 +15,8 @@ from ...python_env import import_name
 from ...safety import FailureEvidence
 from ...safety.attribution import AttributionIndex, Placement
 from ...safety.attribution import build_index as build_attribution_index
+from ..baked_deps import baked_top_level_names
 from ..manifest import installed_manifest_dirs, manifest_at
-from ..python_deps import baked_top_level_names
 from ..user_vars import expand, load_user_vars
 
 

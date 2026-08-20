@@ -17,8 +17,17 @@ REFUSALS = (
     packages.BlockedActionError,
     packages.ConflictError,
     packages.RequirementError,
+    packages.MissingSettingError,
     packages.IntegrityError,
 )
+
+
+# The token the app switches on, and what each one calls its list of names.
+_NAMED_LIST_REFUSALS: dict[type[Exception], tuple[str, str]] = {
+    packages.ConflictError: ("conflict", "conflicts"),
+    packages.RequirementError: ("requirement", "missing"),
+    packages.MissingSettingError: ("missing_setting", "missing"),
+}
 
 
 def refusal_detail(refusal: Exception) -> dict:
@@ -37,19 +46,25 @@ def refusal_detail(refusal: Exception) -> dict:
 
 
 def _package_refusal_detail(refusal: Exception) -> dict:
-    """The refusals about the package itself: what it would block, what it collides with, what it
-    needs and has not got, and whether its bytes are what it claims they are."""
+    """The refusals about the package itself: what it would block, whether its bytes are what it
+    claims, and the three that each name a plugin and a list it fell down on."""
     if isinstance(refusal, packages.BlockedActionError):
         return {"error": "blocked", "blocked_actions": refusal.blocked}
-    if isinstance(refusal, packages.ConflictError):
-        return {"error": "conflict", "plugin_id": refusal.plugin_id, "conflicts": refusal.conflicts}
-    if isinstance(refusal, packages.RequirementError):
-        return {"error": "requirement", "plugin_id": refusal.plugin_id, "missing": refusal.missing}
-    integrity = cast(packages.IntegrityError, refusal)
-    return {
-        "error": "integrity", "plugin_id": integrity.plugin_id,
-        "reason": integrity.reason, "paths": integrity.paths,
-    }
+    if isinstance(refusal, packages.IntegrityError):
+        return {
+            "error": "integrity", "plugin_id": refusal.plugin_id,
+            "reason": refusal.reason, "paths": refusal.paths,
+        }
+    return _named_list_detail(refusal)
+
+
+def _named_list_detail(refusal: Exception) -> dict:
+    """The refusals that say which plugin was declined and which names it fell down on: what it
+    collides with, what service it needs, what setting it needs. They differ only in the token and
+    in what that list of names is called, so the table carries both rather than a branch each."""
+    token, list_key = _NAMED_LIST_REFUSALS[type(refusal)]
+    named = cast(packages.RequirementError, refusal)
+    return {"error": token, "plugin_id": named.plugin_id, list_key: getattr(refusal, list_key)}
 
 
 def detail_text(detail: object) -> str:

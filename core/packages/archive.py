@@ -4,8 +4,10 @@
 permissions. A .b3 is a zip of manifest.json plus the plugin's files; doc/ is catalog-only and never
 deployed (printer space is at a premium).
 
-unpack_package brackets the extraction with the two safety checks that belong to it: refuse
-mid-print before touching disk, and validate the plugin's baked Python deps right after.
+unpack_package brackets the extraction with the safety checks that belong to it: refuse a package
+this daemon is too old for, refuse mid-print, and refuse a package that would not fit, all before a
+byte is written, then validate the plugin's baked Python deps right after. Extraction itself is
+in extraction.py, which is also what takes a part written extraction back off the printer.
 """
 
 import json
@@ -16,6 +18,8 @@ from pathlib import Path
 from typing import cast
 
 from ..results import item, phase
+from .baked_deps import reject_conflicting_dep_files, reject_unbaked_deps
+from .extraction import discard_extraction, extract_or_discard
 from .integrity import (
     ESCAPING_MEMBER,
     UNDECLARED_MEMBER,
@@ -27,27 +31,15 @@ from .members import (
     is_doc_member,
     undeclared_members,
 )
+from .pair_guard import guard_daemon_reaches_the_package_floor
 from .plugin_dir import contained_plugin_dir
 from .print_guard import guard_no_print_during_restart
-from .python_deps import reject_conflicting_dep_files, reject_unbaked_deps
+from .unpacked_size import refuse_package_that_does_not_fit
 
 
 def read_manifest(package_path: Path) -> dict:
     with zipfile.ZipFile(package_path) as zf:
         return cast(dict, json.loads(zf.read("manifest.json")))
-
-
-def _extract_members(zf: zipfile.ZipFile, plugin_dir: Path, members: list[str]) -> None:
-    # Unlink an existing file before extracting over it. Overwriting a running binary in place fails
-    # with ETXTBSY ("Text file busy"); unlinking keeps the running process's inode and writes a new
-    # file, so a reinstall or version switch can replace a binary that is currently executing. The
-    # delete runs as root, which is why the caller refuses an escaping member before the plugin dir
-    # is ever created.
-    for name in members:
-        dest = plugin_dir / name
-        if dest.is_file() or dest.is_symlink():
-            dest.unlink()
-        zf.extract(name, plugin_dir)
 
 
 def _refuse_uncontained_package(
@@ -77,6 +69,7 @@ def unpack_package(plugin_root: Path, package_path: Path) -> tuple[dict, Path, i
         if "manifest.json" not in zf.namelist():
             raise ValueError("missing manifest.json")
         manifest = json.loads(zf.read("manifest.json"))
+        guard_daemon_reaches_the_package_floor(manifest)
         guard_no_print_during_restart(manifest)
         # Checked before anything is measured against the plugin dir: the package names that
         # directory, so a name carrying a path would relocate the extraction and every member would
@@ -86,20 +79,29 @@ def unpack_package(plugin_root: Path, package_path: Path) -> tuple[dict, Path, i
         # Refused before the plugin dir is created or touched, so a reinstall that trips a
         # containment check leaves the working install it would have replaced intact.
         _refuse_uncontained_package(plugin_dir, zf.namelist(), members, manifest.get("files", []))
+        refuse_package_that_does_not_fit(zf, plugin_root, members)
+        replacing_an_install = plugin_dir.is_dir()
         plugin_dir.mkdir(parents=True, exist_ok=True)
-        _extract_members(zf, plugin_dir, members)
+        extract_or_discard(zf, plugin_dir, members, replacing_an_install)
         file_count = len(members)
     shutil.rmtree(plugin_dir / "doc", ignore_errors=True)
-    reject_conflicting_dep_files(plugin_dir)
-    reject_unbaked_deps(plugin_dir)
+    _refuse_unusable_deps(plugin_dir, replacing_an_install)
     return manifest, plugin_dir, file_count
 
 
-def discard_extraction(plugin_dir: Path) -> None:
-    """Take back what unpacking wrote. A package the printer refuses after it was unpacked must not
-    leave its files behind: kept, the tree would make /capabilities report a plugin the daemon never
-    applied."""
-    shutil.rmtree(plugin_dir, ignore_errors=True)
+def _refuse_unusable_deps(plugin_dir: Path, replacing_an_install: bool) -> None:
+    """A package whose Python dependencies were never baked into it is refused. A first install has
+    its extraction taken back off the printer: left behind, the tree makes the daemon report a
+    plugin it never installed. A version replacing one already on the printer keeps its directory,
+    because that directory is also where the older version's stock originals and settings live:
+    deleting it would take the only copy of the files the printer needs to get back to stock."""
+    try:
+        reject_conflicting_dep_files(plugin_dir)
+        reject_unbaked_deps(plugin_dir)
+    except ValueError:
+        if not replacing_an_install:
+            discard_extraction(plugin_dir)
+        raise
 
 
 def fix_ownership(plugin_dir: Path, runtime_user: str) -> dict:

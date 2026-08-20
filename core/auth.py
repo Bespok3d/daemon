@@ -12,9 +12,6 @@ ACL file: /userdata/bespok3d/auth/acl.json
     "token_identity": { "<hex>": "<identity>" }
   }
 
-Pending file: /userdata/bespok3d/auth/pending.json
-  [ { "identity", "label", "public_key", "token", "requested_at" }, ... ]
-
 A second client is authorized by an existing authorized client (ADR-0016/0008, flat peers): the new
 client POSTs an access request (it proposes its own token), and any already-authorized client grants
 it by appending it to the ACL. Mutations are read-modify-write so a grant never clobbers other keys.
@@ -23,14 +20,11 @@ it by appending it to the ACL. Mutations are read-modify-write so a grant never 
 import hmac
 import json
 import re
-from datetime import datetime, timezone
 from typing import Any
 
 from .data_root import DATA_ROOT
 
 ACL_PATH = DATA_ROOT / "auth/acl.json"
-PENDING_PATH = DATA_ROOT / "auth/pending.json"
-PENDING_CAP = 8
 
 # /access/request is unauthenticated, so its inputs are untrusted. Bound and charset-check them so a
 # caller cannot store oversized or control-character garbage (the identity is a GPG fingerprint or a
@@ -54,9 +48,20 @@ def _empty_acl() -> dict[str, Any]:
 
 
 def load_acl() -> dict[str, Any]:
+    """The stored ACL, or an empty one when the file is absent or unreadable. A file torn by a power
+    cut mid-write must leave the daemon answering and refusing rather than crashing every auth check
+    on the printer; the user recovers by re-enrolling, which the app already offers. A field stored
+    as null falls back to its empty default for the same reason."""
     if not ACL_PATH.exists():
         return _empty_acl()
-    result: dict[str, Any] = {**_empty_acl(), **json.loads(ACL_PATH.read_text())}
+    try:
+        stored = json.loads(ACL_PATH.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return _empty_acl()
+    if not isinstance(stored, dict):
+        return _empty_acl()
+    filled = {name: value for name, value in stored.items() if value is not None}
+    result: dict[str, Any] = {**_empty_acl(), **filled}
     return result
 
 
@@ -70,10 +75,18 @@ def is_authorized(fingerprint: str) -> bool:
 
 
 def is_authorized_token(token: str) -> bool:
+    """Whether the bearer credential offered by a caller is one this printer holds.
+
+    The offered token arrives from an unauthenticated request, so it is any text at all. Compared as
+    text it takes the constant-time compare outside what it accepts (it holds only ASCII) and the
+    printer answers a stranger's malformed token with a crash instead of a refusal, so both sides
+    are compared as bytes."""
     # Constant-time compare against every token so response timing cannot recover a token byte by
     # byte. We iterate all entries (no early break on mismatch); a match short-circuits, which is
     # fine since the caller already holds a valid token in that case.
-    return any(hmac.compare_digest(token, valid) for valid in load_acl().get("tokens", []))
+    offered = token.encode(errors="replace")
+    return any(hmac.compare_digest(offered, str(valid).encode(errors="replace"))
+               for valid in load_acl().get("tokens", []))
 
 
 def grant_key(identity: str, token: str, role: str = "user", label: str = "") -> None:
@@ -109,42 +122,3 @@ def list_clients() -> list[dict[str, str]]:
         {"identity": key, "role": roles.get(key, "user"), "label": labels.get(key, "")}
         for key in acl["keys"]
     ]
-
-
-def load_pending() -> list[dict[str, Any]]:
-    if not PENDING_PATH.exists():
-        return []
-    items: list[dict[str, Any]] = json.loads(PENDING_PATH.read_text())
-    return items
-
-
-def _save_pending(items: list[dict[str, Any]]) -> None:
-    PENDING_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PENDING_PATH.write_text(json.dumps(items, indent=2))
-
-
-def add_pending(entry: dict[str, Any], cap: int = PENDING_CAP) -> bool:
-    """Record an access request. Returns False when the pending list is full (abuse cap)."""
-    items = [item for item in load_pending() if item.get("identity") != entry.get("identity")]
-    if len(items) >= cap:
-        return False
-    items.append({**entry, "requested_at": datetime.now(timezone.utc).isoformat()})
-    _save_pending(items)
-    return True
-
-
-def list_pending() -> list[dict[str, str]]:
-    """Pending requests for display. Never exposes the proposed token."""
-    return [
-        {"identity": item["identity"], "label": item.get("label", ""),
-         "requested_at": item.get("requested_at", "")}
-        for item in load_pending()
-    ]
-
-
-def pop_pending(identity: str) -> dict[str, Any] | None:
-    items = load_pending()
-    match = next((item for item in items if item.get("identity") == identity), None)
-    if match is not None:
-        _save_pending([item for item in items if item.get("identity") != identity])
-    return match

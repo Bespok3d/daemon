@@ -7,20 +7,20 @@ package manifest is untrusted until it has been through here: an id carrying a s
 would otherwise relocate a delete or a write outside the tree it was meant to touch (Starlette's
 `[^/]+` path-param regex happily matches a bare `..`).
 
-The rule itself lives in `names_its_own_directory`; this module is only where the refusal is raised,
-so there is one place to read and one place to change.
+The rule itself lives in `stays_inside_its_parent_dir`; this module is only where the refusal is
+raised, so there is one place to read and one place to change.
 """
 
 from pathlib import Path
 
 from .integrity import ESCAPING_PLUGIN_ID, IntegrityError
-from .members import names_its_own_directory
+from .members import stays_inside_its_parent_dir
 
 
 def contained_plugin_dir(root: Path, plugin_id: object) -> Path:
     """The directory `plugin_id` names directly inside `root`, or a refusal if it names anything
     else. `root` is whichever tree holds one directory per plugin: the plugin root for an install,
     the per-plugin venv root for a venv."""
-    if names_its_own_directory(plugin_id):
+    if stays_inside_its_parent_dir(plugin_id):
         return root / plugin_id
     raise IntegrityError(str(plugin_id), ESCAPING_PLUGIN_ID, [str(plugin_id)])

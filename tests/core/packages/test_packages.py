@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from core import jinni_client, packages
-from core.packages import dependencies, python_deps
+from core.packages import baseline, dependencies, python_deps
 from protocol import ActionResult, DeviceHealth, ServiceHealth
 from tests.fakes import FakeKlipperJinni
 from tests.package_fixtures import with_declared_files
@@ -589,7 +589,7 @@ def test_patch_crlf_target_succeeds(tmp_path: Path, monkeypatch: MP) -> None:
     patched = target.read_text()
     assert "new line" in patched
     assert "\r" not in patched
-    orig = tmp_path / "crlf-plugin" / "patches_orig" / "target.py"
+    orig = baseline.kept_original(baseline.stock_copies(tmp_path / "crlf-plugin"), target)
     assert orig.exists()
     assert orig.read_bytes() == b"line one\r\nline two\r\nline three\r\n"
 
@@ -1569,13 +1569,13 @@ def test_update_batch_reports_progress(tmp_path: Path, monkeypatch: MP) -> None:
 def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) -> None:
     """One plugin's failed phase must not sink the batch: it is deactivated (off the system, files
     kept) while the others install. The install/recover safety net, now on the batch path too."""
-    from core.packages import batch
+    from core.packages import batch_one
 
     plugin_root = tmp_path / "plugins"
     monkeypatch.setattr(packages, "PLUGIN_ROOT", plugin_root)
     good = make_package_file(tmp_path, "good")
     bad = make_package_file(tmp_path, "bad")
-    real_apply = batch.apply_install_deferred
+    real_apply = batch_one.apply_install_deferred
     failed = {"id": "patches", "label": "Patches", "ok": False,
               "items": [{"label": "patch x", "ok": False, "output": "context mismatch"}]}
 
@@ -1586,7 +1586,7 @@ def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) 
             return [failed], []
         return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(batch, "apply_install_deferred", apply)
+    monkeypatch.setattr(batch_one, "apply_install_deferred", apply)
 
     results = packages.update_batch({}, [good, bad], {})
 
@@ -1617,9 +1617,9 @@ def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> 
 
 def fail_the_apply_of(monkeypatch: MP, doomed_plugin_id: str) -> None:
     """Make one plugin's apply blow up on the printer, leaving the rest of the call untouched."""
-    from core.packages import batch
+    from core.packages import batch_one
 
-    real_apply = batch.apply_install_deferred
+    real_apply = batch_one.apply_install_deferred
 
     def flaky(plugin_root_arg: Path, plugin_dir: Path, manifest: dict,
               vars: dict[str, str], notify: object) -> tuple[list[dict], list[str]]:
@@ -1627,7 +1627,7 @@ def fail_the_apply_of(monkeypatch: MP, doomed_plugin_id: str) -> None:
             raise RuntimeError("kaboom")
         return real_apply(plugin_root_arg, plugin_dir, manifest, vars, notify)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(batch, "apply_install_deferred", flaky)
+    monkeypatch.setattr(batch_one, "apply_install_deferred", flaky)
 
 
 def test_install_batch_never_installs_a_plugin_whose_provider_failed(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
@@ -1934,7 +1934,7 @@ def test_install_batch_leaves_out_only_the_plugin_whose_setting_is_unusable(tmp_
 def test_install_batch_leaves_nothing_behind_when_a_package_fails_its_checksums(tmp_path: Path, monkeypatch: MP) -> None:  # noqa: E501
     """A package whose contents do not match what it declares leaves nothing on the printer, exactly
     as installing it on its own does, instead of a deactivated tree the daemon never applied."""
-    from core.packages import batch
+    from core.packages import batch_one
     from core.packages.integrity import CHECKSUM_MISMATCH, IntegrityError
 
     plugin_root = tmp_path / "plugins"
@@ -1946,7 +1946,7 @@ def test_install_batch_leaves_nothing_behind_when_a_package_fails_its_checksums(
         if plugin_dir.name == "rfid-ntag":
             raise IntegrityError("rfid-ntag", CHECKSUM_MISMATCH, ["rfid.py"])
 
-    monkeypatch.setattr(batch, "refuse_changed_package", refuse_the_tampered_one)
+    monkeypatch.setattr(batch_one, "refuse_changed_package", refuse_the_tampered_one)
 
     rows = rows_by_plugin(packages.install_batch({}, [camera, tampered], {}))
 

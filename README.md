@@ -24,7 +24,8 @@ protocol/             the contract the daemon and the jinni both import (the jin
 S99bespok3d           boot hook
 s10bespok3d-daemon    autostart script
 requirements.txt      runtime deps, and the ADR-0036 declaration b3-builder bakes into wheels
-tests/                test suite (not packed)
+tests/                desk test suite (not packed)
+tests_invitro/        on-machine suite: drives a real printer over the wire (not packed)
 scripts/              check.sh / stage-package.sh (not packed)
 manifest.json         b3-zero manifest (version mirrors version.py)
 doc/                  README + CHANGELOG (shipped in the .b3); architecture + engineering-rules (not shipped)
@@ -52,6 +53,24 @@ bash scripts/serve-local.sh
 
 `scripts/check.sh` pins Python 3.11 (the device runtime): it prefers a real `python3.11`, else
 provisions a project-local one via `uv`, else exits rather than running on a different interpreter.
+
+## Test it on a real printer
+
+`tests/` runs on a desk with no hardware. `tests_invitro/` runs against a printer that is enrolled
+and running this daemon, over the same HTTPS wire the app uses, and skips entirely when
+`B3D_HIL_HOST` is unset (so the gate never needs a printer).
+
+```sh
+# Refusals tier: offers packages the printer must turn away. Installs nothing.
+B3D_HIL_HOST=<printer-address> bash scripts/invitro.sh
+
+# Adds the tier that really installs a throwaway package and takes it off again.
+B3D_HIL_HOST=<printer-address> B3D_INVITRO_MUTATE=1 bash scripts/invitro.sh
+```
+
+The bearer token is read off the printer's own access list over SSH; set `B3D_HIL_TOKEN` to supply
+one instead. `B3D_HIL_SSH_USER` and `B3D_HIL_SSH_PASS` override the stock login. No test runs while
+the printer is printing, and a test that changes the printer puts back what it changed.
 
 ## Versioning
 
