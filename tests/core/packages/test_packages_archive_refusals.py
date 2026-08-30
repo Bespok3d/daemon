@@ -89,7 +89,8 @@ def test_symlink_member_lands_as_ordinary_file_content_never_a_live_link(tmp_pat
     package_path.write_bytes(buffer.getvalue())
     plugin_root = tmp_path / "plugins"
 
-    _manifest, plugin_dir, _file_count = archive.unpack_package(plugin_root, package_path)
+    _manifest, plugin_dir, _file_count, _replacing = archive.unpack_package(
+        plugin_root, package_path)
 
     link_member = plugin_dir / "files" / "link"
     assert not link_member.is_symlink()

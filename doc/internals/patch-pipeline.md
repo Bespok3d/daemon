@@ -9,6 +9,22 @@ and a unified diff. This document is how the daemon turns those into a changed f
 and how it gets the printer back to stock afterwards. The code is `core/packages/baseline.py`,
 `core/packages/patches.py` and `core/packages/patch_handover.py`.
 
+## Who may patch Snapmaker's own files: the base layer, and nothing else (ADR-0043)
+
+Every file the printer maker ships has exactly one owning package, and those packages are that device
+family's base layer. For the Snapmaker U1 it is `u1-base`: six patch-only plugins, one per stock file
+owned, plus a Collection that installs all six. A feature plugin ships no diff against a stock file at
+all. It names the door it needs with a `require` entry against the service its owning base member
+provides, and calls that door from its own Klipper module at run time.
+
+**This is a publishing rule, enforced where plugins get published. It is not a printer check.** The
+daemon does not refuse a `klipper-source` instrument entry from any package, and nothing on the
+printer tests membership of a base plugin list (owner, 2026-08-22).
+
+Single ownership is what makes the baseline machinery correct: `derive_stock` recovers stock text by
+reverse-applying one plugin's own fragments, so a second owner of the same file would capture already
+patched text as its baseline and write that back on uninstall.
+
 ## The one rule
 
 **The diffs are always applied to the stock original, never to whatever is on the printer right now.**
@@ -61,6 +77,14 @@ own output: the apply fails on every retry and the plugin silently stops working
 deduplicated, so a file patched by several fragments is restored once, and an empty kept copy is
 skipped rather than truncating the printer's file to nothing.
 
+A plugin whose `manifest.json` cannot be read has nothing left to say which files it patched. The
+kept copies say it themselves: each is filed under the full path of the file it was taken from, so
+where it sits names its target. `lost_manifest_restore.restore_originals_without_manifest()` reads
+the targets back out and restores through the same write, and uninstall takes that route whenever
+the manifest is unreadable, because the removal is the last moment those copies exist. A copy filed
+by an older daemon under the bare file name carries no path, so it is left alone rather than written
+over a guessed one.
+
 ## Handover: one file, one owner
 
 More than one installed plugin can patch the same target today, and each keeps its own copy of that
@@ -77,13 +101,25 @@ a single owner:
 - It is **idempotent by state and carries no marker file**: a plugin that already holds the file is
   already its owner, so a second run finds nothing to adopt and changes nothing.
 
-**As of daemon 0.13.0 this function has no production caller.** It is the mechanism the base layer will
-use when it takes patching over from the plugins that do it today, so that an already-patched printer
-ends up on the base layer's text whatever order the updates arrive in. Until that ADR lands and the
-caller exists, adoption never runs on a printer.
+## Who owns what, settled on every install
 
-## Known leftover (open, not fixed in 0.13.0)
+Ownership is settled as two phases of the ordinary install, run in this order and before the first
+fragment is applied. They run for every plugin on every install and every update, never as a one-off
+migration step, so a printer that has a file to hand over and a printer that never had one both end
+in the same place. `installer.apply_install_deferred()` runs them, and install and update share it.
 
-A plugin whose `manifest.json` is lost or unreadable is invisible to the pipeline: it keeps its patched
-file on the printer forever, and its kept original is deleted along with the plugin folder, so nothing
-can put the file back to stock. Tracked in `~/.claude/plans/base-layer-owns-patching/daemon-leftovers.seed.md`.
+1. **`relinquish`** (`patch_relinquish.relinquish_phase()`): every file this plugin holds a stock copy
+   of and no longer patches is written back to stock, and only then is the copy released. A plugin
+   hands a file over by shipping a version that no longer patches it, and its kept copy is the only
+   record of what that file looked like before, so the file has to go back while the copy is still
+   held. Left to a later run there would be nothing to put back from. The copies themselves say which
+   files the plugin used to patch, so the old manifest does not have to still be on the printer. A
+   copy an older daemon filed under the bare file name names no path and is left alone.
+2. **`adopt`** (`patch_handover.adoption_phase()`): the plugin takes on the true original of every
+   file it does patch, one call of `adopt_patch_ownership()` per target file.
+
+A failed `relinquish` stops the install before `adopt` runs, so a file that could not be put back is
+never then adopted from its own patched text. Either phase failing stops the install before
+`patches`, and the caller settles the half-run install the way it settles any failed phase, by taking
+the plugin back off the printer. `NO_STOCK_ORIGINAL` therefore costs a printer the install, never its
+working state.

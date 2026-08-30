@@ -13,35 +13,19 @@ is left as-is, and a file that is neither is also left untouched for the normal 
 with an actual-file reject, so a plugin author still sees why their patch did not fit.
 """
 
-import subprocess
 import tempfile
 from pathlib import Path
 
 from .. import jinni_client
+from .patch_tool import fragment_applies
 
 STOCK_COPIES_DIR = "patches_orig"
+# The scratch copy the fragments are built on, kept beside the original it was copied from.
+WORK_COPY_SUFFIX = ".b3work"
 
 
 def _strip_carriage_returns(text: str) -> bytes:
     return text.encode().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-
-
-def _fragment_applies(work_path: Path, patch_file: Path, reverse: bool) -> bool:
-    """Apply one fragment to the working copy in place and report whether it applied cleanly. `-f`
-    keeps patch from guessing that an already-present change is a reversed patch, so a fragment that
-    does not truly fit the file rejects instead of being silently skipped. `-F0` allows no fuzz:
-    proving a file is these diffs' original means every context line matched, and a hunk placed by
-    ignoring its context is exactly the unproven original that must never be adopted. Without it the
-    answer depends on which patch the machine ships, which decided this one way on a maintainer's
-    Mac and the other way on the Linux runner."""
-    command = ["patch", "-f", "-F0", "--strip=1", str(work_path), str(patch_file)]
-    if reverse:
-        command.insert(1, "-R")
-    result = subprocess.run(command, capture_output=True, check=False)
-    reject_path = work_path.parent / (work_path.name + ".rej")
-    applied_cleanly = result.returncode == 0 and not reject_path.exists()
-    reject_path.unlink(missing_ok=True)
-    return applied_cleanly
 
 
 def _probe(source_text: str, fragment_paths: list[Path], reverse: bool) -> str | None:
@@ -52,7 +36,7 @@ def _probe(source_text: str, fragment_paths: list[Path], reverse: bool) -> str |
     with tempfile.TemporaryDirectory() as scratch_dir:
         work_path = Path(scratch_dir) / "baseline-probe"
         work_path.write_bytes(_strip_carriage_returns(source_text))
-        applied = all(_fragment_applies(work_path, patch_file, reverse) for patch_file in ordered)
+        applied = all(fragment_applies(work_path, patch_file, reverse) for patch_file in ordered)
         return work_path.read_text(errors="replace") if applied else None
 
 

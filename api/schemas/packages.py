@@ -73,9 +73,19 @@ class PluginRecoveryResult(BaseModel):
     changed_files: list[str] = Field(default_factory=list, description="The plugin's own files another plugin changed on the printer; recovery reports them and carries on")  # noqa: E501
 
 
+class ManifestWarning(BaseModel):
+    """A plugin already on the printer whose own manifest.json could not be read, so the operation
+    went past it without being able to account for it."""
+
+    plugin: str = Field(description="Directory name of the plugin whose manifest could not be read")
+    problem: str = Field(description="What kind of unreadable, currently only manifest-unreadable")
+    detail: str = Field(description="One line saying what failed to read or parse")
+
+
 class PackResultsResponse(BaseModel):
     """The result of a pack operation (recover, update-batch, uninstall-batch): one entry per plugin
     acted on, plus a final (services) entry for the single shared restart."""
 
     ok: bool = Field(description="True if every plugin in the batch succeeded without hard failure")
     results: list[PluginRecoveryResult] = Field(description="Per-plugin results")
+    manifest_warnings: list[ManifestWarning] = Field(default_factory=list, description="Plugins the operation had to go past because their own manifest could not be read. Empty whenever every installed plugin could be accounted for, which is the normal case")  # noqa: E501

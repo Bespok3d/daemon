@@ -44,7 +44,7 @@ def test_unpack_package_extracts_and_skips_doc(tmp_path: Path, monkeypatch: MP) 
         {"files/run.sh": "echo hi", "doc/README.md": "# alpha", "doc": ""},
     )
     plugin_root = tmp_path / "plugins"
-    manifest, plugin_dir, file_count = archive.unpack_package(plugin_root, package)
+    manifest, plugin_dir, file_count, _replacing = archive.unpack_package(plugin_root, package)
     assert manifest["name"] == "alpha"
     assert plugin_dir == plugin_root / "alpha"
     assert (plugin_dir / "files" / "run.sh").read_text() == "echo hi"
@@ -127,7 +127,7 @@ def test_unpack_accepts_the_members_a_manifest_cannot_list(tmp_path: Path) -> No
     )
     plugin_root = tmp_path / "plugins"
 
-    _manifest, plugin_dir, _file_count = archive.unpack_package(plugin_root, package)
+    _manifest, plugin_dir, _file_count, _replacing = archive.unpack_package(plugin_root, package)
 
     assert (plugin_dir / "manifest.json.sig").read_text() == "-----SIG"
     assert not (plugin_dir / "doc").exists()

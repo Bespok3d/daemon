@@ -7,7 +7,7 @@ applied partway, and a reversal gives back exactly what was there before.
 """
 from pathlib import Path
 
-from core.packages import patches
+from core.packages import patch_reversion, patches
 
 STOCK = "alpha\nbeta\ngamma\ndelta\nepsilon\n"
 PATCHED = "alpha\nbeta2\ngamma\ndelta\nepsilon\n"
@@ -117,7 +117,7 @@ def test_restore_original_files_is_a_safe_no_op_without_a_captured_baseline(tmp_
     target.parent.mkdir(parents=True)
     target.write_text("content nobody patched\n")
 
-    patches.restore_original_files([{"file": str(target)}], orig_dir, {})
+    patch_reversion.restore_original_files([str(target)], orig_dir)
 
     assert target.read_text() == "content nobody patched\n"
     assert not orig_dir.exists()

@@ -305,13 +305,14 @@ def test_uninstall_restores_stock_dir_displaced_by_symlink(tmp_path: Path, monke
     assert (stock / "stock-marker.txt").read_text() == "factory"
 
 
-def test_install_with_a_failing_required_patch_deactivates_and_keeps_the_log(
+def test_install_with_a_failing_required_patch_reports_the_failure_and_leaves_nothing(
     tmp_path: Path, monkeypatch: MP,
 ) -> None:
     """A required phase that fails (a patch whose context does not match) must NOT pass as a clean
-    install. The half-applied plugin is deactivated, the protection recover gives a broken plugin,
-    and the install log is kept for inspection: every phase is still returned and the plugin dir
-    stays on disk. It is never reported as Installed-and-working (the truthfulness violation)."""
+    install. The half-applied plugin is switched off, the protection recover gives a broken plugin,
+    and every phase is still returned so the user reads why it failed. Nothing of a first install
+    that failed stays on the printer: the plugin the user never had is not reported as one they
+    have and could switch back on."""
     monkeypatch.setattr(packages, "PLUGIN_ROOT", tmp_path)
     stock_source = tmp_path / "klippy" / "toolhead.py"
     stock_source.parent.mkdir(parents=True)
@@ -335,9 +336,7 @@ def test_install_with_a_failing_required_patch_deactivates_and_keeps_the_log(
     patch_phase = next(phase for phase in log if phase["id"] == "patches")
     assert patch_phase["ok"] is False
     assert not all(logged_phase["ok"] for logged_phase in log)
-    plugin_dir = tmp_path / "patchy"
-    assert (plugin_dir / "deactivated.json").exists()
-    assert (plugin_dir / "manifest.json").exists()
+    assert not (tmp_path / "patchy").exists()
 
 
 def test_install_applies_multiple_fragments_to_one_file_cumulatively(
@@ -1567,8 +1566,8 @@ def test_update_batch_reports_progress(tmp_path: Path, monkeypatch: MP) -> None:
 
 
 def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) -> None:
-    """One plugin's failed phase must not sink the batch: it is deactivated (off the system, files
-    kept) while the others install. The install/recover safety net, now on the batch path too."""
+    """One plugin's failed phase must not sink the batch: it is taken off the system while the
+    others install. The install/recover safety net, now on the batch path too."""
     from core.packages import batch_one
 
     plugin_root = tmp_path / "plugins"
@@ -1593,8 +1592,7 @@ def test_update_batch_isolates_a_failed_plugin(tmp_path: Path, monkeypatch: MP) 
     by_id = {entry["plugin_id"]: entry for entry in results}
     assert by_id["good"]["ok"] is True
     assert by_id["bad"]["ok"] is False
-    assert (plugin_root / "bad" / "deactivated.json").exists()
-    assert (plugin_root / "bad" / "manifest.json").exists()  # files kept for a fixed version
+    assert not (plugin_root / "bad").exists()  # it never was on the printer
 
 
 def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> None:
@@ -1612,7 +1610,7 @@ def test_update_batch_isolates_an_exception(tmp_path: Path, monkeypatch: MP) -> 
     assert by_id["good"]["ok"] is True
     assert by_id["boom"]["ok"] is False
     assert "kaboom" in by_id["boom"]["reason"]
-    assert (plugin_root / "boom" / "deactivated.json").exists()
+    assert not (plugin_root / "boom").exists()
 
 
 def fail_the_apply_of(monkeypatch: MP, doomed_plugin_id: str) -> None:
@@ -1643,7 +1641,7 @@ def test_install_batch_never_installs_a_plugin_whose_provider_failed(tmp_path: P
 
     rows = rows_by_plugin(packages.install_batch({}, [tun, zerotier, camera], {}))
 
-    assert (plugin_root / "tun-module" / "deactivated.json").exists()
+    assert not (plugin_root / "tun-module").exists()
     assert not (plugin_root / "zerotier" / "manifest.json").exists()
     assert (plugin_root / "camera" / "manifest.json").exists()
     assert rows["zerotier"]["skipped"] is True
@@ -2125,7 +2123,7 @@ def test_install_auto_deactivates_plugin_that_breaks_a_service(
         zip_path, {"BESPOK3D": str(tmp_path / "b3"), "BESPOK3D_MOONRAKER": str(moonraker_cfg)},
     )
 
-    assert (plugin_root / "notifier-ish" / "deactivated.json").exists()
+    assert not (plugin_root / "notifier-ish").exists()
     recovery = next(phase for phase in log if phase["id"] == "auto-recovery")
     assert recovery["ok"] is False  # the just-installed plugin was disabled to save the printer
     assert not cfg_link.is_symlink()  # its config was removed, so Moonraker recovered

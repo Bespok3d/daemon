@@ -10,7 +10,7 @@ re-provision can leave the live file patched with no baseline held), so the plug
 itself re-patching an already-patched file (see baseline.derive_stock). Every fragment targeting
 that file is applied IN ORDER to one working copy of the baseline (pure daemon CPU), so a later
 fragment builds on an earlier one (klipper-motion patches toolhead.py four times); the cumulative
-result is WRITTEN back through the jinni once. `restore` writes the baseline back the same way.
+result is WRITTEN back through the jinni once. Undoing it is `patch_reversion`'s.
 """
 
 import re
@@ -21,6 +21,7 @@ from pathlib import Path
 from .. import jinni_client
 from ..results import MAX_OUTPUT_BYTES, item, phase
 from . import baseline
+from .patch_tool import strictness_flags
 from .user_vars import expand
 
 
@@ -60,13 +61,30 @@ def _collect_rej(work_path: Path) -> str:
     return f"\n--- rejected hunks ---\n{rej_text}"
 
 
+def _drop_the_mismatch_backup(work_path: Path) -> None:
+    """GNU patch keeps a copy of what it could not patch (`--backup-if-mismatch`, on by default),
+    so a refused fragment leaves a `.orig` beside the working copy, INSIDE the tree that holds the
+    printer's only copies of its own stock files. That tree has to stay nothing but stock copies.
+    BusyBox patch on the printer writes no backup, which is why this litter only ever appeared
+    where the tests and the build run. It goes the same way the rejected hunks do."""
+    work_path.with_name(work_path.name + ".orig").unlink(missing_ok=True)
+
+
 def _apply_fragment(work_path: Path, patch_file: Path, patch_rel: str, crlf_stripped: bool) -> dict:
     """Apply one diff fragment to the working copy IN PLACE, so the next fragment for the same file
     builds on it (the old in-place cumulative patching, now on a bespok3d-tree copy). The item is
-    named for the fragment, so a conflict points at the exact diff to re-author."""
-    result = subprocess.run(["patch", "-N", "--strip=1", str(work_path), str(patch_file)],
-                            capture_output=True, check=False)
+    named for the fragment, so a conflict points at the exact diff to re-author.
+
+    Applied under the same rules the fragment was PROVED to fit under (`strictness_flags`), because
+    a probe and an apply that disagree hand the user a refusal nobody can act on. Asking BusyBox
+    patch to skip an already-applied hunk (`-N`) made it read a plain addition at the end of a file
+    as a reversed patch and reject it, on a file the very same BusyBox patch took without that
+    flag: the printer refused a base package it had just proved fitted. Nothing needs the flag
+    here, since every fragment goes onto a fresh copy of the file's own kept original."""
+    command = ["patch", *strictness_flags(), "--strip=1", str(work_path), str(patch_file)]
+    result = subprocess.run(command, capture_output=True, check=False)
     raw = (result.stdout + result.stderr).decode(errors="replace") + _collect_rej(work_path)
+    _drop_the_mismatch_backup(work_path)
     ok = result.returncode == 0
     context = _actual_context(work_path, patch_file, crlf_stripped) if not ok else ""
     raw += f"\n{context}" if context else ""
@@ -101,7 +119,7 @@ def _patch_target(target: str, fragments: list[dict], plugin_dir: Path, vars: di
     if fetch_failure is not None:
         return [item(f"patch {Path(fragment['patch']).name}", ok=False, output=fetch_failure)
                 for fragment in fragments]
-    work_path = pristine_path.parent / (pristine_path.name + ".b3work")
+    work_path = pristine_path.parent / (pristine_path.name + baseline.WORK_COPY_SUFFIX)
     shutil.copy2(pristine_path, work_path)
     crlf_stripped = _normalize_line_endings(work_path)
     items = [_apply_fragment(work_path, plugin_dir / fragment["patch"], fragment["patch"], crlf_stripped)  # noqa: E501
@@ -128,22 +146,3 @@ def apply_patches(patches: list[dict], plugin_dir: Path, vars: dict[str, str]) -
     for target, fragments in _group_by_target(patches, vars).items():
         items.extend(_patch_target(target, fragments, plugin_dir, vars, orig_dir))
     return phase("patches", "Patches", items)
-
-
-def restore_original_files(patches: list[dict], orig_dir: Path, vars: dict[str, str]) -> None:
-    """Write each kept pristine baseline back over its target through the jinni, undoing the patch.
-    Deduped by target: several fragments for one file share one baseline, so it is restored once.
-    An empty kept baseline is skipped: a copy torn by a power cut mid capture would blank a file the
-    printer boots from, and leaving the file patched is what a missing copy already does."""
-    plugin_dir = orig_dir.parent
-    writes = []
-    seen: set[str] = set()
-    for patch_def in patches:
-        target = str(Path(expand(patch_def["file"], vars)))
-        pristine_path = baseline.kept_original(orig_dir, target)
-        pristine = pristine_path.read_text(errors="replace") if pristine_path.exists() else ""
-        if target not in seen and pristine:
-            seen.add(target)
-            writes.append({"path": target, "content": pristine})
-    if writes:
-        jinni_client.write_files(str(plugin_dir), writes)

@@ -12,7 +12,7 @@ The fixture printer is fake throughout: made-up device paths under tmp_path, no 
 
 from pathlib import Path
 
-from core.packages import baseline, patches
+from core.packages import baseline, patch_reversion, patches
 
 MOONRAKER_STOCK = "[server]\nport: 7125\n"
 KLIPPER_STOCK = "[server]\nport: 7126\n"
@@ -76,7 +76,8 @@ def test_uninstall_puts_each_file_back_the_way_it_was(tmp_path: Path) -> None:
     patch_defs = _patch_defs(moonraker_config, klipper_config)
     patches.apply_patches(patch_defs, plugin_dir, {})
 
-    patches.restore_original_files(patch_defs, baseline.stock_copies(plugin_dir), {})
+    targets = [patch_def["file"] for patch_def in patch_defs]
+    patch_reversion.restore_original_files(targets, baseline.stock_copies(plugin_dir))
 
     assert moonraker_config.read_text() == MOONRAKER_STOCK
     assert klipper_config.read_text() == KLIPPER_STOCK
@@ -90,9 +91,8 @@ def test_a_copy_an_earlier_daemon_kept_under_the_bare_name_still_restores(tmp_pa
     kept.mkdir(parents=True)
     (kept / "config.conf").write_text(MOONRAKER_STOCK)
     moonraker_config.write_text("[server]\nport: 8125\n")
-    patch_defs = [{"file": str(moonraker_config), "patch": "patches/01-moonraker.patch"}]
 
-    patches.restore_original_files(patch_defs, kept, {})
+    patch_reversion.restore_original_files([str(moonraker_config)], kept)
 
     assert moonraker_config.read_text() == MOONRAKER_STOCK
 

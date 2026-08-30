@@ -25,6 +25,7 @@ from tests.core.packages.fake_panel_printer import (
     hand_over,
     install_panel_patcher,
     kept_panel,
+    settle,
 )
 
 PANEL_COLOURS = "panel-colours"
@@ -124,4 +125,6 @@ def test_a_file_every_installed_plugin_patches_is_still_handed_over(
 
     assert result["ok"], result["label"]
     assert (kept_panel(adopter)).read_text() == _lanes_panel()
+    assert all((kept_panel(owner)).exists() for owner in owners)
+    settle(adopter)
     assert not any((kept_panel(owner)).exists() for owner in owners)

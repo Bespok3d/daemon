@@ -20,6 +20,7 @@ from ..results import item, phase
 from ..safety import OperationKind
 from .archive import fix_ownership, unpack_package
 from .deactivation import finalize_install_outcome
+from .extraction import discard_if_first_install
 from .file_drift import refuse_changed_package
 from .install_refusals import (
     refuse_and_discard,
@@ -29,6 +30,7 @@ from .install_refusals import (
 from .integrity import IntegrityError
 from .kmodules import generate_module_loaders, load_modules
 from .pair_guard import guard_compatible_pair
+from .patch_ownership import ownership_phases
 from .patches import apply_patches
 from .placement import apply_modes, create_dirs, create_symlinks
 from .python_deps import provision_deps_phases
@@ -75,10 +77,17 @@ def apply_install_deferred(
         _emit(generate_service_scripts(raw_inst.get("service", []), plugin_dir, vars), notify),
         _emit(generate_module_loaders(raw_inst.get("kmodule", []), plugin_dir, vars), notify),
         _emit(create_symlinks(inst["symlinks"], plugin_dir, vars), notify),
+    ]
+    ownership_moves = ownership_phases(plugin_root, plugin_dir, inst["patches"], vars,
+                                       lambda finished: _emit(finished, notify))
+    phases.extend(ownership_moves)
+    if not all(moved["ok"] for moved in ownership_moves):
+        return phases, []
+    phases.extend([
         _emit(apply_patches(inst["patches"], plugin_dir, vars), notify),
         _emit(fix_ownership(plugin_dir, vars.get("RUNTIME_USER", "")), notify),
         _emit(load_modules(inst["module_loads"], inst["module_load_names"], vars), notify),
-    ]
+    ])
     phases.extend(_emit(dep_phase, notify) for dep_phase in provision_deps_phases(plugin_root, plugin_dir, vars))  # noqa: E501
     start_phase, deferred = run_plugin_start_commands(inst["start"], vars)
     phases.append(_emit(start_phase, notify))
@@ -109,7 +118,8 @@ def run_install(
     on_phase: PhaseListener | None = None,
 ) -> tuple[str, list[dict]]:
     guard_compatible_pair()
-    manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
+    manifest, plugin_dir, file_count, replacing_an_install = unpack_package(
+        plugin_root, package_path)
     plugin_id: str = manifest["name"]
     refuse_unmet_dependencies(plugin_root, plugin_dir, plugin_id, manifest)
 
@@ -127,4 +137,6 @@ def run_install(
     except IntegrityError as tampered_package:
         refuse_and_discard(plugin_dir, tampered_package)
     finalize_install_outcome(plugin_dir, full_vars, log)
+    if not all(logged_phase["ok"] for logged_phase in log):
+        discard_if_first_install(plugin_dir, replacing_an_install)
     return plugin_id, log

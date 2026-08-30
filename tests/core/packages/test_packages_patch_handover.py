@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Handing a patched file over to a new owner: the new owner must end up holding the file's true
-original, never another plugin's patched output, and the old owners must stop holding a copy of it.
+original, never another plugin's patched output, and the old owners must stop holding a copy of it
+once the new owner's install has settled ok.
 
 The fixture printer is fake throughout: a made-up panel file patched by a made-up plugin."""
 from pathlib import Path
@@ -19,6 +20,7 @@ from tests.core.packages.fake_panel_printer import (
     hand_over,
     install_panel_patcher,
     kept_panel,
+    settle,
 )
 
 
@@ -40,6 +42,8 @@ def test_the_new_owner_adopts_the_original_the_old_owner_kept(tmp_path: Path) ->
     assert result["ok"] is True
     assert PANEL_TWEAKS in result["label"]
     assert (kept_panel(adopter)).read_text() == STOCK_PANEL
+    assert (kept_panel(old_owner)).read_text() == STOCK_PANEL
+    settle(adopter)
     assert not (kept_panel(old_owner)).exists()
 
 
@@ -108,4 +112,23 @@ def test_handing_the_same_file_over_twice_changes_nothing(tmp_path: Path) -> Non
     assert result["ok"] is True
     assert _every_file_under(tmp_path) == after_first
     assert (kept_panel(adopter)).read_text() == STOCK_PANEL
+    settle(adopter)
     assert not (kept_panel(old_owner)).exists()
+
+
+NEW_FIRMWARE_PANEL = STOCK_PANEL + "# a line the firmware update added\n"
+
+
+def test_after_a_firmware_update_the_live_file_is_the_original_not_the_old_owners_copy(
+    tmp_path: Path, live_panel: dict[str, str],
+) -> None:
+    """The update replaced the file: the old owner's copy is the OLD firmware's file, and patching
+    that one rolled a store migration back on the bench."""
+    live_panel[PANEL] = NEW_FIRMWARE_PANEL
+    old_owner = install_panel_patcher(tmp_path, PANEL_TWEAKS, kept_copy=STOCK_PANEL)
+    adopter = install_panel_patcher(tmp_path, BASE_LAYER, None, COLS_FRAGMENT)
+    result = hand_over(tmp_path, adopter)
+    assert result["ok"] is True
+    assert "the live file" in result["label"]
+    assert (kept_panel(adopter)).read_text() == NEW_FIRMWARE_PANEL
+    assert (kept_panel(old_owner)).read_text() == STOCK_PANEL

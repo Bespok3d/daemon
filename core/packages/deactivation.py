@@ -11,9 +11,9 @@ from pathlib import Path
 from .. import jinni_client
 from ..intent import normalize_install
 from ..safety import OperationContext, OperationKind, diagnose_module_failure
-from .baseline import stock_copies
-from .manifest import manifest_at
-from .patches import restore_original_files
+from .manifest import manifest_at, readable_manifest
+from .patch_handover import commit_patch_handover
+from .patch_reversion import revert_patched_files
 from .placement import remove_plugin_symlinks
 from .plugin_venv import remove_plugin_venv
 from .python_deps import remove_plugin_site_links
@@ -66,25 +66,30 @@ def neutralize_plugin(plugin_dir: Path, vars: dict[str, str]) -> None:
     ops = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
     run_stop_commands(ops["stops"] + manifest.get("stop", []), full_vars)
     remove_plugin_symlinks(ops["symlinks"], plugin_dir, full_vars)
-    restore_original_files(ops["patches"], stock_copies(plugin_dir), full_vars)
+    revert_patched_files(plugin_dir, ops["patches"], full_vars)
     remove_plugin_site_links(plugin_dir, full_vars)
     remove_plugin_venv(plugin_dir.name, full_vars)
 
 
 def deactivate_plugin(plugin_dir: Path, vars: dict[str, str], reason: str) -> None:
-    if (plugin_dir / "manifest.json").exists():
+    """Switch a plugin off and record why. A manifest that cannot be read says nothing about what to
+    undo, so the plugin is marked off without that step rather than the marking failing: a plugin
+    that cannot be switched off is one the printer cannot get back from."""
+    if readable_manifest(plugin_dir) is not None:
         neutralize_plugin(plugin_dir, vars)
     (plugin_dir / DEACTIVATED_MARKER).write_text(json.dumps({"reason": reason}))
 
 
 def finalize_install_outcome(plugin_dir: Path, vars: dict[str, str], log: list[dict]) -> None:
-    """Settle a finished install by its phase log: clear stale markers on a clean run; on a failed
-    required phase, take the half-applied plugin off the system (drop its symlinks, restore any
-    patched source) and mark it deactivated, the protection recover gives a broken plugin. The
-    install log is retained: every phase is still returned to the app and the plugin dir stays on
-    disk for inspection. The marker check leaves a plugin the restart safety net already deactivated
-    untouched, so its diagnosis reason is not overwritten."""
+    """Settle a finished install by its phase log. A clean run clears stale markers and takes the
+    files it patched over from whoever held them before. A failed required phase takes the
+    half-applied plugin off the system (drop its symlinks, restore any patched source) and marks it
+    deactivated, the protection recover gives a broken plugin. The install log is retained: every
+    phase is still returned to the app and the plugin dir stays on disk for inspection. The marker
+    check leaves a plugin the restart safety net already deactivated untouched, so its diagnosis
+    reason is not overwritten."""
     if all(logged_phase["ok"] for logged_phase in log):
+        commit_patch_handover(plugin_dir, vars)
         clear_failure_markers(plugin_dir)
         return
     if (plugin_dir / DEACTIVATED_MARKER).exists():

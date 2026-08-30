@@ -13,6 +13,8 @@ import shutil
 import zipfile
 from pathlib import Path
 
+from .baseline import STOCK_COPIES_DIR, stock_copies
+
 
 def extract_or_discard(
     zf: zipfile.ZipFile, plugin_dir: Path, members: list[str], replacing_an_install: bool,
@@ -32,8 +34,46 @@ def extract_or_discard(
 def discard_extraction(plugin_dir: Path) -> None:
     """Take back what unpacking wrote. A package the printer refuses after it was unpacked must not
     leave its files behind: kept, the tree would make /capabilities report a plugin the daemon never
-    applied."""
+    applied.
+
+    The stock originals are the one thing kept back. When they are there, this package was unpacked
+    over a version already on the printer, and they are the only copy of the files that version
+    patched: taken away with the rest, the printer loses its way back to stock for good. A first
+    install has none, so its refusal still leaves nothing behind."""
+    if not stock_copies(plugin_dir).is_dir():
+        shutil.rmtree(plugin_dir, ignore_errors=True)
+        return
+    for written in plugin_dir.iterdir():
+        _discard_one(written)
+
+
+def discard_if_first_install(plugin_dir: Path, replacing_an_install: bool) -> None:
+    """Take a failed FIRST install back off the printer, once it has been switched off.
+
+    A first install that failed was never an install. Left on disk it is reported as a plugin at
+    its version with a deactivated marker, which reads as a plugin the printer has and could switch
+    back on. There is nothing to switch back on: it never applied, and reactivating it only fails
+    the same way again.
+
+    Its kept originals go with it. Switching the plugin off wrote them back over every file it
+    patched first, so by the time this runs those files are already what they were before the
+    plugin arrived and no copy of them is owed to the printer.
+
+    A version that replaced one already on the printer keeps its whole directory: that copy of the
+    older version is the only way back to stock, and the user still has a working plugin to switch
+    back on."""
+    if replacing_an_install:
+        return
     shutil.rmtree(plugin_dir, ignore_errors=True)
+
+
+def _discard_one(written: Path) -> None:
+    if written.name == STOCK_COPIES_DIR:
+        return
+    if written.is_dir() and not written.is_symlink():
+        shutil.rmtree(written, ignore_errors=True)
+        return
+    written.unlink(missing_ok=True)
 
 
 def _write_members(zf: zipfile.ZipFile, plugin_dir: Path, members: list[str]) -> None:

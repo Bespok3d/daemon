@@ -18,12 +18,12 @@ from pathlib import Path
 from .. import jinni_client
 from ..intent import normalize_install
 from ..safety import OperationContext, OperationKind
-from .baseline import stock_copies
 from .deactivation import run_stop_commands
 from .dependencies import installed_dependents
 from .errors import DependentsError
-from .manifest import manifest_at
-from .patches import restore_original_files
+from .lost_manifest_restore import restore_originals_without_manifest
+from .manifest import readable_manifest
+from .patch_reversion import revert_patched_files
 from .placement import remove_plugin_symlinks
 from .plugin_dir import contained_plugin_dir
 from .plugin_venv import remove_plugin_venv
@@ -33,18 +33,23 @@ from .recovery import restart_services
 from .user_vars import expand, load_user_vars
 
 
-def _uninstall_from_manifest(plugin_dir: Path, vars: dict[str, str]) -> None:
-    manifest = manifest_at(plugin_dir)
+def _uninstall_from_manifest(plugin_dir: Path, manifest: dict, vars: dict[str, str]) -> None:
     install_spec = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
     full_vars = {**vars, **load_user_vars(plugin_dir)}
     run_stop_commands(install_spec["stops"] + manifest.get("stop", []), full_vars)
     remove_plugin_symlinks(install_spec["symlinks"], plugin_dir, full_vars)
-    restore_original_files(install_spec["patches"], stock_copies(plugin_dir), full_vars)
+    revert_patched_files(plugin_dir, install_spec["patches"], full_vars)
 
 
 def _remove_one(plugin_dir: Path, vars: dict[str, str]) -> None:
-    if (plugin_dir / "manifest.json").exists():
-        _uninstall_from_manifest(plugin_dir, vars)
+    """Take one plugin off the system and delete its directory. A plugin whose manifest cannot be
+    read is still taken off it: its kept originals name the files it patched, and this is the last
+    moment they exist, because the delete below takes them with it."""
+    manifest = readable_manifest(plugin_dir)
+    if manifest is None:
+        restore_originals_without_manifest(plugin_dir)
+    else:
+        _uninstall_from_manifest(plugin_dir, manifest, vars)
     remove_plugin_site_links(plugin_dir, vars)
     remove_plugin_venv(plugin_dir.name, vars)
     shutil.rmtree(plugin_dir)
@@ -76,9 +81,9 @@ def removal_restart_commands(plugin_root: Path, plugin_ids: list[str], vars: dic
     Public so the batch path collects each plugin's restart hooks before any dir is gone."""
     commands: list[str] = []
     for plugin_id in plugin_ids:
-        plugin_dir = contained_plugin_dir(plugin_root, plugin_id)
-        if (plugin_dir / "manifest.json").exists():
-            commands.extend(_manifest_restart_commands(manifest_at(plugin_dir), vars))
+        manifest = readable_manifest(contained_plugin_dir(plugin_root, plugin_id))
+        if manifest is not None:
+            commands.extend(_manifest_restart_commands(manifest, vars))
     return list(dict.fromkeys(commands))
 
 

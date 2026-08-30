@@ -86,6 +86,7 @@ def test_a_package_this_daemon_reaches_still_unpacks(tmp_path: Path) -> None:
          "install": {"start": []}},
         {"files/run.sh": "echo hi"},
     ))
-    manifest, plugin_dir, _file_count = archive.unpack_package(tmp_path / "plugins", package)
+    manifest, plugin_dir, _file_count, _replacing = archive.unpack_package(
+        tmp_path / "plugins", package)
     assert json.loads((plugin_dir / "manifest.json").read_text())["name"] == "alpha"
     assert manifest["min_daemon_version"] == "0.0.1"

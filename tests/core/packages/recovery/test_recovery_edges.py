@@ -99,3 +99,23 @@ def test_run_recovery_returns_nothing_when_every_plugin_is_deactivated(tmp_path:
     results = run.run_recovery(tmp_path / "data", plugin_root, {})
 
     assert results == []
+
+
+def test_one_torn_manifest_is_switched_off_while_every_other_plugin_recovers(
+        tmp_path: Path) -> None:
+    """A manifest half written when the power went is there but unreadable. That one plugin is
+    switched off and named in what recovery reports back; the rest of the printer still comes back,
+    instead of the whole sweep dying on the unreadable file."""
+    plugin_root = tmp_path / "plugins"
+    _plugin(plugin_root, "good-plugin", {"version": "0.1.0", "install": BARE_INSTALL})
+    torn_dir = plugin_root / "torn-plugin"
+    torn_dir.mkdir(parents=True)
+    (torn_dir / "manifest.json").write_text("{ this manifest was torn by a power cut")
+
+    results = run.run_recovery(tmp_path / "data", plugin_root, {})
+
+    by_id = {result["plugin_id"]: result for result in results}
+    assert by_id["good-plugin"]["ok"] is True
+    assert by_id["torn-plugin"]["ok"] is False
+    assert "manifest" in by_id["torn-plugin"]["reason"]
+    assert (torn_dir / DEACTIVATED_MARKER).exists()
