@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from core import jinni_client, packages
 
 from ..schemas import (
+    ManifestWarning,
     PackResultsResponse,
     PluginRecoveryResult,
 )
@@ -32,7 +33,7 @@ async def recover_packages() -> PackResultsResponse:
     install_hub.bind_loop(asyncio.get_running_loop())
     install_hub.begin()
     try:
-        results = await _recover_or_refuse()
+        results, manifest_warnings = await _recover_and_collect_torn()
     except HTTPException:
         install_hub.publish({"type": "done", "ok": False})
         raise
@@ -42,7 +43,17 @@ async def recover_packages() -> PackResultsResponse:
     return PackResultsResponse(
         ok=ok,
         results=[PluginRecoveryResult(**item) for item in results],
+        manifest_warnings=[ManifestWarning(**warning) for warning in manifest_warnings],
     )
+
+
+async def _recover_and_collect_torn() -> tuple[list[dict], list[dict]]:
+    """Re-apply everything, and beside the rows the plugins recovery had to go past because their
+    own manifest could not be read. The worker thread is handed a copy of this context, so the
+    reads it makes fill the collection opened here."""
+    with packages.collecting_torn_plugins() as torn:
+        results = await _recover_or_refuse()
+    return results, packages.torn_plugin_warnings(torn)
 
 
 async def _recover_or_refuse() -> list[dict]:

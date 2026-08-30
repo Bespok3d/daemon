@@ -8,10 +8,10 @@ from ...safety import OperationContext, OperationKind
 from ..batch_progress import BatchProgress, ProgressSink, make_progress
 from ..deactivation import DEACTIVATED_MARKER
 from ..dependencies import provided_services, topo_sort
-from ..manifest import manifest_at
+from ..manifest import readable_manifest
 from ..print_guard import guard_no_print
 from ..repair import restore_printer_state
-from .reapply import ServiceLedger, recover_one
+from .reapply import ServiceLedger, record_failure, recover_one
 from .restart import restart_services
 
 
@@ -23,6 +23,18 @@ def recoverable_plugin_dirs(plugin_root: Path) -> list[Path]:
         and (plugin_dir / "manifest.json").exists()
         and not (plugin_dir / DEACTIVATED_MARKER).exists()
     ]
+
+
+UNREADABLE_MANIFEST = "manifest unreadable: reinstall the plugin"
+
+
+def _readable_manifests_and_torn(plugin_dirs: list[Path]) -> tuple[dict[Path, dict], list[Path]]:
+    """The plugins recovery can re-apply, each with its manifest, and separately the ones whose
+    manifest cannot be read (a power cut mid write). One torn manifest is one plugin's problem: the
+    rest of the printer is recovered around it."""
+    read = {plugin_dir: readable_manifest(plugin_dir) for plugin_dir in plugin_dirs}
+    usable = {plugin_dir: manifest for plugin_dir, manifest in read.items() if manifest is not None}
+    return usable, [plugin_dir for plugin_dir in plugin_dirs if plugin_dir not in usable]
 
 
 def _services_the_installed_set_provides(manifests: dict[Path, dict]) -> set[str]:
@@ -64,12 +76,15 @@ def run_recovery(
     plugin_dirs = recoverable_plugin_dirs(plugin_root)
     if not plugin_dirs:
         return []
-    ordered = topo_sort(plugin_dirs)
-    manifests = {plugin_dir: manifest_at(plugin_dir) for plugin_dir in ordered}
+    manifests, torn = _readable_manifests_and_torn(plugin_dirs)
+    torn_results = [record_failure(plugin_dir, vars, UNREADABLE_MANIFEST, {}, [])
+                    for plugin_dir in torn]
+    ordered = topo_sort(list(manifests))
     services = ServiceLedger(set(), _services_the_installed_set_provides(manifests))
     progress = make_progress(publish)
     progress.plan([plugin_dir.name for plugin_dir in ordered])
-    results, deferred_restarts = _recover_in_order(ordered, manifests, services, vars, progress)
+    recovered, deferred_restarts = _recover_in_order(ordered, manifests, services, vars, progress)
+    results = [*torn_results, *recovered]
     unique_restarts = list(dict.fromkeys(deferred_restarts))
     if unique_restarts:
         progress.plugin(SERVICES_PLUGIN_ID, len(ordered), len(ordered))

@@ -16,15 +16,16 @@ from ...safety import FailureEvidence
 from ...safety.attribution import AttributionIndex, Placement
 from ...safety.attribution import build_index as build_attribution_index
 from ..baked_deps import baked_top_level_names
-from ..manifest import installed_manifest_dirs, manifest_at
+from ..manifest import installed_manifest_dirs, readable_manifest
 from ..user_vars import expand, load_user_vars
 
 
-def _plugin_placement(plugin_dir: Path, vars: dict[str, str], facts: dict[str, str]) -> Placement:
+def _plugin_placement(plugin_dir: Path, manifest: dict, vars: dict[str, str],
+                      facts: dict[str, str]) -> Placement:
     """What one installed plugin put on the system, as data for the attribution brain. Resolved with
     the live facts, so a variant-placed file is attributed to the variant that placed it."""
     full_vars = {**vars, **load_user_vars(plugin_dir)}
-    ops = normalize_install(manifest_at(plugin_dir).get("install", {}), facts)
+    ops = normalize_install(manifest.get("install", {}), facts)
     destinations = [expand(link["to"], full_vars) for link in ops["symlinks"]]
     modules = [import_name(name) for name in baked_top_level_names(plugin_dir)]
     return Placement(plugin_dir.name, destinations, modules)
@@ -33,9 +34,13 @@ def _plugin_placement(plugin_dir: Path, vars: dict[str, str], facts: dict[str, s
 def _build_attribution_index(
     plugin_root: Path, vars: dict[str, str], facts: dict[str, str]
 ) -> AttributionIndex:
+    """A plugin whose manifest cannot be read placed nothing anyone can attribute, so it is left out
+    and every other plugin's evidence is still built. Recovery names it in its own report."""
+    read = {plugin_dir: readable_manifest(plugin_dir)
+            for plugin_dir in installed_manifest_dirs(plugin_root)}
     return build_attribution_index(
-        [_plugin_placement(plugin_dir, vars, facts)
-         for plugin_dir in installed_manifest_dirs(plugin_root)]
+        [_plugin_placement(plugin_dir, manifest, vars, facts)
+         for plugin_dir, manifest in read.items() if manifest is not None]
     )
 
 

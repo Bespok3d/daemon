@@ -54,6 +54,24 @@ If you are a non-Claude tool, `AGENTS.md` points you here.
 9. **RULE ZERO: no em-dash or en-dash, anywhere.** Use a comma, colon, semicolon, parentheses, or two
    sentences. A hyphen in a compound word is fine. Enforced by the shared em-dash guard in the gate.
 
+## Who may patch Snapmaker's own files (ADR-0043)
+
+Every file the printer maker ships has exactly one owning package, and those packages are that device
+family's base layer (`u1-base` for the Snapmaker U1). A feature plugin ships no diff against a stock
+file: it names the door it needs with a `require` entry against the service its owning base member
+provides, and the daemon's existing refusal of a package whose required service nothing supplies is
+what keeps it from landing first.
+
+**Nothing in this repo enforces that, and nothing should.** It is a publishing rule, enforced where
+plugins get published. The daemon does not refuse a `klipper-source` instrument entry from any
+package, and it does not test membership of a base plugin list (owner, 2026-08-22). Do not add such a
+check; a refusal built in Stage 3 of the base-layer effort was removed again for this reason.
+
+What the rule buys the daemon is the correctness of `core/packages/baseline.py`: `derive_stock`
+recovers stock text by reverse-applying one plugin's own fragments, so a second owner of the same file
+would take already patched text as its baseline and write that back on uninstall. See
+[doc/internals/patch-pipeline.md](doc/internals/patch-pipeline.md).
+
 ## How to work a change
 
 1. **Understand first.** Read the relevant module and the two docs above. Do not invent architecture; if

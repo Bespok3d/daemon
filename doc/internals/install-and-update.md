@@ -79,10 +79,13 @@ exactly as they were. That is every batch-level refusal (conflict, unmet require
 floors, the print guard and the size check, and it is what the three update tests above assert.
 
 **A refusal decided after extraction takes the extraction back off the printer**
-(`discard_extraction()`, which removes the whole plugin directory). Otherwise `/capabilities` would
-report a plugin the daemon never applied. The one refusal that deliberately does not do this is the
-unbaked-dependencies one when it is replacing an existing install: that directory is also where the
-older version's stock originals and settings live, so it is kept.
+(`discard_extraction()`). Otherwise `/capabilities` would report a plugin the daemon never applied.
+It keeps one thing back: the stock originals under `patches_orig/`. Their being there is what says
+the package was unpacked over a version already on the printer, and they are the only copy of the
+files that version patched, so taking them too would cost the printer its way back to stock for
+good. A first install has none, so its refusal still leaves nothing behind. The unbaked-dependencies
+refusal keeps the whole directory when it is replacing an existing install, because the settings the
+user typed live there too.
 
 **A write that fails part way through is taken back the same way** (`extract_or_discard()` in
 `core/packages/extraction.py`). The size check reads the sizes the zip DECLARES, so a member whose
@@ -91,11 +94,9 @@ written; a full disk does the same whatever the package declared. A first instal
 tree removed; a version replacing one already installed keeps the directory, for the same reason the
 unbaked-dependencies refusal does.
 
-## Known leftovers (open, not fixed in 0.13.0)
+## A plugin whose manifest cannot be read
 
-- A plugin that loses its `manifest.json` keeps its patched file on the printer forever, and its kept
-  stock original is deleted with the plugin folder.
-- One torn manifest stops the whole OTA recovery pass instead of that plugin being skipped and the
-  rest recovered.
-
-Both are seeded at `~/.claude/plans/base-layer-owns-patching/daemon-leftovers.seed.md`.
+A `manifest.json` that is missing, or half written when the power went, no longer traps its plugin on
+the printer. Removing it puts every file it patched back to the stock original it kept first (see
+`doc/internals/patch-pipeline.md`), and OTA recovery switches that one plugin off, names it in what it
+reports back, and recovers every other plugin on the printer as usual.

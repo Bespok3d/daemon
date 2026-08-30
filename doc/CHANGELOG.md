@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.14.0
+
+Plugins that used to change Snapmaker's own program files now hand those files over to the base
+layer, and the printer does the whole move while it installs and updates the way it always does.
+There is no migration step to run. Whichever arrives first, the base layer or the plugin's own
+update, the printer ends up in the same place.
+
+A plugin that stops changing one of Snapmaker's files puts the printer's own file back before it
+lets go of its copy of it. If the printer refuses that write, the copy is kept, so the file can
+still be put back on the next try.
+
+A file whose original the printer cannot establish stops that plugin's install before a single
+change is made to the file, and the printer keeps running what it was running.
+
+A printer that loses power partway through one of these changes is left with a whole file, never a
+blank or half written one, and still holds a copy of the original to finish from.
+
+The printer now checks a change the same way it applies it. Before, a package could be turned away
+on a printer whose files it actually fitted.
+
+After a firmware update the printer takes the file it is running now as the original. Before, it
+took the copy an installed plugin had kept from before the update, and changed a file the printer
+no longer runs.
+
+A recovery that finds a file whose saved original has gone missing takes a fresh copy of the stock
+file and puts the file back, so a printer holding no original is not a printer with no way back.
+
+A plugin whose `manifest.json` was left half written, by a power cut or a failed write, no longer
+stops the next install, the next update or a recovery. The plugins next to it go through, and the
+answer names the plugin that could not be read instead of passing over it in silence.
+
+A plugin taking one of these files over stops when a plugin next to it cannot be read, and says
+which one. That plugin may be the one holding the file's true original, and taking the live file
+instead would bake somebody else's changes into the printer's original for good.
+
+A plugin whose manifest is gone or torn comes off the printer with every file it changed put back
+to stock, instead of staying changed for good.
+
+An update refused after the printer had already unpacked it keeps the working install's stock
+originals, so that plugin can still be put back to stock later.
+
+A recovery that meets one torn manifest switches that one plugin off and names it. Every other
+plugin still comes back.
+
+A collection can now hold another collection, so a plugin that has become a set of smaller plugins
+installs in one go.
+
+A stock copy that an older daemon saved under the bare file name is left alone when there is no
+manifest, rather than written to a guessed path over a file the plugin never touched.
+
+
 ## 0.13.1
 
 Switching a plugin off is now refused when another installed plugin needs it, and the answer names

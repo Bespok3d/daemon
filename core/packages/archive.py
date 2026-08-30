@@ -64,7 +64,7 @@ def _refuse_uncontained_package(
         raise IntegrityError(plugin_id, ESCAPING_MEMBER, escaping_declared)
 
 
-def unpack_package(plugin_root: Path, package_path: Path) -> tuple[dict, Path, int]:
+def unpack_package(plugin_root: Path, package_path: Path) -> tuple[dict, Path, int, bool]:
     with zipfile.ZipFile(package_path) as zf:
         if "manifest.json" not in zf.namelist():
             raise ValueError("missing manifest.json")
@@ -86,7 +86,7 @@ def unpack_package(plugin_root: Path, package_path: Path) -> tuple[dict, Path, i
         file_count = len(members)
     shutil.rmtree(plugin_dir / "doc", ignore_errors=True)
     _refuse_unusable_deps(plugin_dir, replacing_an_install)
-    return manifest, plugin_dir, file_count
+    return manifest, plugin_dir, file_count, replacing_an_install
 
 
 def _refuse_unusable_deps(plugin_dir: Path, replacing_an_install: bool) -> None:

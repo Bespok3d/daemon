@@ -7,8 +7,14 @@ the handover tests so the happy paths and the edge cases describe the same print
 import json
 from pathlib import Path
 
-from core.packages import patch_handover
+import pytest
+
+from core import jinni_client
+from core.packages import installer, patch_handover
 from core.packages.baseline import kept_original, stock_copies
+from core.packages.deactivation import finalize_install_outcome
+from core.packages.manifest import manifest_at
+from tests import fake_actuation
 
 PANEL = "/opt/fakeprinter/ui/panel.py"
 PANEL_IN_THE_SKIN_DIR = "/opt/fakeprinter/skin/panel.py"
@@ -50,3 +56,58 @@ def kept_panel(plugin_dir: Path, target: str = PANEL) -> Path:
 
 def hand_over(plugin_root: Path, adopter: Path, target: str = PANEL) -> dict:
     return patch_handover.adopt_patch_ownership(plugin_root, adopter, target, {})
+
+
+def settle(plugin_dir: Path) -> None:
+    """The install finishing ok, which is the moment the hand-over is committed and the old owners
+    let go of the panel's original."""
+    patch_handover.commit_patch_handover(plugin_dir, {})
+
+
+def keep_stock_copy(plugin_dir: Path, target: str, text: str) -> Path:
+    """A plugin holding the stock original of one file, kept the way the daemon keeps it now: under
+    the file's own path, so the copy says which file on the printer it is a copy of."""
+    kept = kept_original(stock_copies(plugin_dir), target)
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    kept.write_text(text)
+    return kept
+
+
+def stop_patching(plugin_dir: Path) -> None:
+    """The plugin's next version: the same plugin, no longer declaring the panel patch."""
+    manifest = json.loads((plugin_dir / "manifest.json").read_text())
+    manifest["install"] = {}
+    (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+
+
+def read_live_file(path: str) -> str | None:
+    """The jinni's read of a device file, on a fake printer whose device tree is a directory."""
+    on_the_printer = Path(path)
+    return on_the_printer.read_text() if on_the_printer.exists() else None
+
+
+def patch_the_jinni_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A jinni that reads and writes each fake printer's files where they really sit, so two
+    printers in one test keep their own live panel instead of sharing one."""
+    monkeypatch.setattr(jinni_client, "variant_facts", dict)
+    monkeypatch.setattr(jinni_client, "fetch", read_live_file)
+    monkeypatch.setattr(jinni_client, "write_files", fake_actuation.write_files)
+
+
+def serve_panel(printer_root: Path, panel_text: str) -> Path:
+    """This printer starts serving this panel, and the path it serves it from comes back."""
+    live = printer_root / "device" / PANEL_NAME
+    live.parent.mkdir(parents=True)
+    live.write_text(panel_text)
+    return live
+
+
+def run_install(printer_root: Path, plugin_dir: Path,
+                notify: installer.PhaseListener = lambda phase: None) -> list[dict]:
+    """This plugin's install, exactly as the daemon runs it for an install and for an update: the
+    phases, and then the settle that either commits the hand-over or switches the plugin off."""
+    phases, _deferred = installer.apply_install_deferred(
+        printer_root, plugin_dir, manifest_at(plugin_dir), {}, notify,
+    )
+    finalize_install_outcome(plugin_dir, {}, phases)
+    return phases

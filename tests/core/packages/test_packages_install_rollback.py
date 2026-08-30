@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from core import jinni_client
-from core.packages import batch_one, batch_plan, installer
+from core.packages import batch_one, batch_plan, installer, manifest
 from protocol import CommandEffect
 from tests.package_fixtures import package_bytes
 
@@ -49,11 +49,12 @@ def test_run_install_does_not_leave_the_extraction_behind_when_deps_were_never_b
     assert not plugin_dir.exists()
 
 
-def test_run_install_deactivates_a_plugin_whose_template_variable_was_never_declared(
+def test_run_install_takes_a_failed_first_install_back_off_the_printer(
     tmp_path: Path,
 ) -> None:
     """A template referencing a variable no manifest ever asked the user for must not render half
-    filled, and the plugin must come off the system instead of sitting there quietly broken."""
+    filled. The plugin never applied, so nothing of it stays behind: left on disk it would be
+    reported as an installed plugin, and the user would be looking at a plugin that does nothing."""
     plugin_root = tmp_path / "plugins"
     plugin_root.mkdir()
     template = {"from": "tmpl/settings.cfg.tmpl", "to": "settings.cfg"}
@@ -66,9 +67,32 @@ def test_run_install_deactivates_a_plugin_whose_template_variable_was_never_decl
     assert plugin_id == "undeclared-placeholder-plugin"
     template_phase = next(logged for logged in log if logged["id"] == "templates")
     assert template_phase["ok"] is False
-    plugin_dir = plugin_root / "undeclared-placeholder-plugin"
+    assert manifest.installed_manifest_dirs(plugin_root) == []
+
+
+def test_run_install_keeps_a_failed_install_that_replaced_one_the_printer_already_had(
+    tmp_path: Path,
+) -> None:
+    """A version that failed over a plugin already on the printer is switched off, never erased:
+    that directory holds the only copy of the files the printer needs to get back to stock, and the
+    user still has a plugin to switch back on."""
+    plugin_root = tmp_path / "plugins"
+    plugin_root.mkdir()
+    working = _package(tmp_path, "replaced-plugin", INSTALL_STUB,
+                       {"files/settings.cfg": "owner: replaced-plugin\n"})
+    installer.run_install(plugin_root, working, {})
+    second_build = tmp_path / "second"
+    second_build.mkdir()
+    broken_install = {**INSTALL_STUB,
+                      "templates": [{"from": "tmpl/settings.cfg.tmpl", "to": "settings.cfg"}]}
+    broken = _package(second_build, "replaced-plugin", broken_install,
+                      {"tmpl/settings.cfg.tmpl": "owner: $UNDECLARED_OWNER\n"})
+
+    installer.run_install(plugin_root, broken, {})
+
+    plugin_dir = plugin_root / "replaced-plugin"
+    assert manifest.installed_manifest_dirs(plugin_root) == [plugin_dir]
     assert (plugin_dir / "deactivated.json").exists()
-    assert not (plugin_dir / "settings.cfg").exists()
 
 
 def _deferred_service_restart(expanded_cmds: list[str]) -> list[CommandEffect]:
@@ -98,6 +122,7 @@ def test_apply_one_defers_no_restart_for_a_plugin_whose_install_failed(
 
     assert result["ok"] is False
     assert deferred == []
+    assert manifest.installed_manifest_dirs(plugin_root) == []
 
 
 def test_plan_batch_keeps_the_good_package_when_a_sibling_file_is_unreadable(

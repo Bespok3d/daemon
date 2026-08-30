@@ -5,7 +5,7 @@ home in core.packages.patches. These guard the diagnostics that make a failed pa
 restore that teardown relies on."""
 from pathlib import Path
 
-from core.packages import baseline, patches
+from core.packages import baseline, patch_reversion, patches
 
 STOCK = "alpha\nbeta\ngamma\ndelta\nepsilon\n"
 PATCHED = "alpha\nbeta2\ngamma\ndelta2\nepsilon\n"
@@ -16,6 +16,10 @@ BETA_FRAGMENT = (
 DELTA_FRAGMENT = (
     "--- a/mod.py\n+++ b/mod.py\n@@ -1,5 +1,5 @@\n"
     " alpha\n beta2\n gamma\n-delta\n+delta2\n epsilon\n"
+)
+SURROUNDED_BY_OTHER_LINES = (
+    "a first line the fragment never saw\nbeta\ngamma\ndelta\n"
+    "a last line the fragment never saw\n"
 )
 
 
@@ -79,8 +83,17 @@ def test_restore_original_files_copies_backup_over_target(tmp_path: Path) -> Non
     target = tmp_path / "klippy" / "toolhead.py"
     target.parent.mkdir()
     target.write_text("patched\n")
-    patches.restore_original_files([{"file": str(target)}], orig_dir, {})
+    patch_reversion.restore_original_files([str(target)], orig_dir)
     assert target.read_text() == "stock\n"
+
+
+def test_a_file_whose_surrounding_lines_differ_is_not_taken_for_the_stock_original(
+        tmp_path: Path) -> None:
+    """Proving a file is these diffs' original means every context line matched. Left at its default
+    fuzz, patch places the change anyway by ignoring the lines around it, and the printer then keeps
+    an original it never proved and writes it back over the live file at the next uninstall."""
+    fragments = _write_fragments(tmp_path / "patches")
+    assert not baseline.is_stock(SURROUNDED_BY_OTHER_LINES, fragments[:1])
 
 
 def test_derive_stock_leaves_a_stock_baseline_untouched(tmp_path: Path) -> None:

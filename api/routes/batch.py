@@ -16,7 +16,7 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile
 
 from core import jinni_client, packages
 
-from ..schemas import PackResultsResponse, PluginRecoveryResult
+from ..schemas import ManifestWarning, PackResultsResponse, PluginRecoveryResult
 from .feeds import install_hub
 
 router = APIRouter()
@@ -43,6 +43,19 @@ async def _write_temp_packages(files: list[UploadFile], staging: Path) -> list[P
     return paths
 
 
+async def _apply_off_the_loop(
+    runner: BatchRunner, tmp_paths: list[Path], vars_by_id: dict[str, dict[str, str]],
+) -> tuple[list[dict], list[dict]]:
+    """Run the blocking apply off the event loop and return its rows together with the plugins it
+    had to go past because their manifest could not be read. The worker thread is handed a copy of
+    this context, so the reads it makes fill the collection opened here."""
+    with packages.collecting_torn_plugins() as torn:
+        results = await asyncio.to_thread(
+            runner, jinni_client.paths(), tmp_paths, vars_by_id, install_hub.publish,
+        )
+    return results, packages.torn_plugin_warnings(torn)
+
+
 async def _serve_batch(files: list[UploadFile], vars_json: str, runner: BatchRunner) -> PackResultsResponse:  # noqa: E501
     """Common flow for both batch routes: stage the uploads, open the live progress hub, run the
     blocking apply off the loop, then always close the hub and clean the temp files. A batch is only
@@ -58,9 +71,7 @@ async def _serve_batch(files: list[UploadFile], vars_json: str, runner: BatchRun
     install_hub.begin()
     try:
         tmp_paths = await _write_temp_packages(files, staging)
-        results = await asyncio.to_thread(
-            runner, jinni_client.paths(), tmp_paths, vars_by_id, install_hub.publish,
-        )
+        results, manifest_warnings = await _apply_off_the_loop(runner, tmp_paths, vars_by_id)
     except (packages.BlockedActionError, HTTPException):
         install_hub.publish({"type": "done", "ok": False})
         raise
@@ -68,7 +79,11 @@ async def _serve_batch(files: list[UploadFile], vars_json: str, runner: BatchRun
         shutil.rmtree(staging, ignore_errors=True)
     ok = all(entry["ok"] for entry in results)
     install_hub.publish({"type": "done", "ok": ok})
-    return PackResultsResponse(ok=ok, results=[PluginRecoveryResult(**entry) for entry in results])
+    return PackResultsResponse(
+        ok=ok,
+        results=[PluginRecoveryResult(**entry) for entry in results],
+        manifest_warnings=[ManifestWarning(**warning) for warning in manifest_warnings],
+    )
 
 
 def _update_batch_or_raise(

@@ -14,7 +14,7 @@ from .archive import unpack_package
 from .batch_rows import failed_result, install_error
 from .deactivation import deactivate_plugin, finalize_install_outcome
 from .errors import MissingSettingError
-from .extraction import discard_extraction
+from .extraction import discard_extraction, discard_if_first_install
 from .file_drift import refuse_changed_package
 from .installer import PhaseListener, apply_install_deferred
 from .integrity import IntegrityError
@@ -32,16 +32,17 @@ def _unpacked_for_apply(
     package_path: Path,
     user_vars: dict[str, str],
     notify: PhaseListener,
-) -> tuple[dict, Path, dict[str, str], dict]:
+) -> tuple[dict, Path, dict[str, str], dict, bool]:
     """Put one package's files on disk, save the config the user typed with them, and announce the
     extract phase: everything the apply below needs before it runs a single install phase."""
-    manifest, plugin_dir, file_count = unpack_package(plugin_root, package_path)
+    manifest, plugin_dir, file_count, replacing_an_install = unpack_package(
+        plugin_root, package_path)
     settings = with_declared_defaults(manifest, user_vars)
     full_vars = with_plugin_venv({**base_vars, **settings}, manifest["name"])
     persist_user_vars(plugin_dir, settings)
     extract = phase("extract", "Unpack", [item(f"Extracted {file_count} files", ok=True)])
     notify(extract)
-    return manifest, plugin_dir, full_vars, extract
+    return manifest, plugin_dir, full_vars, extract, replacing_an_install
 
 
 def apply_one(
@@ -54,7 +55,7 @@ def apply_one(
     """Apply one package's install, deferring its restart. A failure is contained to this plugin
     (recover_one's pattern): a raised or failed-phase apply deactivates it and returns a failed
     result, so the rest of the batch still completes."""
-    manifest, plugin_dir, full_vars, extract = _unpacked_for_apply(
+    manifest, plugin_dir, full_vars, extract, replacing_an_install = _unpacked_for_apply(
         plugin_root, base_vars, package_path, user_vars, notify,
     )
     plugin_id = manifest["name"]
@@ -73,10 +74,25 @@ def apply_one(
     except Exception as exc:  # noqa: BLE001 - one plugin's apply error must NOT abort the batch
         reason = install_error(exc)
         deactivate_plugin(plugin_dir, full_vars, reason)
+        discard_if_first_install(plugin_dir, replacing_an_install)
         return failed_result(plugin_id, reason, [extract]), []
-    log = [extract, *phases]
+    result = _settled_result(plugin_id, plugin_dir, full_vars, [extract, *phases],
+                             replacing_an_install)
+    return result, (deferred if result["ok"] else [])
+
+
+def _settled_result(
+    plugin_id: str,
+    plugin_dir: Path,
+    full_vars: dict[str, str],
+    log: list[dict],
+    replacing_an_install: bool,
+) -> dict:
+    """Settle a finished apply by its phase log: a plugin whose required phase failed is switched
+    off, and one that failed on its FIRST install is taken back off the printer entirely."""
     finalize_install_outcome(plugin_dir, full_vars, log)
     ok = all(logged_phase["ok"] for logged_phase in log)
-    reason = "" if ok else "update phase failed"
-    result = {"plugin_id": plugin_id, "ok": ok, "skipped": False, "reason": reason, "log": log}
-    return result, (deferred if ok else [])
+    if not ok:
+        discard_if_first_install(plugin_dir, replacing_an_install)
+    return {"plugin_id": plugin_id, "ok": ok, "skipped": False,
+            "reason": "" if ok else "update phase failed", "log": log}

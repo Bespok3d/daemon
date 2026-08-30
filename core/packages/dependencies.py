@@ -11,7 +11,7 @@ from typing import Any
 
 from .daemon_services import DAEMON_SERVICES
 from .deactivation import DEACTIVATED_MARKER
-from .manifest import installed_manifest_dirs, manifest_at
+from .manifest import installed_manifest_dirs, readable_manifest
 
 
 def provided_services(manifest: dict) -> list[str]:
@@ -33,16 +33,16 @@ def required_services(manifest: dict) -> list[str]:
 
 
 def _depends_on_any(plugin_dir: Path, services: set[str]) -> bool:
-    declared = set(required_services(manifest_at(plugin_dir)))
-    return bool(declared & services)
+    """A manifest that cannot be read declares nothing, so it holds no removal back."""
+    manifest = readable_manifest(plugin_dir)
+    return manifest is not None and bool(set(required_services(manifest)) & services)
 
 
 def installed_dependents(plugin_root: Path, plugin_id: str) -> list[str]:
     """Installed plugins that depend on a service the target plugin provides."""
     target_dir = plugin_root / plugin_id
-    if not (target_dir / "manifest.json").exists():
-        return []
-    provided = set(provided_services(manifest_at(target_dir)))
+    target_manifest = readable_manifest(target_dir)
+    provided = set(provided_services(target_manifest)) if target_manifest else set()
     if not provided:
         return []
     others = [plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root) if plugin_dir != target_dir]  # noqa: E501
@@ -54,12 +54,12 @@ def services_the_printer_can_serve(plugin_root: Path, being_applied: frozenset[s
     plugin provides, plus what this daemon build serves itself. The plugins named in
     `being_applied` are ignored (the packages this call is applying, whose freshly-unpacked dirs
     are already present and must not count as providers of what the call itself has yet to
-    deliver)."""
+    deliver). A torn manifest declares no service."""
     active = [
         plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root)
         if plugin_dir.name not in being_applied and not (plugin_dir / DEACTIVATED_MARKER).exists()
     ]
-    provided = {service for plugin_dir in active for service in provided_services(manifest_at(plugin_dir))}  # noqa: E501
+    provided = {service for plugin_dir in active for service in provided_services(readable_manifest(plugin_dir) or {})}  # noqa: E501
     return provided | DAEMON_SERVICES
 
 
@@ -81,7 +81,8 @@ def installed_conflicts(plugin_root: Path, plugin_id: str, manifest: dict) -> li
     ]
     clashing = {
         plugin_dir.name for plugin_dir in others
-        if plugin_dir.name in declared or plugin_id in manifest_at(plugin_dir).get("conflicts", [])
+        if plugin_dir.name in declared
+        or plugin_id in (readable_manifest(plugin_dir) or {}).get("conflicts", [])
     }
     return sorted(clashing)
 
@@ -146,4 +147,4 @@ def order_by_dependency(nodes: list[Path], manifests: dict[Path, dict[str, Any]]
 
 
 def topo_sort(plugin_dirs: list[Path]) -> list[Path]:
-    return order_by_dependency(plugin_dirs, {plugin_dir: manifest_at(plugin_dir) for plugin_dir in plugin_dirs})  # noqa: E501
+    return order_by_dependency(plugin_dirs, {plugin_dir: readable_manifest(plugin_dir) or {} for plugin_dir in plugin_dirs})  # noqa: E501

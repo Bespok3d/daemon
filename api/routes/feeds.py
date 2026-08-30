@@ -86,11 +86,12 @@ async def install_progress_feed(websocket: WebSocket, token: str = Query(default
 def _plugin_log_source(plugin_id: str, pattern: str) -> tuple[Path, re.Pattern[str]] | None:
     """Resolve the installed plugin's log file and the capture pattern, or None if there is nothing
     to tail (plugin not installed, or it declares neither a service nor a log path). Refuses an id
-    that names anything but its own directory before reading anything under the plugin root."""
+    that names anything but its own directory before reading anything under the plugin root. A
+    plugin whose manifest cannot be read has no log to tail, and says so the same way."""
     plugin_dir = packages.contained_plugin_dir(packages.PLUGIN_ROOT, plugin_id)
-    if not (plugin_dir / "manifest.json").exists():
+    manifest = packages.readable_manifest(plugin_dir)
+    if manifest is None:
         return None
-    manifest = packages.manifest_at(plugin_dir)
     log_path = log_capture.service_log_path(DATA_ROOT, plugin_dir, manifest)
     if log_path is None:
         return None

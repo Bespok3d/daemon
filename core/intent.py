@@ -92,7 +92,8 @@ def _require_kmodule_placed(place_entries: list[dict], kmodules: list[dict]) -> 
     entry declares is an authoring typo, so fail loud at install. This checks the manifest, not a
     per-box resolution: a printer matching no variant of that placement drops it (via
     `resolve_variants`) and the still-emitted load fails closed to a safe deactivate, which the
-    packet-5 autofixer classifies. Precedent for the loud check: `_require_stable_variant_names`."""
+    load-failure classifier sorts out. Precedent for the loud check:
+    `_require_stable_variant_names`."""
     placed = _kernel_module_names(place_entries)
     missing = sorted(module["module"] for module in kmodules if module["module"] not in placed)
     if missing:

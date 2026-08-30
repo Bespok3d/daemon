@@ -42,7 +42,11 @@ from .lifecycle import (  # noqa: F401  re-export for api.routes
     deactivate_all,
     teardown,
 )
-from .manifest import manifest_at  # noqa: F401  re-export for api.routes
+from .manifest import manifest_at, readable_manifest  # noqa: F401  re-export for api.routes
+from .manifest_warnings import (  # noqa: F401  re-export for api.routes
+    collecting_torn_plugins,
+    torn_plugin_warnings,
+)
 from .plugin_dir import contained_plugin_dir  # noqa: F401  re-export for api.routes
 from .print_guard import guard_no_print  # noqa: F401  re-export for api.routes
 from .reconfigurer import run_reconfigure

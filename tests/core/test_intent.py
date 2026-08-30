@@ -330,3 +330,4 @@ def test_entry_without_variants_resolves_normally_despite_facts() -> None:
     assert ops["symlinks"] == [
         {"from": "files/cfg/klipper/cpu-temp.cfg", "to": "$BESPOK3D_KLIPPER/cpu-temp.cfg"}
     ]
+

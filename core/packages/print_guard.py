@@ -11,12 +11,12 @@ localize. The guard's only judgment is WHICH ops to check: a system-wide op alwa
 only when its manifest restarts something.
 """
 
-import json
 from pathlib import Path
 
 from .. import jinni_client
 from ..intent import normalize_install
 from .errors import BlockedActionError
+from .manifest import readable_manifest
 
 
 def _required_tokens(manifest: dict) -> frozenset[str]:
@@ -66,8 +66,10 @@ def guard_batch_no_print(manifests: list[dict]) -> None:
 
 
 def guard_no_print_for_removal(plugin_root: Path, plugin_ids: list[str]) -> None:
-    """Refuse removing a plugin whose teardown would restart a blocked service right now."""
+    """Refuse removing a plugin whose teardown would restart a blocked service right now. A
+    manifest that cannot be read declares no restart, so it blocks nothing and never traps its
+    plugin on the printer."""
     for plugin_id in plugin_ids:
-        manifest_path = plugin_root / plugin_id / "manifest.json"
-        if manifest_path.exists():
-            guard_no_print_during_restart(json.loads(manifest_path.read_text()))
+        manifest = readable_manifest(plugin_root / plugin_id)
+        if manifest is not None:
+            guard_no_print_during_restart(manifest)
