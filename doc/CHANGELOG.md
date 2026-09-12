@@ -6,8 +6,8 @@ The printer now looks for its certificate inside its own Bespok3d folder, wherev
 put, so a printer that does not keep Bespok3d where a Snapmaker U1 keeps it still answers the app
 over an encrypted connection. Before, the daemon looked in the one place a Snapmaker uses, found
 nothing on any other printer, and fell back to an unencrypted connection the app then refused. This
-is what lets the Klipper on Linux adapter enrol a Voron 2.4, where Bespok3d lives in the printer
-user's own home folder.
+is what lets the Klipper on Linux adapter enrol a Voron 2.4 or any other Klipper printer whose host
+is a Linux box, where Bespok3d lives in the printer user's own home folder.
 
 Nothing changes on a Snapmaker U1: the folder it has always used is the folder the daemon now asks
 for.
