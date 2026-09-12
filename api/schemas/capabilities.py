@@ -24,7 +24,10 @@ class KernelInfo(BaseModel):
 
 
 class CapabilitiesResponse(BaseModel):
-    adapter: str = Field(description="Adapter ID identifying the printer model")
+    adapter: str = Field(
+        description="Adapter id the printer was enrolled under (names the adapter, not necessarily "
+                    "a printer model)",
+    )
     hardware: list[str] = Field(description="Hardware capabilities of this printer")
     installed: dict[str, str] = Field(description="Plugin ID → installed version")
     deactivated: list[str] = Field(
