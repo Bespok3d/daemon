@@ -24,11 +24,42 @@ on:
     tags:
       - 'daemon-v*'
   workflow_dispatch:
+    inputs:
+      release-kind:
+        description: Release membership
+        type: choice
+        options: [draft, prerelease, live]
+        default: draft
+      publish:
+        description: Publish the verified outputs
+        type: boolean
+        default: false
+      prospective-tag:
+        description: Exact future release tag, no tag must exist for preparation
+        type: string
+        required: true
+      selected-ids:
+        description: One explicit unit ID for this release tag
+        type: string
+        required: true
+      expected-source-sha:
+        description: Exact source commit to prepare or publish
+        type: string
+        required: true
+      prepared-receipt:
+        description: Approved receipt JSON, required only for publication
+        type: string
+        default: ''
+
+concurrency:
+  group: unit-release-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
       # The gate below runs the shared em-dash and workflow-pinning guards, which live in lib_bespok3d,
@@ -39,6 +70,7 @@ jobs:
       # release build fails at the gate step.
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           submodules: false
           persist-credentials: false
 
@@ -51,8 +83,24 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Resolve preparation or exact approved artifact
+        id: release-selection
+        uses: Bespok3d/b3-builder/.github/actions/release-context@b698ae5fdf713ff7994c0c95e7d062c4a42547dd
+        with:
+          manifest-path: manifest.json
+          tag-prefix: daemon
+          prospective-tag: ${{ inputs.prospective-tag }}
+          selected-ids: ${{ inputs.selected-ids }}
+          expected-source-sha: ${{ inputs.expected-source-sha }}
+          release-kind: ${{ inputs.release-kind }}
+          publish: ${{ inputs.publish }}
+          prepared-receipt: ${{ inputs.prepared-receipt }}
+          register-commit: 3d4fa2adb4f39aa22b7112ff26fd9522db7b4827
+
       - name: Refuse a tag that disagrees with DAEMON_VERSION
-        run: python scripts/tag_version_guard.py "${{ github.ref_name }}"
+        env:
+          RELEASE_TAG: ${{ steps.release-selection.outputs.release-tag }}
+        run: python3 scripts/tag_version_guard.py "$RELEASE_TAG"
 
       - name: Daemon gate (ruff + mypy + pytest on 3.11)
         run: bash scripts/check.sh
@@ -69,10 +117,38 @@ jobs:
           }
 
       - name: Stage the daemon as a plugin source dir
+        if: ${{ steps.release-selection.outputs.prepared-only != 'true' }}
         run: sh scripts/stage-package.sh
 
+<<<<<<< Updated upstream
       - uses: Bespok3d/b3-builder@f09f2529dafd7edf78a5256f0f66aa1d5324d4ea  # main @ 2026-08-30
+=======
+      - name: Download the prepared outputs
+        if: ${{ steps.release-selection.outputs.prepared-only == 'true' }}
+        uses: actions/download-artifact@v4
         with:
+          artifact-ids: ${{ steps.release-selection.outputs.prepared-artifact-id }}
+          path: .
+          merge-multiple: true
+          run-id: ${{ steps.release-selection.outputs.prepared-run-id }}
+          github-token: ${{ github.token }}
+
+      - name: Restore the exact prepared file modes
+        if: ${{ steps.release-selection.outputs.prepared-only == 'true' }}
+        env:
+          TOOL_ROOT: ${{ steps.release-selection.outputs.tool-root }}
+        run: node "$TOOL_ROOT/dist/action/release-context-main.js" restore
+
+      - uses: Bespok3d/b3-builder@b698ae5fdf713ff7994c0c95e7d062c4a42547dd  # main @ 2026-09-25
+>>>>>>> Stashed changes
+        with:
+          release-kind: ${{ steps.release-selection.outputs.release-kind }}
+          release-tag: ${{ steps.release-selection.outputs.release-tag }}
+          selected-ids: ${{ steps.release-selection.outputs.selected-ids }}
+          publish: ${{ steps.release-selection.outputs.publish }}
+          prepared-only: ${{ steps.release-selection.outputs.prepared-only }}
+          require-signature: 'true'
+          register-commit: 3d4fa2adb4f39aa22b7112ff26fd9522db7b4827
           unit: repo
           source: dist/package
           out: dist
@@ -102,18 +178,43 @@ jobs:
           esac
           echo "signed and stamped: publisher ${publisher}"
 
-      # b3-builder releases the .b3 itself. The atom rides along on the same release because the app
-      # reads it to learn a newer daemon exists.
-      - name: Attach the index atom to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          name=$(jq -r '.name' manifest.json)
-          version=$(jq -r '.version' manifest.json)
-          gh release upload "${name}-v${version}" "dist/${name}.atom.json" --clobber
-
       - uses: Bespok3d/main-index/.github/actions/register-atoms@3d4fa2adb4f39aa22b7112ff26fd9522db7b4827  # main @ 2026-07-26
+        if: ${{ steps.release-selection.outputs.publish == 'true' }}
         with:
+          atoms-dir: dist/registration
+          selected-ids: ${{ steps.release-selection.outputs.selected-ids }}
+          release-kind: ${{ steps.release-selection.outputs.release-kind }}
           # Per-repo Actions secret today (GitHub Free cannot org-secret private repos); becomes ONE org
           # secret every repo inherits when the repos go public.
           token: ${{ secrets.MAIN_INDEX_TOKEN }}
+
+      - name: Preserve prepared file modes
+        if: ${{ steps.release-selection.outputs.publish != 'true' }}
+        run: tar -czf verified-unit-outputs.tar.gz dist
+
+      - name: Keep exact verified outputs for publication or promotion
+        id: prepared-artifact
+        if: ${{ steps.release-selection.outputs.publish != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-unit-outputs
+          path: verified-unit-outputs.tar.gz
+          if-no-files-found: error
+
+      - name: Create the exact artifact approval receipt
+        if: ${{ steps.release-selection.outputs.publish != 'true' }}
+        env:
+          TOOL_ROOT: ${{ steps.release-selection.outputs.tool-root }}
+          B3D_ARTIFACT_ID: ${{ steps.prepared-artifact.outputs.artifact-id }}
+          B3D_ARTIFACT_DIGEST: ${{ steps.prepared-artifact.outputs.artifact-digest }}
+        run: node "$TOOL_ROOT/dist/action/release-context-main.js" receipt
+
+      - name: Keep the receipt and exact annotated-tag message for approval
+        if: ${{ steps.release-selection.outputs.publish != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-unit-receipt
+          path: |
+            prepared-release-receipt.json
+            prepared-release-tag-message.txt
+          if-no-files-found: error
