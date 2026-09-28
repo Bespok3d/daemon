@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The waiting room: access requests a client has made and no authorized client has answered.
 
-Pending file: /userdata/bespok3d/auth/pending.json
+Pending file: $BESPOK3D/auth/pending.json
   [ { "identity", "label", "public_key", "token", "requested_at" }, ... ]
 
 A request sits here until an already-authorized client grants it (ADR-0016/0008, flat peers),
