@@ -1,119 +1,70 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 name: build-and-release
-
-# On a tag matching daemon-v*: run the daemon gate, stage the daemon as a plugin source dir, then
-# hand it to the one org-wide build Action (b3-builder) that packs, stamps the publisher and SIGNS
-# every other plugin. The daemon is plugin zero (ADR-0030): same package shape, same signature, same
-# release layout as any plugin. The single difference is that the adapter puts it on the printer at
-# enrollment, so it is never installed through the plugin pipeline.
-#
-# Plugin zero means plugin zero here too: the run registers the daemon's atom in the org index the
-# same way every plugin repo does.
-#
-# Tag-triggered, like the jinni's release workflow. A push to main used to publish, which handed
-# every enrolled printer a daemon built from whatever main happened to hold, work in progress
-# included; a tag is the maintainer saying THIS tree is the release. tests/test_release_trigger.py
-# fails the gate if the trigger is ever widened back to a branch push.
-#
-# The number in the tag must equal DAEMON_VERSION, because everything downstream is stamped from
-# version.py and not from the tag. scripts/tag_version_guard.py refuses the run on a mismatch, so a
-# tag can never publish a package carrying a different number.
 on:
   push:
-    tags:
-      - 'daemon-v*'
+    tags: ['daemon-v*']
   workflow_dispatch:
+    inputs:
+      prospective-tag: { type: string, required: true }
+      selected-ids: { type: string, required: true }
+      expected-source-sha: { type: string, required: true }
+      release-kind: { type: choice, options: [draft, prerelease, live], default: draft }
+      publish: { type: boolean, default: false }
+      prepared-receipt: { type: string, default: '' }
+
+concurrency:
+  group: unit-release-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
-      # The gate below runs the shared em-dash and workflow-pinning guards, which live in lib_bespok3d,
-      # mounted here as a submodule in a separate private repo. The daemon's own checkout uses the auto
-      # GITHUB_TOKEN; the submodule is fetched in its own step with a read token (MAIN_INDEX_TOKEN), since
-      # GITHUB_TOKEN cannot read a sibling private repo. persist-credentials is off so GITHUB_TOKEN is not
-      # left in git config and reused for the submodule fetch (which would 403). Without the submodule the
-      # release build fails at the gate step.
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           submodules: false
           persist-credentials: false
-
-      - name: Fetch the shared-tooling submodule
+      - name: Fetch shared-tooling submodule
         run: |
           git config --global url."https://x-access-token:${{ secrets.MAIN_INDEX_TOKEN }}@github.com/".insteadOf "https://github.com/"
           git submodule update --init --recursive
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Refuse a tag that disagrees with DAEMON_VERSION
-        run: python scripts/tag_version_guard.py "${{ github.ref_name }}"
-
-      - name: Daemon gate (ruff + mypy + pytest on 3.11)
-        run: bash scripts/check.sh
-
-      # An absent signing key makes b3-builder publish an unsigned .b3 while the run stays green, and a
-      # printer would then take the daemon on trust with nothing to verify. Refuse the release instead.
-      - name: Refuse to release without the signing key
+      - name: Check selected daemon tag
         env:
-          REGISTRY_SIGNING_KEY: ${{ secrets.REGISTRY_SIGNING_KEY }}
-        run: |
-          [ -n "$REGISTRY_SIGNING_KEY" ] || {
-            echo "REGISTRY_SIGNING_KEY is not set on this repo; refusing to publish an unsigned daemon" >&2
-            exit 1
-          }
-
-      - name: Stage the daemon as a plugin source dir
-        run: sh scripts/stage-package.sh
-
-      - uses: Bespok3d/b3-builder@b698ae5fdf713ff7994c0c95e7d062c4a42547dd  # main @ 2026-09-25
+          RELEASE_TAG: ${{ inputs.prospective-tag || github.ref_name }}
+        run: python3 scripts/tag_version_guard.py "$RELEASE_TAG"
+      - name: Daemon gate
+        run: bash scripts/check.sh
+      - id: release
+        uses: Bespok3d/b3-builder@5ac544b30634961cbad39659ebbb99172de68c64
         with:
+          managed-release: 'true'
+          manifest-path: manifest.json
+          tag-prefix: daemon
+          stage-command: sh scripts/stage-package.sh
+          release-tag: ${{ inputs.prospective-tag }}
+          selected-ids: ${{ inputs.selected-ids }}
+          expected-source-sha: ${{ inputs.expected-source-sha }}
+          release-kind: ${{ inputs.release-kind }}
+          publish: ${{ github.event_name == 'push' || inputs.publish }}
+          prepared-receipt: ${{ inputs.prepared-receipt }}
+          require-signature: 'true'
+          register-commit: df4eec856264bebffaa37d93ab1c51363fd6ef92
           unit: repo
-          source: dist/package
-          out: dist
-          # Per-repo Actions secret today (GitHub Free cannot org-secret private repos); becomes ONE org
-          # secret every repo inherits when the repos go public.
           signing-key: ${{ secrets.REGISTRY_SIGNING_KEY }}
-          # ADR-0036: b3-builder downloads the daemon's Python deps as aarch64 wheels into the package,
-          # off the requirements.txt the staging script puts at the package root. This is what lets the
-          # printer install the daemon's venv with no network; nothing is vendored in this repo.
           bake: 'true'
           atom-repo: ${{ github.repository }}
-
-      # The signature is the whole point of routing through b3-builder, so prove it landed rather than
-      # trust a green run: a packed manifest with no detached signature, or one still carrying the
-      # source manifest's PLACEHOLDER publisher, means the release is not verifiable.
-      - name: Verify the packed daemon is signed and stamped
-        run: |
-          name=$(jq -r '.name' manifest.json)
-          version=$(jq -r '.version' manifest.json)
-          package="dist/${name}-${version}.b3"
-          unzip -l "$package" | grep -q 'manifest.json.sig' || {
-            echo "$package carries no manifest.json.sig" >&2; exit 1; }
-          publisher=$(unzip -p "$package" manifest.json | jq -r '.publisher')
-          case "$publisher" in
-            [Pp][Ll][Aa][Cc][Ee][Hh][Oo][Ll][Dd][Ee][Rr]|null|"")
-              echo "$package was not stamped with a real publisher (got '${publisher}')" >&2; exit 1 ;;
-          esac
-          echo "signed and stamped: publisher ${publisher}"
-
-      # b3-builder releases the .b3 itself. The atom rides along on the same release because the app
-      # reads it to learn a newer daemon exists.
-      - name: Attach the index atom to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          name=$(jq -r '.name' manifest.json)
-          version=$(jq -r '.version' manifest.json)
-          gh release upload "${name}-v${version}" "dist/${name}.atom.json" --clobber
-
-      - uses: Bespok3d/main-index/.github/actions/register-atoms@3d4fa2adb4f39aa22b7112ff26fd9522db7b4827  # main @ 2026-07-26
+      - uses: Bespok3d/main-index/.github/actions/register-atoms@df4eec856264bebffaa37d93ab1c51363fd6ef92
+        if: ${{ steps.release.outputs.publish == 'true' }}
         with:
-          # Per-repo Actions secret today (GitHub Free cannot org-secret private repos); becomes ONE org
-          # secret every repo inherits when the repos go public.
+          atoms-dir: dist/registration
+          selected-ids: ${{ steps.release.outputs.selected-ids }}
+          release-kind: ${{ steps.release.outputs.release-kind }}
           token: ${{ secrets.MAIN_INDEX_TOKEN }}
