@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.1
+
+An optional setting left blank now installs. Before, the printer refused the whole install because
+an empty value did not pass the allowed-characters check, even when the plugin said the setting
+could stay empty. Whether a blank is allowed is now the plugin's call, and a required setting left
+blank is still refused.
+
 ## 0.14.0
 
 Plugins that used to change Snapmaker's own program files now hand those files over to the base

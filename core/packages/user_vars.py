@@ -19,7 +19,9 @@ from .plugin_dir import contained_plugin_dir
 # The comma is allowed for list-valued config (e.g. NOTIFY_EVENTS="complete,error,cancelled"). It is
 # safe in the shell-interpolated `install.start` commands: a bare comma is not a metacharacter, and
 # brace expansion (its only special use) needs `{`/`}`, which this allowlist already blocks.
-_SAFE_VAR_RE = re.compile(r'[A-Za-z0-9 .,\-:/_@]+')
+# An empty value matches: whether a blank is allowed is the manifest's call
+# (refuse_missing_settings).
+_SAFE_VAR_RE = re.compile(r'[A-Za-z0-9 .,\-:/_@]*')
 _SAFE_VAR_ALLOWED = "letters, numbers, spaces, and . , - : / _ @"
 
 USER_VARS_FILE = "user_vars.json"
