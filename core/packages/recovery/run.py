@@ -12,6 +12,7 @@ from ..manifest import readable_manifest
 from ..print_guard import guard_no_print
 from ..repair import restore_printer_state
 from .reapply import ServiceLedger, record_failure, recover_one
+from .reboot_replaces import reboot_replaces_restart
 from .restart import restart_services
 
 
@@ -62,13 +63,23 @@ def _recover_in_order(
     return results, deferred_restarts
 
 
+def _services_row(plugin_root: Path, held_restarts: list[str], vars: dict[str, str],
+                  reboot_follows: bool) -> dict:
+    if reboot_follows:
+        return reboot_replaces_restart(held_restarts)
+    recover_context = OperationContext(OperationKind.RECOVER)
+    return restart_services(plugin_root, held_restarts, vars, recover_context)
+
+
 def run_recovery(
-    data_root: Path, plugin_root: Path, vars: dict[str, str], publish: ProgressSink | None = None
+    data_root: Path, plugin_root: Path, vars: dict[str, str], publish: ProgressSink | None = None,
+    reboot_follows: bool = False,
 ) -> list[dict]:
     """Make the printer sound, then re-apply all installed, non-deactivated plugins (after an OTA,
     or after anything else left the printer half done). Every problem `selfcheck` reports is one
     this clears. Announces its own plan first: unlike a batch, the set and its order are decided
-    here, from what is on the printer. Returns per-plugin results."""
+    here, from what is on the printer. Returns per-plugin results. `reboot_follows` is the caller's
+    promise to reboot the printer right after, which makes the services restart redundant."""
     guard_no_print()
     restore_printer_state(data_root, plugin_root, vars)
     if not plugin_root.exists():
@@ -88,6 +99,6 @@ def run_recovery(
     unique_restarts = list(dict.fromkeys(deferred_restarts))
     if unique_restarts:
         progress.plugin(SERVICES_PLUGIN_ID, len(ordered), len(ordered))
-        results.append(restart_services(plugin_root, unique_restarts, vars, OperationContext(OperationKind.RECOVER)))  # noqa: E501
+        results.append(_services_row(plugin_root, unique_restarts, vars, reboot_follows))
 
     return results

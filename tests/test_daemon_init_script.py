@@ -62,3 +62,49 @@ def test_it_spares_the_process_a_reboot_gave_that_number_to(
 
     with pytest.raises(subprocess.TimeoutExpired):
         bystander.wait(timeout=1)
+
+
+FEED_LINE = 'INFO:     10.6.9.4:55925 - "WebSocket /ws/install-progress?{credential}" [accepted]\n'
+SERVER_START_LINE = "INFO:     Started server process [812]\n"
+FEED_TOKEN = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+OLD_FEED_LINE = FEED_LINE.format(credential=f"token={FEED_TOKEN}")
+SCRUBBED_FEED_LINE = FEED_LINE.format(credential="[token redacted]")
+SCRUB_BOTH_LOGS = 'LOG_FILE="$1"; scrub_log_tokens "$1"; scrub_log_tokens "$1.prev"'
+
+
+def scrub_through_the_script(daemon_log: Path) -> None:
+    subprocess.run(
+        ["sh", "-c", f". {INIT_SCRIPT}; {SCRUB_BOTH_LOGS}", "scrub", str(daemon_log)],
+        env={"PATH": "/usr/bin:/bin"},
+        check=True,
+    )
+
+
+def test_start_scrubs_the_tokens_older_daemons_wrote_into_both_logs(tmp_path: Path) -> None:
+    daemon_log = tmp_path / "daemon.log"
+    previous_log = tmp_path / "daemon.log.prev"
+    daemon_log.write_text(OLD_FEED_LINE)
+    previous_log.write_text(SERVER_START_LINE + OLD_FEED_LINE)
+    previous_log.chmod(0o640)
+
+    scrub_through_the_script(daemon_log)
+
+    assert daemon_log.read_text() == SCRUBBED_FEED_LINE
+    assert previous_log.read_text() == SERVER_START_LINE + SCRUBBED_FEED_LINE
+    assert previous_log.stat().st_mode & 0o777 == 0o640
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["daemon.log", "daemon.log.prev"]
+
+
+def test_a_scrub_that_fails_keeps_the_log_and_says_so_in_the_daemon_log(tmp_path: Path) -> None:
+    daemon_log = tmp_path / "daemon.log"
+    unwritable_log = tmp_path / "daemon.log.prev"
+    daemon_log.write_text("")
+    unwritable_log.write_text(OLD_FEED_LINE)
+    unwritable_log.chmod(0o444)
+
+    scrub_through_the_script(daemon_log)
+
+    assert unwritable_log.read_text() == OLD_FEED_LINE
+    assert daemon_log.read_text() == (
+        f"bespok3d: could not scrub access tokens from {unwritable_log}\n")
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["daemon.log", "daemon.log.prev"]

@@ -51,10 +51,10 @@ def _recovery_result(deactivated: list[str], decision: Decision,
     else:
         reason = decision.signal
     failure_log = failure.health.signals.log_tails
-    log_item = item("captured service log for diagnosis", ok=ok, output=failure_log)
+    safety_net_item = item(reason, ok=ok, output=failure_log)
     result = {"plugin_id": SERVICES_PLUGIN_ID, "ok": ok, "skipped": False, "reason": reason,
               "failure_log": failure_log,
-              "log": [phase("restart", "Restart services", [log_item])]}
+              "log": [phase("safety-net", "Safety net recovery", [safety_net_item])]}
     if deactivated:
         result["auto_deactivated"] = ", ".join(deactivated)
         result["fix_detail"] = decision.signal
@@ -110,14 +110,17 @@ def _touches_core_service(deferred_cmds: list[str]) -> bool:
 def restart_services(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, str],
                      ctx: OperationContext) -> dict:
     """Do the restart, then ask the safety net to verify and recover. The daemon does the thing; the
-    net watches (incl. failed components), acts (deactivate), and reports."""
+    net watches (incl. failed components), acts (deactivate), and reports. The first restart's own
+    items stay at the head of the report: they name the service that did not come back, which the
+    safety net's restarts would otherwise hide."""
     result = run_restart_batch(deferred_cmds)
     if not _touches_core_service(deferred_cmds):
         return result
     evidence = gather_evidence(plugin_root, vars)
     if is_healthy(evidence):
         return result
-    return _auto_recover(plugin_root, deferred_cmds, vars, ctx, evidence)
+    recovered = _auto_recover(plugin_root, deferred_cmds, vars, ctx, evidence)
+    return {**recovered, "log": [*result["log"], *recovered["log"]]}
 
 
 def restart_phases(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, str],

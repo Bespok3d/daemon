@@ -20,5 +20,7 @@ def run_plugin_start_commands(cmds: list[str], vars: dict[str, str]) -> tuple[di
     immediate = [cmd for cmd, effect in zip(expanded_cmds, effects) if not effect.deferrable]
     deferred = [cmd for cmd, effect in zip(expanded_cmds, effects) if effect.deferrable]
     results = jinni_client.run_actions(immediate)
-    items = [item(cmd, ok=result.ok, output=result.output) for cmd, result in zip(immediate, results)]  # noqa: E501
-    return phase("start", "Start commands", items), deferred
+    ran = [item(cmd, ok=result.ok, output=result.output) for cmd, result in zip(immediate, results)]
+    # A held command is listed too, so the plugin's row never reads as if its restart already ran.
+    held = [item(f"held for the services restart: {cmd}", ok=True) for cmd in deferred]
+    return phase("start", "Start commands", [*ran, *held]), deferred

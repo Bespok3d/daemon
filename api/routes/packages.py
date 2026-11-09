@@ -24,16 +24,22 @@ from .refusals import refusal_detail
 router = APIRouter()
 
 
+class RecoverBody(BaseModel):
+    """Optional: a caller that sends no body keeps today's recover, services restart included."""
+    reboot_follows: bool = False
+
+
 @router.post(
     "/packages/recover",
     response_model=PackResultsResponse,
     summary="Re-apply all installed plugins after OTA firmware update",
 )
-async def recover_packages() -> PackResultsResponse:
+async def recover_packages(body: RecoverBody | None = None) -> PackResultsResponse:
+    reboot_follows = body is not None and body.reboot_follows
     install_hub.bind_loop(asyncio.get_running_loop())
     install_hub.begin()
     try:
-        results, manifest_warnings = await _recover_and_collect_torn()
+        results, manifest_warnings = await _recover_and_collect_torn(reboot_follows)
     except HTTPException:
         install_hub.publish({"type": "done", "ok": False})
         raise
@@ -47,22 +53,23 @@ async def recover_packages() -> PackResultsResponse:
     )
 
 
-async def _recover_and_collect_torn() -> tuple[list[dict], list[dict]]:
+async def _recover_and_collect_torn(reboot_follows: bool) -> tuple[list[dict], list[dict]]:
     """Re-apply everything, and beside the rows the plugins recovery had to go past because their
     own manifest could not be read. The worker thread is handed a copy of this context, so the
     reads it makes fill the collection opened here."""
     with packages.collecting_torn_plugins() as torn:
-        results = await _recover_or_refuse()
+        results = await _recover_or_refuse(reboot_follows)
     return results, packages.torn_plugin_warnings(torn)
 
 
-async def _recover_or_refuse() -> list[dict]:
+async def _recover_or_refuse(reboot_follows: bool) -> list[dict]:
     """Re-apply everything installed, reporting a refusal as its own status rather than a 500."""
     try:
         # Off the event loop: recover re-applies every plugin over many blocking socket calls and
         # can run for tens of seconds; on the loop it would starve the live feeds (the
         # /ws/print-state relay), tear their async generators down mid-await, and wedge the jinni.
-        return await asyncio.to_thread(packages.recover, jinni_client.paths(), install_hub.publish)
+        recover = packages.recover_before_reboot if reboot_follows else packages.recover
+        return await asyncio.to_thread(recover, jinni_client.paths(), install_hub.publish)
     except packages.BlockedActionError as exc:
         raise HTTPException(status_code=409, detail={"error": "blocked", "blocked_actions": exc.blocked}) from exc  # noqa: E501
     except ValueError as exc:

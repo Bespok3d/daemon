@@ -28,6 +28,21 @@ free_port() {
   return 0
 }
 
+# Daemons before the log redaction wrote the feeds' access tokens into the log. Rewritten in place
+# with cat so the file keeps its inode and mode; a scrub that fails leaves the log as it was.
+scrub_log_tokens() {
+  log="$1"
+  [ -f "$log" ] || return 0
+  if sed -E 's/token=[^&[:space:]"#]*/[token redacted]/g' "$log" > "$log.scrub" \
+    && cat "$log.scrub" > "$log"; then
+    rm -f "$log.scrub"
+    return 0
+  fi
+  rm -f "$log.scrub"
+  echo "bespok3d: could not scrub access tokens from $log" >> "$LOG_FILE"
+  return 0
+}
+
 rotate_log() {
   [ -f "$LOG_FILE" ] || return 0
   mv "$LOG_FILE" "$LOG_FILE.prev" 2>/dev/null
@@ -38,6 +53,8 @@ case "$1" in
   start)
     kill_if_our_daemon "$(cat "$PID_FILE" 2>/dev/null)"
     free_port
+    scrub_log_tokens "$LOG_FILE"
+    scrub_log_tokens "$LOG_FILE.prev"
     rotate_log
     sleep 1
     BESPOK3D_ADAPTER=snapmaker-u1 \

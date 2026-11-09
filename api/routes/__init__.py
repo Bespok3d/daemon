@@ -6,12 +6,23 @@ Each submodule owns one route group on its own `APIRouter`; this package aggrega
 single `router` that `api` mounts. Health checks and capabilities live in `health`, the websocket
 live feeds in `feeds`, the single-plugin commands (install/reconfigure/uninstall) under `/plugins/`
 in `plugins`, the multipart batch-apply commands (update-batch/install-batch) under `/packages/` in
-`batch`, the other pack commands (recover/uninstall-batch) under `/packages/` in `packages`,
-deactivate/teardown in `lifecycle`, and the access-control flow in `access`.
+`batch`, the other pack commands (recover/uninstall-batch) under `/packages/` in `packages`, the
+narrow setup repair in `setup_repair`, deactivate/teardown in `lifecycle`, and the access-control
+flow in `access`.
 """
 from fastapi import APIRouter
 
-from . import access, batch, feeds, health, lifecycle, packages, plugin_install, plugins
+from . import (
+    access,
+    batch,
+    feeds,
+    health,
+    lifecycle,
+    packages,
+    plugin_install,
+    plugins,
+    setup_repair,
+)
 
 router = APIRouter()
 router.include_router(health.router)
@@ -20,5 +31,6 @@ router.include_router(plugin_install.router)
 router.include_router(plugins.router)
 router.include_router(batch.router)
 router.include_router(packages.router)
+router.include_router(setup_repair.router)
 router.include_router(lifecycle.router)
 router.include_router(access.router)

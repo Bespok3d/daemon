@@ -17,8 +17,10 @@ def test_run_plugin_start_commands_defers_core_service_restarts(
 
     assert phase["id"] == "start"
     assert deferred == ["/etc/init.d/S60klipper restart"]
-    # the immediate echo ran; only the service restart was deferred
-    assert [item["label"] for item in phase["items"]] == ["echo hello"]
+    # the echo ran; the restart is listed as held, so the row never reads as if it already ran
+    assert [item["label"] for item in phase["items"]] == [
+        "echo hello", "held for the services restart: /etc/init.d/S60klipper restart",
+    ]
 
 
 def test_run_plugin_start_commands_runs_the_immediates_through_the_jinni(

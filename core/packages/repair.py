@@ -64,10 +64,16 @@ def _clear_failure_markers(plugin_root: Path) -> None:
         (plugin_dir / RECOVERY_FAILURE_MARKER).unlink(missing_ok=True)
 
 
-def restore_printer_state(data_root: Path, plugin_root: Path, vars: dict[str, str]) -> None:
-    """Make the printer sound again: wired as the user asked, tree whole, no wreckage left over."""
+def repair_printer_setup(data_root: Path, plugin_root: Path, vars: dict[str, str]) -> None:
+    """Wired as the user asked, tree whole, no wreckage left over. Touches no plugin that is still
+    installed, so it is the whole of the narrow repair as well as the first step of a recover."""
     _create_required_directories(data_root)
     _rewire_printer_config((data_root / GLOBAL_DEACTIVATED_MARKER).exists())
     _sweep_half_removed_plugins(plugin_root, vars)
-    _clear_failure_markers(plugin_root)
     jinni_client.prune_dead_config_links()
+
+
+def restore_printer_state(data_root: Path, plugin_root: Path, vars: dict[str, str]) -> None:
+    """Make the printer sound again before a recover re-applies every plugin."""
+    repair_printer_setup(data_root, plugin_root, vars)
+    _clear_failure_markers(plugin_root)

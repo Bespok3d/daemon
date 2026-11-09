@@ -1187,6 +1187,8 @@ def test_recover_reports_failed_service_restart(
     assert services["ok"] is False
     # Nothing was attributable, so the catch-all reports honestly instead of leaving the user blind.
     assert "could not auto-fix" in services["reason"]
+    # Bespok3d-desktop#30: the report kept only the safety net's line and hid what the restart ran.
+    assert [entry["id"] for entry in services["log"]] == ["restart", "safety-net"]
 
 
 def test_restart_phase_waits_for_moonraker_when_restarted(

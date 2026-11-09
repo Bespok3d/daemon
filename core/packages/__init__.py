@@ -29,6 +29,7 @@ from .errors import (
     DependentsError,  # noqa: F401  re-export for api.routes
     IncompatiblePairError,  # noqa: F401  re-export for api.routes
     MissingSettingError,  # noqa: F401  re-export for api.routes
+    NeedsFullRecoverError,  # noqa: F401  re-export for api.routes
     RequirementError,  # noqa: F401  re-export for api.routes
 )
 from .installer import (
@@ -55,6 +56,7 @@ from .recovery import (  # noqa: F401  re-export for api.routes
     restart_services,
     run_recovery,
 )
+from .setup_repair import Selfcheck, run_setup_repair
 from .uninstaller import run_uninstall
 from .updater import run_update_batch
 from .user_vars import (
@@ -100,6 +102,16 @@ def install_batch(
 
 def recover(vars: dict[str, str], publish: ProgressSink | None = None) -> list[dict]:
     return run_recovery(DATA_ROOT, PLUGIN_ROOT, vars, publish)
+
+
+def recover_before_reboot(vars: dict[str, str], publish: ProgressSink | None = None) -> list[dict]:
+    """The full recover for a caller that reboots the printer right after: the reboot restarts
+    every service, so the services batch is left to it."""
+    return run_recovery(DATA_ROOT, PLUGIN_ROOT, vars, publish, reboot_follows=True)
+
+
+def repair_setup(vars: dict[str, str], selfcheck: Selfcheck) -> list[dict]:
+    return run_setup_repair(DATA_ROOT, PLUGIN_ROOT, vars, selfcheck)
 
 
 def uninstall(plugin_id: str, vars: dict[str, str], cascade: bool = False) -> list[str]:

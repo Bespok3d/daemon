@@ -8,15 +8,19 @@ Auth: every request must carry a bearer token from the ACL.
 """
 
 from pathlib import Path
+from typing import Any
 
 import uvicorn
+from uvicorn.config import LOGGING_CONFIG
 
 from api import app
+from core.log_redaction import TokenRedactionFilter
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 4269
 CERT_FILE = Path("/userdata/bespok3d/etc/daemon/server.crt")
 KEY_FILE = Path("/userdata/bespok3d/etc/daemon/server.key")
+TOKEN_REDACTION = "token_redaction"
 
 
 def _ssl_kwargs() -> dict:
@@ -25,12 +29,26 @@ def _ssl_kwargs() -> dict:
     return {}
 
 
+def log_config() -> dict[str, Any]:
+    """uvicorn's own logging, with every handler passing records through the token redaction."""
+    redacting_handlers = {
+        name: {**handler, "filters": [TOKEN_REDACTION]}
+        for name, handler in LOGGING_CONFIG["handlers"].items()
+    }
+    return {
+        **LOGGING_CONFIG,
+        "filters": {TOKEN_REDACTION: {"()": TokenRedactionFilter}},
+        "handlers": redacting_handlers,
+    }
+
+
 def main() -> None:
     uvicorn.run(
         app,
         host=DEFAULT_HOST,
         port=DEFAULT_PORT,
         log_level="info",
+        log_config=log_config(),
         **_ssl_kwargs(),
     )
 

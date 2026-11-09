@@ -54,6 +54,11 @@ class IncompatiblePairError(Exception):
         super().__init__(f"{side} {running} is older than the required {required}")
 
 
+class NeedsFullRecoverError(Exception):
+    """The narrow repair was refused because selfcheck found something it does not put right (a
+    plugin's links, a failed re-apply) or found nothing at all. The caller runs the full recover."""
+
+
 class MissingSettingError(Exception):
     """A plugin op was refused because a setting the manifest marks required arrived with no value
     and the manifest declares no default for it. Nothing is placed on the printer: a template
