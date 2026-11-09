@@ -12,7 +12,7 @@ The fixture printer is fake throughout: made-up plugin ids and made-up device pa
 import json
 from pathlib import Path
 
-from core.packages import placement, uninstaller
+from core.packages import patch_reversion, placement, uninstaller
 
 
 def _write_manifest(plugin_dir: Path, plugin_id: str, install: dict) -> None:
@@ -40,17 +40,16 @@ def test_a_stock_backup_emptied_since_it_was_saved_still_gets_written_to_the_dev
     tmp_path: Path,
 ) -> None:
     """The kept backup no longer holds a working file (truncated by some earlier fault, not by this
-    plugin's own patch); restore must not carry that loss onto a live, currently-working file."""
+    plugin's own patch); restore must not carry that loss onto a live, currently-working file. The
+    restore is called on its own: a removal settles the copies first and drops this one."""
     plugin_dir = tmp_path / "plugins" / "corrupt-backup"
     device_file = tmp_path / "device" / "moonraker.conf"
     device_file.parent.mkdir(parents=True)
     device_file.write_text("a working moonraker config\n")
-    patch_entry = {"file": str(device_file), "patch": "patches/01-moonraker.patch"}
-    _write_manifest(plugin_dir, "corrupt-backup", {"patches": [patch_entry]})
-    (plugin_dir / "patches_orig").mkdir()
+    (plugin_dir / "patches_orig").mkdir(parents=True)
     (plugin_dir / "patches_orig" / "moonraker.conf").write_text("")
 
-    uninstaller.run_uninstall(plugin_dir.parent, "corrupt-backup", {})
+    patch_reversion.restore_original_files([str(device_file)], plugin_dir / "patches_orig")
 
     assert device_file.read_text() != ""
 
