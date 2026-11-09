@@ -3,10 +3,11 @@
 """OTA per-plugin re-apply: rebuild one installed plugin's effect on the system after an OTA wipe.
 
 `recover_one` is the unit the orchestrator's `recover()` runs per plugin in dependency order: skip
-if a dependency is unsatisfied or a required variable is missing, else re-apply the install through
-the shared install spine (`installer.apply_install_deferred`, the same pipeline a fresh install and
-a batched update run) so recovery cannot drift from install, deferring core-service restarts. A
-plugin whose re-apply fails is deactivated and its failure recorded, so the printer stays usable.
+if a dependency is unsatisfied, fail if a required variable is missing, else re-apply the install
+through the shared install spine (`installer.apply_install_deferred`, the same pipeline a fresh
+install and a batched update run) so recovery cannot drift from install, deferring core-service
+restarts. A plugin that is skipped or whose re-apply fails is deactivated, so the printer stays
+usable.
 
 A file another plugin edited at runtime is reported in the result and does NOT stop the re-apply:
 the tree on the printer is the only copy there is, so refusing it would cost the user a working
@@ -29,6 +30,7 @@ from ..deactivation import (
 )
 from ..dependencies import provided_services, required_services
 from ..file_drift import changed_files
+from ..left_out import skipped_result
 from ..patch_handover import commit_patch_handover
 from ..user_vars import (
     load_user_vars,
@@ -109,14 +111,18 @@ def _precondition_skip(
     vars: dict[str, str],
 ) -> tuple[dict, list[str]] | None:
     """A skip (a dependency another recovered plugin should provide is not satisfied) or a fail (a
-    required setting is missing), or None to proceed with the re-apply."""
+    required setting is missing), each switching the plugin off, or None to proceed with the
+    re-apply."""
     plugin_id = plugin_dir.name
     missing_deps = [service for service in required_services(manifest)
                     if service in services.provided_by_installed
                     and service not in services.satisfied]
     if missing_deps:
         reason = f"dependency not satisfied: {', '.join(missing_deps)}"
-        return {"plugin_id": plugin_id, "ok": False, "skipped": True, "reason": reason, "log": []}, []  # noqa: E501
+        # printer-never-broken: a plugin whose provider is not back cannot run, yet its config is
+        # still wired in and stops the printer at every boot. Off, it waits to be installed again.
+        deactivate_plugin(plugin_dir, full_vars, reason)
+        return skipped_result(plugin_id, reason), []
     missing_vars = missing_required_vars(manifest, full_vars)
     if missing_vars:
         # printer-never-broken: a setting recovery cannot supply leaves the plugin unable to

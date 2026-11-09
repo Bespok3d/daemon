@@ -48,6 +48,7 @@ def test_recover_one_skips_when_a_dependency_is_unsatisfied(tmp_path: Path) -> N
     assert result["ok"] is False
     assert "rfid" in result["reason"]
     assert deferred == []
+    assert (tmp_path / "spoolman" / DEACTIVATED_MARKER).exists()
 
 
 def test_recover_one_succeeds_and_clears_a_stale_marker(tmp_path: Path) -> None:

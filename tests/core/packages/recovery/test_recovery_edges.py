@@ -86,8 +86,44 @@ def test_run_recovery_survives_a_mutual_dependency_cycle(tmp_path: Path) -> None
 
     assert {result["plugin_id"] for result in results} == {"first", "second"}
     assert all(result["skipped"] and not result["ok"] for result in results)
-    assert not (plugin_root / "first" / DEACTIVATED_MARKER).exists()
-    assert not (plugin_root / "second" / DEACTIVATED_MARKER).exists()
+    assert (plugin_root / "first" / DEACTIVATED_MARKER).exists()
+    assert (plugin_root / "second" / DEACTIVATED_MARKER).exists()
+
+
+def test_run_recovery_switches_off_a_dependent_its_failed_provider_left_wired(
+        tmp_path: Path, monkeypatch: MP) -> None:
+    """After a firmware update the dependent's extras are gone but its config link is still in
+    Klipper's config. Skipped and left wired, it stops Klipper at every boot; it must come off the
+    printer like a failed plugin, its files kept and its marker naming the missing dependency."""
+    plugin_root = tmp_path / "plugins"
+    _plugin(plugin_root, "rfid-reader", {
+        "version": "0.1.0", "install": BARE_INSTALL, "provides": [{"service": "rfid"}],
+    })
+    klipper_config_link = tmp_path / "config" / "afc-lite.cfg"
+    _plugin(plugin_root, "afc-lite", {
+        "version": "0.1.0", "require": [{"service": "rfid"}],
+        "install": {**BARE_INSTALL,
+                    "symlinks": [{"from": "files/afc-lite.cfg", "to": str(klipper_config_link)}]},
+    })
+    plugin_config = plugin_root / "afc-lite" / "files" / "afc-lite.cfg"
+    plugin_config.parent.mkdir()
+    plugin_config.write_text("[afc]\n")
+    klipper_config_link.parent.mkdir()
+    klipper_config_link.symlink_to(plugin_config)
+    monkeypatch.setattr(installer, "render_templates",
+                        lambda *_a, **_kw: {"id": "templates", "ok": False, "items": []})
+
+    results = run.run_recovery(tmp_path / "data", plugin_root, {})
+
+    by_id = {result["plugin_id"]: result for result in results}
+    assert by_id["afc-lite"] == {
+        "plugin_id": "afc-lite", "ok": False, "skipped": True,
+        "reason": "dependency not satisfied: rfid", "log": [],
+    }
+    assert not klipper_config_link.is_symlink()
+    assert plugin_config.exists()
+    marker = json.loads((plugin_root / "afc-lite" / DEACTIVATED_MARKER).read_text())
+    assert marker == {"reason": "dependency not satisfied: rfid"}
 
 
 def test_run_recovery_returns_nothing_when_every_plugin_is_deactivated(tmp_path: Path) -> None:

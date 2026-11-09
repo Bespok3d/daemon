@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.2
+
+After a firmware update, a plugin that needs another plugin that did not come back is now switched
+off, the same as a plugin that failed itself. Before, it stayed in the printer's settings
+and the printer stopped with an error every time it started. Its files are kept, the reason names
+what it was missing, and you can install it again once the plugin it needs works.
+
 ## 0.14.1
 
 An optional setting left blank now installs. Before, the printer refused the whole install because
