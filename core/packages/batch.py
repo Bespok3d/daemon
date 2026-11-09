@@ -77,7 +77,7 @@ def _apply_each(
     providers = plan.providers_in_batch()
     total = len(plan.specs)
     for index, spec in enumerate(plan.specs):
-        manifest = spec[1]
+        _package_path, manifest = spec
         progress.plugin(manifest["name"], index, total)
         left_out = why_not_applied(manifest, plan.refused, providers, satisfied, kind)
         result, deferred = _take_turn(plugin_root, plan, spec, left_out, progress.phase)

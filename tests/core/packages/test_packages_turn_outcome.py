@@ -11,6 +11,8 @@ import pytest
 
 from core import packages
 from core.packages import batch
+from core.packages.batch_progress import BatchProgress
+from core.packages.batch_rows import settle_after_safety_net
 from tests.package_fixtures import package_bytes
 
 MP = pytest.MonkeyPatch
@@ -32,10 +34,14 @@ def _outcomes(published: list[dict]) -> list[tuple[str, bool, bool]]:
             for event in published if event["type"] == "outcome"]
 
 
+CAMERA_SWITCHED_OFF_ROW = {"plugin_id": "(services)", "ok": False, "skipped": False, "reason": "",
+                           "log": [], "auto_deactivated": "camera",
+                           "fix_detail": "klipper did not come back"}
+
+
 def _net_switches_off_camera(_plugin_root: Path, _restarts: list[str], _vars: dict[str, str],
                              _ctx: object) -> dict:
-    return {"plugin_id": "(services)", "ok": False, "skipped": False, "reason": "", "log": [],
-            "auto_deactivated": "camera", "fix_detail": "klipper did not come back"}
+    return CAMERA_SWITCHED_OFF_ROW
 
 
 def test_a_plugin_left_out_of_the_batch_is_announced_as_skipped(
@@ -73,3 +79,15 @@ def test_a_plugin_the_net_switches_off_is_announced_again_as_failed(
     packages.install_batch({}, [camera], {}, published.append)
 
     assert _outcomes(published) == [("camera", True, False), ("camera", False, False)]
+
+
+def test_a_skipped_plugin_the_net_switches_off_is_failed_not_skipped() -> None:
+    """A skipped row counts as fine on a recover, so one the net switched off would hide it."""
+    stranded_row = {"plugin_id": "camera", "ok": False, "skipped": True, "reason": "", "log": []}
+    published: list[dict] = []
+
+    settled = settle_after_safety_net(
+        [stranded_row], CAMERA_SWITCHED_OFF_ROW, BatchProgress(published.append))
+
+    assert (settled[0]["ok"], settled[0]["skipped"]) == (False, False)
+    assert _outcomes(published) == [("camera", False, False)]

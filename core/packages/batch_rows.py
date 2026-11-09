@@ -26,6 +26,7 @@ def _switched_off(result: dict, signal: str) -> dict:
     return {
         **result,
         "ok": False,
+        "skipped": False,
         "auto_deactivated": result["plugin_id"],
         "reason": f"deactivated to keep the printer working: {signal}",
     }
@@ -34,7 +35,9 @@ def _switched_off(result: dict, signal: str) -> dict:
 def _after_the_restart(result: dict, switched_off: set[str], signal: str) -> dict:
     """A plugin the safety net switched off to keep the printer working is not installed and
     running, whatever its own row said before the batch reached its single restart. Installed on its
-    own it would have been deactivated by the same net and reported as failed, so it says so too."""
+    own it would have been deactivated by the same net and reported as failed, so it says so too.
+    That holds for a plugin whose turn was left out as well: it was on the printer from before, the
+    net took it off, and a skipped row counts as fine, so it would hide that."""
     if result["plugin_id"] not in switched_off:
         return result
 
