@@ -31,7 +31,9 @@ from ..deactivation import (
 from ..dependencies import provided_services, required_services
 from ..file_drift import changed_files
 from ..left_out import skipped_result
+from ..live_original import inside_a_recovery
 from ..patch_handover import commit_patch_handover
+from ..settle_originals import settle_before_switch_off
 from ..user_vars import (
     load_user_vars,
     missing_required_vars,
@@ -57,6 +59,11 @@ class ServiceLedger:
     satisfied: set[str]
     provided_by_installed: set[str]
 
+    def missing_for(self, manifest: dict) -> list[str]:
+        """The services this plugin needs that an installed plugin gives but that are not back."""
+        return [service for service in required_services(manifest)
+                if service in self.provided_by_installed and service not in self.satisfied]
+
 
 def _apply_plugin(plugin_dir: Path, manifest: dict, full_vars: dict[str, str],
                   announce_phase: PhaseAnnouncer) -> tuple[list[dict], list[str]]:
@@ -67,9 +74,9 @@ def _apply_plugin(plugin_dir: Path, manifest: dict, full_vars: dict[str, str],
     kept_stock = stock_copies(plugin_dir)
     if kept_stock.exists():
         shutil.rmtree(kept_stock)
-    return apply_install_deferred(
-        plugin_dir.parent, plugin_dir, manifest, full_vars, announce_phase,
-    )
+    with inside_a_recovery():
+        return apply_install_deferred(plugin_dir.parent, plugin_dir, manifest, full_vars,
+                                      announce_phase)
 
 
 def recover_one(
@@ -82,7 +89,7 @@ def recover_one(
     plugin_id = plugin_dir.name
     settings = with_declared_defaults(manifest, load_user_vars(plugin_dir))
     full_vars = with_plugin_venv({**vars, **settings}, plugin_id)
-    precondition = _precondition_skip(plugin_dir, manifest, full_vars, services, vars)
+    precondition = _precondition_skip(plugin_dir, manifest, full_vars, services)
     if precondition is not None:
         return precondition
 
@@ -108,17 +115,16 @@ def recover_one(
 
 def _precondition_skip(
     plugin_dir: Path, manifest: dict, full_vars: dict[str, str], services: ServiceLedger,
-    vars: dict[str, str],
 ) -> tuple[dict, list[str]] | None:
     """A skip (a dependency another recovered plugin should provide is not satisfied) or a fail (a
     required setting is missing), each switching the plugin off, or None to proceed with the
-    re-apply."""
+    re-apply. Neither re-applies, so the kept originals are settled first: after a firmware update
+    they are the old firmware's files, and the switch-off writes them back."""
     plugin_id = plugin_dir.name
-    missing_deps = [service for service in required_services(manifest)
-                    if service in services.provided_by_installed
-                    and service not in services.satisfied]
+    missing_deps = services.missing_for(manifest)
     if missing_deps:
-        reason = f"dependency not satisfied: {', '.join(missing_deps)}"
+        reason = settle_before_switch_off(plugin_dir, full_vars,
+                                          f"dependency not satisfied: {', '.join(missing_deps)}")
         # printer-never-broken: a plugin whose provider is not back cannot run, yet its config is
         # still wired in and stops the printer at every boot. Off, it waits to be installed again.
         deactivate_plugin(plugin_dir, full_vars, reason)
@@ -128,8 +134,10 @@ def _precondition_skip(
         # printer-never-broken: a setting recovery cannot supply leaves the plugin unable to
         # finish its config, so it is switched off like every other recover failure instead of
         # staying wired on the printer half applied.
-        reason = f"missing required variable(s): {', '.join(missing_vars)}; reinstall the plugin"
-        return record_failure(plugin_dir, vars, reason, {"missing_vars": missing_vars}, []), []
+        reason = settle_before_switch_off(
+            plugin_dir, full_vars,
+            f"missing required variable(s): {', '.join(missing_vars)}; reinstall the plugin")
+        return record_failure(plugin_dir, full_vars, reason, {"missing_vars": missing_vars}, []), []
     return None
 
 

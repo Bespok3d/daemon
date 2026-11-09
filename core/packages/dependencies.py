@@ -1,13 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The plugin dependency graph: which installed plugins provide and require which services,
-who depends on or conflicts with whom, and the topological order recover applies them in.
+"""The plugin dependency graph: which installed plugins provide and require which services, and
+who depends on or conflicts with whom. The order they are applied in lives in `.dependency_order`.
 
 Reads the service model out of each manifest; the manifest IO itself lives in `.manifest`.
 """
 
 from pathlib import Path
-from typing import Any
 
 from .daemon_services import DAEMON_SERVICES
 from .deactivation import DEACTIVATED_MARKER
@@ -85,66 +84,3 @@ def installed_conflicts(plugin_root: Path, plugin_id: str, manifest: dict) -> li
         or plugin_id in (readable_manifest(plugin_dir) or {}).get("conflicts", [])
     }
     return sorted(clashing)
-
-
-def _record_dep_edge(
-    dependent: Path,
-    service: str,
-    provides_map: dict[str, Path],
-    in_degree: dict[Path, int],
-    reverse_deps: dict[Path, list[Path]],
-) -> None:
-    if service not in provides_map or provides_map[service] == dependent:
-        return
-    provider = provides_map[service]
-    in_degree[dependent] += 1
-    reverse_deps[provider].append(dependent)
-
-
-def _build_dep_graph(
-    plugin_dirs: list[Path],
-    manifests: dict[Path, dict[str, Any]],
-    provides_map: dict[str, Path],
-) -> tuple[dict[Path, int], dict[Path, list[Path]]]:
-    in_degree: dict[Path, int] = {plugin_dir: 0 for plugin_dir in plugin_dirs}
-    reverse_deps: dict[Path, list[Path]] = {plugin_dir: [] for plugin_dir in plugin_dirs}
-    for plugin_dir in plugin_dirs:
-        for service in required_services(manifests[plugin_dir]):
-            _record_dep_edge(plugin_dir, service, provides_map, in_degree, reverse_deps)
-    return in_degree, reverse_deps
-
-
-def _decrement_and_enqueue(
-    dependents: list[Path],
-    in_degree: dict[Path, int],
-    queue: list[Path],
-) -> None:
-    for dependent in dependents:
-        in_degree[dependent] -= 1
-        if in_degree[dependent] == 0:
-            queue.append(dependent)
-
-
-def order_by_dependency(nodes: list[Path], manifests: dict[Path, dict[str, Any]]) -> list[Path]:
-    """Providers before the plugins that require them, keeping the given order between unrelated
-    plugins. The nodes are paths the caller already holds a manifest for: installed plugin dirs for
-    recover, staged package files for a batch. A cycle leaves its members in the given order."""
-    provides_map: dict[str, Path] = {
-        service: node
-        for node, manifest in manifests.items()
-        for service in provided_services(manifest)
-    }
-    in_degree, reverse_deps = _build_dep_graph(nodes, manifests, provides_map)
-    queue = [node for node in nodes if in_degree[node] == 0]
-    ordered: list[Path] = []
-    while queue:
-        node = queue.pop(0)
-        ordered.append(node)
-        _decrement_and_enqueue(reverse_deps[node], in_degree, queue)
-
-    remaining = [node for node in nodes if node not in ordered]
-    return ordered + remaining
-
-
-def topo_sort(plugin_dirs: list[Path]) -> list[Path]:
-    return order_by_dependency(plugin_dirs, {plugin_dir: readable_manifest(plugin_dir) or {} for plugin_dir in plugin_dirs})  # noqa: E501

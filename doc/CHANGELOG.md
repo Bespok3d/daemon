@@ -7,6 +7,28 @@ off, the same as a plugin that failed itself. Before, it stayed in the printer's
 and the printer stopped with an error every time it started. Its files are kept, the reason names
 what it was missing, and you can install it again once the plugin it needs works.
 
+After a firmware update, switching off or removing a plugin that changes printer files no longer
+puts back files from the old firmware. This covers a plugin you switch off or remove, one the
+printer switches off because it failed or because something it needs did not come back, and a
+plugin you had switched off before the update. The plugin's own change comes off the file, and the
+new firmware's lines, your own edits and other plugins' changes stay. When the printer cannot be
+checked, or the plugin's files are damaged, the saved copies are thrown away and the printer's file
+is left as it is; reinstalling the plugin fixes it.
+
+After a firmware update, a plugin that takes over a printer file another plugin already changes now
+keeps the new firmware's file as its original. Before, it could take the old firmware's copy the
+other plugin had saved, so its install failed or put an old firmware file back on the printer.
+
+When two plugins give the same feature and one of them fails after a firmware update, a plugin that
+needs that feature now waits for the other one. Before, it could be switched off while the other one
+was still on its way.
+
+After a firmware update, recovery now turns back on a plugin the printer switched off because the
+update had wiped files it uses, together with the plugins switched off along with it. Before, it
+stayed off and a working plugin was silently lost. Only a plugin that still fails stays off, also
+at the next recovery. A plugin you switched off yourself stays off, and so do the plugins you
+switched off together with it.
+
 ## 0.14.1
 
 An optional setting left blank now installs. Before, the printer refused the whole install because

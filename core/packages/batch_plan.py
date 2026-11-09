@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .archive import read_manifest
-from .dependencies import order_by_dependency, provided_services
+from .dependencies import provided_services
+from .dependency_order import order_by_dependency
 from .pair_guard import guard_compatible_pair
 from .print_guard import guard_batch_no_print
 from .user_vars import validate_user_vars

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from core import packages
-from core.packages import dependencies
+from core.packages import dependencies, dependency_order
 from core.packages.daemon_services import DAEMON_SERVICES
 
 
@@ -29,7 +29,7 @@ def write_plugin(
 
 
 def test_orchestrator_reexports_the_dependency_helpers() -> None:
-    assert packages.topo_sort is dependencies.topo_sort
+    assert packages.topo_sort is dependency_order.topo_sort
     assert packages.provided_services is dependencies.provided_services
 
 
@@ -90,5 +90,58 @@ def test_unsatisfied_requirements_honors_also_provided_for_the_batch_case(tmp_pa
 def test_topo_sort_places_providers_before_requirers(tmp_path: Path) -> None:
     consumer = write_plugin(tmp_path, "consumer", depends=["svc@>=1.0"])
     provider = write_plugin(tmp_path, "provider", provides=["svc"])
-    ordered = dependencies.topo_sort([consumer, provider])
+    ordered = dependency_order.topo_sort([consumer, provider])
     assert ordered.index(provider) < ordered.index(consumer)
+
+
+def test_topo_sort_puts_a_dependent_after_every_provider_of_its_service(tmp_path: Path) -> None:
+    late_provider = write_plugin(tmp_path, "rfid-late", provides=["rfid"], depends=["power@>=1.0"])
+    early_provider = write_plugin(tmp_path, "rfid-early", provides=["rfid"])
+    dependent = write_plugin(tmp_path, "spool-tags", depends=["rfid@>=1.0"])
+    power_plugin = write_plugin(tmp_path, "power", provides=["power"])
+    ordered = dependency_order.topo_sort([late_provider, early_provider, dependent, power_plugin])
+    assert ordered.index(early_provider) < ordered.index(dependent)
+    assert ordered.index(late_provider) < ordered.index(dependent)
+
+
+def test_topo_sort_is_not_tied_up_by_providers_that_need_the_service_they_give(
+    tmp_path: Path,
+) -> None:
+    """Two readers each give rfid and need it too, so neither can be the first one back. Waiting for
+    each other they would form a loop, and a loop lets the tag user through ahead of the reader that
+    gives it tags."""
+    tag_user = write_plugin(tmp_path, "spool-tags", depends=["tags@>=1.0"])
+    tag_reader = write_plugin(tmp_path, "rfid-tags", provides=["rfid", "tags"],
+                              depends=["rfid@>=1.0"])
+    other_reader = write_plugin(tmp_path, "rfid-other", provides=["rfid"], depends=["rfid@>=1.0"])
+    rfid_base = write_plugin(tmp_path, "rfid-base", provides=["rfid"])
+    ordered = dependency_order.topo_sort([tag_user, tag_reader, other_reader, rfid_base])
+    assert ordered.index(rfid_base) < ordered.index(tag_reader) < ordered.index(tag_user)
+    assert ordered.index(rfid_base) < ordered.index(other_reader)
+
+
+def test_topo_sort_does_not_wait_for_a_provider_that_comes_back_only_after_the_dependent(
+    tmp_path: Path,
+) -> None:
+    """The second rfid reader needs the tag service the dependent gives, so it can only come back
+    after the dependent. Waiting for it too would be a loop, and the loop would hold the dependent
+    back until the second reader, which is then switched off for the missing tag service."""
+    second_reader = write_plugin(tmp_path, "rfid-second", provides=["rfid"], depends=["tags@>=1.0"])
+    dependent = write_plugin(tmp_path, "spool-tags", provides=["tags"], depends=["rfid@>=1.0"])
+    first_reader = write_plugin(tmp_path, "rfid-first", provides=["rfid"])
+    ordered = dependency_order.topo_sort([second_reader, dependent, first_reader])
+    assert ordered.index(first_reader) < ordered.index(dependent) < ordered.index(second_reader)
+
+
+def test_topo_sort_lets_a_dependent_out_of_a_loop_two_providers_make(tmp_path: Path) -> None:
+    """The tag reader needs power the relay gives, and the relay needs rfid the tag reader also
+    gives, so the two wait for each other. The relay already has the base reader's rfid placed, so
+    it goes first, and the tag user still lands after the only plugin that gives it tags."""
+    tag_user = write_plugin(tmp_path, "spool-tags", depends=["tags@>=1.0"])
+    power_relay = write_plugin(tmp_path, "power-relay", provides=["power"], depends=["rfid@>=1.0"])
+    tag_reader = write_plugin(tmp_path, "rfid-tags", provides=["rfid", "tags"],
+                              depends=["power@>=1.0"])
+    rfid_base = write_plugin(tmp_path, "rfid-base", provides=["rfid"])
+    power_base = write_plugin(tmp_path, "power-base", provides=["power"])
+    ordered = dependency_order.topo_sort([tag_user, power_relay, tag_reader, rfid_base, power_base])
+    assert ordered == [rfid_base, power_base, power_relay, tag_reader, tag_user]

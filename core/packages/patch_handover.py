@@ -6,11 +6,11 @@ file's true original and the plugins that patched it before stop holding a copy 
 A plugin that takes over a file another plugin patches today needs that file's STOCK original as its
 baseline: capturing the live file would capture the other plugin's changes and bake them in forever.
 The record of who patches what is on the printer, in the installed manifests (`patch_owners` reads
-it), and the copy adopted is the one no known patch has been applied to. When no kept copy
-qualifies, the known patches are reversed back off the live file to recover the original. The old
-owners' copies of that file are dropped once the new owner's install has SETTLED ok, never at adopt
-time: one file, one owner in the end, and until the install settles both ends of the hand-over are
-kept so a failure anywhere after adopt leaves every plugin the way back to stock it had before.
+it). The original is the live file with those plugins' patches taken off (`live_original`), never a
+kept copy as it is: after a firmware update a kept copy is the old firmware's file. The old owners'
+copies of that file are dropped once the new owner's install has SETTLED ok, never at adopt time:
+one file, one owner in the end, and until the install settles both ends of the hand-over are kept so
+a failure anywhere after adopt leaves every plugin the way back to stock it had before.
 
 Idempotent by state, with no marker file: a plugin that already holds the file is already its owner,
 so a second run finds nothing to adopt and changes nothing.
@@ -21,44 +21,34 @@ from pathlib import Path
 from .. import jinni_client
 from ..intent import normalize_install
 from ..results import item, phase
-from .baseline import is_stock, kept_original, stock_copies, without_patches
+from .baseline import kept_original, stock_copies, unix_line_bytes
+from .live_original import original_of_the_live_file
 from .manifest import readable_manifest
 from .patch_owners import kept_copies_of, owners_and_unreadable, patched_targets
 from .user_vars import load_user_vars
 from .wiring_record import forget_written_file
 
 LIVE_FILE = "the live file"
-NO_STOCK_ORIGINAL = "no original to adopt: every kept copy is patched and the live file cannot be reversed"  # noqa: E501
+NO_STOCK_ORIGINAL = "no original to adopt: another plugin's changes cannot be taken off the live file"  # noqa: E501
 UNREADABLE_NEIGHBOUR = "cannot take this file over while {plugins} cannot be read: a plugin whose manifest is torn may be the one holding this file's original"  # noqa: E501
 
 
-def _stock_from_kept_copies(owners: dict[Path, list[Path]], target: str,
-                            known_fragments: list[Path]) -> str | None:
-    """The first kept copy that no known patch is on: that one is the true original."""
-    kept = [kept_original(stock_copies(plugin_dir), target) for plugin_dir in owners]
-    held = (copy_path.read_text(errors="replace") for copy_path in kept if copy_path.exists())
-    return next((text for text in held if is_stock(text, known_fragments)), None)
-
-
-def _original_of(owners: dict[Path, list[Path]], target: str,
-                 known_fragments: list[Path]) -> tuple[str | None, str]:
-    """The original of `target` and where it came from.
-
-    The live file wins whenever no known patch is on it: after a firmware update it is the new
-    firmware's file, and every kept copy is the OLD firmware's, so adopting a kept copy there
-    patches a file the printer no longer boots from (the bench rolled a store migration back on
-    exactly that). Otherwise the first kept copy the known patches still fit, else the live file
-    with those patches reversed back off it. None when nothing can be proven, so nothing unproven
-    is adopted. An empty live file is never the original: no known patch is on it only because
-    there is nothing there to find them in, and adopting it would let a later restore blank a file
-    the printer boots from."""
+def _original_of(owners: dict[Path, list[Path]], target: str) -> str | None:
+    """The original of `target` as the printer runs it now, or None when nothing can be proven, so
+    nothing unproven is adopted. An empty live file is never the original: no known patch is on it
+    only because there is nothing there to find them in, and adopting it would let a later restore
+    blank a file the printer boots from."""
     live = jinni_client.fetch(target) or ""
-    if live and is_stock(live, known_fragments):
-        return live, LIVE_FILE
-    kept_stock = _stock_from_kept_copies(owners, target, known_fragments)
-    if kept_stock is not None:
-        return kept_stock, ", ".join(owner.name for owner in kept_copies_of(owners, target))
-    return (without_patches(live, known_fragments) if live else None), LIVE_FILE
+    if not live:
+        return None
+    return original_of_the_live_file(live, owners)
+
+
+def _came_from(owners: dict[Path, list[Path]], target: str, original: str) -> str:
+    """The owners whose kept copy is this original, else the live file it was worked out from."""
+    holders = [owner.name for owner, copy in kept_copies_of(owners, target).items()
+               if unix_line_bytes(copy.read_text(errors="replace")) == unix_line_bytes(original)]
+    return ", ".join(holders) or LIVE_FILE
 
 
 def adopt_patch_ownership(plugin_root: Path, adopter_dir: Path, target: str,
@@ -74,13 +64,12 @@ def adopt_patch_ownership(plugin_root: Path, adopter_dir: Path, target: str,
     owners, unreadable = owners_and_unreadable(plugin_root, adopter_dir, target, vars)
     if unreadable:
         return item(f"{file_name}: {UNREADABLE_NEIGHBOUR.format(plugins=', '.join(unreadable))}", ok=False)  # noqa: E501
-    known_fragments = [fragment for fragments in owners.values() for fragment in fragments]
-    stock_text, came_from = _original_of(owners, target, known_fragments)
-    if stock_text is None:
+    original = _original_of(owners, target)
+    if original is None:
         return item(f"{file_name}: {NO_STOCK_ORIGINAL}", ok=False)
     adopted.parent.mkdir(parents=True, exist_ok=True)
-    adopted.write_text(stock_text)
-    return item(f"{file_name}: adopted from {came_from}", ok=True)
+    adopted.write_text(original)
+    return item(f"{file_name}: adopted from {_came_from(owners, target, original)}", ok=True)
 
 
 def adoption_phase(plugin_root: Path, adopter_dir: Path, patches: list[dict],

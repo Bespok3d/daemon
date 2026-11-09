@@ -4,7 +4,7 @@
 
 Every case here is a printer state the happy-path suite never puts recovery through: a required
 setting recovery cannot supply, a provider that fails mid-sweep, a mutual dependency cycle, and an
-install set with nothing left to recover. The governing invariant is the same in all four: a plugin
+install set with nothing left to recover. The governing invariant is the same in every one: a plugin
 recovery cannot restore is switched off loudly with its files kept, and one plugin's trouble never
 stops the rest of the sweep.
 """
@@ -17,6 +17,7 @@ from core.packages import installer
 from core.packages.deactivation import DEACTIVATED_MARKER
 from core.packages.recovery import reapply, run
 from core.packages.recovery.reapply import ServiceLedger
+from core.packages.templates import render_templates
 
 MP = pytest.MonkeyPatch
 BARE_INSTALL: dict[str, list[str]] = {"dirs": [], "symlinks": [], "patches": [], "start": []}
@@ -68,6 +69,48 @@ def test_run_recovery_skips_a_dependent_when_its_provider_fails(
         "plugin_id": "spoolman", "ok": False, "skipped": True,
         "reason": "dependency not satisfied: rfid", "log": [],
     }
+
+
+def _render_failing_for_power_a(templates: list[dict], plugin_dir: Path,
+                                vars: dict[str, str]) -> dict:
+    if plugin_dir.name == "power-a":
+        return {"id": "templates", "ok": False, "items": []}
+    return render_templates(templates, plugin_dir, vars)
+
+
+def test_a_dependent_waits_for_a_second_provider_coming_back_later_in_the_same_recovery(
+        tmp_path: Path, monkeypatch: MP) -> None:
+    """Two plugins give power and two give rfid, and one rfid giver needs power while one power
+    giver needs rfid, so no order fixed beforehand fits every failure. The first power giver fails:
+    the rfid giver that needs power must wait for the other power giver, never be switched off
+    while it is still on its way."""
+    plugin_root = tmp_path / "plugins"
+    recovery_order = ["rfid-base", "power-a", "rfid-reader", "power-tags"]
+    _plugin(plugin_root, "rfid-base", {
+        "version": "0.1.0", "install": BARE_INSTALL, "provides": [{"service": "rfid"}],
+    })
+    _plugin(plugin_root, "power-a", {
+        "version": "0.1.0", "install": BARE_INSTALL, "provides": [{"service": "power"}],
+    })
+    _plugin(plugin_root, "rfid-reader", {
+        "version": "0.1.0", "install": BARE_INSTALL,
+        "provides": [{"service": "rfid"}], "require": [{"service": "power"}],
+    })
+    _plugin(plugin_root, "power-tags", {
+        "version": "0.1.0", "install": BARE_INSTALL,
+        "provides": [{"service": "power"}], "require": [{"service": "rfid"}],
+    })
+    monkeypatch.setattr(run, "recoverable_plugin_dirs",
+                        lambda root: [root / plugin_id for plugin_id in recovery_order])
+    monkeypatch.setattr(installer, "render_templates", _render_failing_for_power_a)
+
+    results = run.run_recovery(tmp_path / "data", plugin_root, {})
+
+    by_id = {result["plugin_id"]: result for result in results}
+    assert by_id["power-a"]["ok"] is False
+    assert by_id["power-tags"]["ok"] is True
+    assert by_id["rfid-reader"]["ok"] is True
+    assert not (plugin_root / "rfid-reader" / DEACTIVATED_MARKER).exists()
 
 
 def test_run_recovery_survives_a_mutual_dependency_cycle(tmp_path: Path) -> None:

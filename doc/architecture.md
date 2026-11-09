@@ -193,7 +193,7 @@ New code lands in the right concern, never in a growing god file, and never name
 - **`core/packages/`** owns the plugin lifecycle: a thin public facade in `__init__` over worker modules
   split by concern (`placement`, `patches`, `templates`, `services`, `installer`, `updater`,
   `uninstaller`, `lifecycle`, `print_guard`, `python_deps`, `archive`, `manifest`, `dependencies`,
-  `start_commands`, `deactivation`, `recovery`).
+  `dependency_order`, `start_commands`, `deactivation`, `recovery`).
   What the printer will and will not accept, and how a patch reaches a device file, are written up
   separately: [install-and-update.md](internals/install-and-update.md) (the refusal table, the two version floors,
   what a refused update leaves behind) and [patch-pipeline.md](internals/patch-pipeline.md) (the stock baseline,

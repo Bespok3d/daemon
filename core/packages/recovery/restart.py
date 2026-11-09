@@ -25,6 +25,7 @@ from ...safety.restart_batch import run_restart_batch
 from ..deactivator import deactivate_with_dependents
 from ..machinery import MACHINERY_PACKAGES, is_machinery
 from ..manifest import installed_manifest_dirs
+from ..switched_off_marker import safety_net_reason
 from .evidence import gather_evidence
 
 
@@ -90,8 +91,8 @@ def _auto_recover(plugin_root: Path, deferred_cmds: list[str], vars: dict[str, s
         if _spared_from_blame(decision.culprit, plugin_root):
             spared.append(decision.culprit)
             continue
-        deactivated.extend(deactivate_with_dependents(plugin_root, decision.culprit, vars,
-                                                      f"auto-deactivated: {decision.signal}"))
+        reason = safety_net_reason(decision.signal, ctx.kind == OperationKind.RECOVER)
+        deactivated.extend(deactivate_with_dependents(plugin_root, decision.culprit, vars, reason))
         run_restart_batch(deferred_cmds)
         evidence = gather_evidence(plugin_root, vars)
         if is_healthy(evidence):

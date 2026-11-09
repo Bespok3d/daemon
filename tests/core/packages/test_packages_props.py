@@ -11,7 +11,7 @@ from pathlib import Path
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from core.packages import dependencies
+from core.packages import dependencies, dependency_order
 
 
 @st.composite
@@ -48,7 +48,7 @@ def test_topo_sort_places_every_provider_before_its_requirers(graph: list[list[i
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         dirs = [write_plugin(root, index, requires) for index, requires in enumerate(graph)]
-        ordered = dependencies.topo_sort(dirs)
+        ordered = dependency_order.topo_sort(dirs)
         position = {entry.name: slot for slot, entry in enumerate(ordered)}
         assert len(ordered) == len(dirs)
         for index, requires in enumerate(graph):

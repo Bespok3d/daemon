@@ -19,10 +19,8 @@ from .batch_progress import ProgressSink  # noqa: F401  re-export for api.routes
 from .batch_uninstaller import run_uninstall_batch
 from .deactivation import DEACTIVATED_MARKER  # noqa: F401  re-export for api.routes
 from .deactivator import run_deactivate
-from .dependencies import (  # noqa: F401  re-export for api.routes
-    provided_services,
-    topo_sort,
-)
+from .dependencies import provided_services  # noqa: F401  re-export for api.routes
+from .dependency_order import topo_sort  # noqa: F401  re-export for api.routes
 from .errors import (
     BlockedActionError,  # noqa: F401  re-export for api.routes
     ConflictError,  # noqa: F401  re-export for api.routes

@@ -21,12 +21,10 @@ from .dependencies import installed_dependents
 from .errors import DependentsError
 from .plugin_dir import contained_plugin_dir
 from .print_guard import guard_no_print_for_removal
+from .settle_originals import settle_before_switch_off
+from .switched_off_marker import stranded_on_request_reason, stranded_reason
 
 REQUESTED_REASON = "deactivated on request"
-
-
-def _stranded_reason(provider_id: str) -> str:
-    return f"deactivated with {provider_id}, the plugin it needs"
 
 
 def _dependents_still_on(plugin_root: Path, plugin_id: str) -> list[str]:
@@ -41,15 +39,22 @@ def _dependents_still_on(plugin_root: Path, plugin_id: str) -> list[str]:
             if not (plugin_root / dependent_id / DEACTIVATED_MARKER).exists()]
 
 
-def _deactivate_dependents_first(plugin_root: Path, plugin_id: str, dependents: list[str],
-                                 vars: dict[str, str], reason: str) -> list[str]:
-    """Take the dependents off before the plugin they need, so nothing is left running against a
-    provider that has already gone. Each dependent's own marker says whose fall took it down, so a
-    user reading one plugin's state is never left guessing why it stopped."""
+def _deactivate_dependents_first(plugin_root: Path, plugin_id: str, vars: dict[str, str],
+                                 reason: str, dependent_reason: str) -> list[str]:
+    """Take the dependents still on off before the plugin they need, so nothing is left running
+    against a provider that has already gone. Each dependent's own marker says whose fall took it
+    down, so a user reading one plugin's state is never left guessing why it stopped."""
+    dependents = _dependents_still_on(plugin_root, plugin_id)
     for dependent_id in dependents:
-        deactivate_plugin(plugin_root / dependent_id, vars, _stranded_reason(plugin_id))
-    deactivate_plugin(plugin_root / plugin_id, vars, reason)
+        _switch_off(plugin_root / dependent_id, vars, dependent_reason)
+    _switch_off(plugin_root / plugin_id, vars, reason)
     return [*dependents, plugin_id]
+
+
+def _switch_off(plugin_dir: Path, vars: dict[str, str], reason: str) -> None:
+    """Switch one plugin off. Its kept originals are settled first: after a firmware update they
+    are the old firmware's files, and the switch-off writes them back."""
+    deactivate_plugin(plugin_dir, vars, settle_before_switch_off(plugin_dir, vars, reason))
 
 
 def deactivate_with_dependents(plugin_root: Path, plugin_id: str, vars: dict[str, str],
@@ -59,8 +64,8 @@ def deactivate_with_dependents(plugin_root: Path, plugin_id: str, vars: dict[str
     This is the path that cannot say no: the printer has to come back up, so the automatic safety
     net uses it and reports every id it returns rather than refusing and leaving Klipper down.
     """
-    dependents = _dependents_still_on(plugin_root, plugin_id)
-    return _deactivate_dependents_first(plugin_root, plugin_id, dependents, vars, reason)
+    return _deactivate_dependents_first(plugin_root, plugin_id, vars, reason,
+                                        stranded_reason(plugin_id))
 
 
 def run_deactivate(plugin_root: Path, plugin_id: str, vars: dict[str, str],
@@ -79,4 +84,5 @@ def run_deactivate(plugin_root: Path, plugin_id: str, vars: dict[str, str],
     if dependents and not cascade:
         raise DependentsError(plugin_id, dependents)
     guard_no_print_for_removal(plugin_root, [plugin_id, *dependents])
-    return _deactivate_dependents_first(plugin_root, plugin_id, dependents, vars, REQUESTED_REASON)
+    return _deactivate_dependents_first(plugin_root, plugin_id, vars, REQUESTED_REASON,
+                                        stranded_on_request_reason(plugin_id))

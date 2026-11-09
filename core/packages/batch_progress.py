@@ -18,6 +18,8 @@ class BatchProgress:
     """Shapes a batch's live events onto one sink. A `plugin` event names the plugin a batch is
     starting (zero-based index of total); the deferred restart is announced as a `plugin` under
     SERVICES_PLUGIN_ID with index == total. A `phase` event carries a finished install phase.
+    In recovery the index is the plugin's place in the announced plan, and plugins can start out
+    of that order: one waiting for a provider still to come back lets the provider go first.
     """
 
     def __init__(self, publish: ProgressSink) -> None:

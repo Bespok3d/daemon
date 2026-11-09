@@ -16,13 +16,20 @@ from .manifest import installed_manifest_dirs, readable_manifest
 from .user_vars import expand, load_user_vars
 
 
-def _fragments_against(plugin_dir: Path, manifest: dict, target: str, vars: dict[str, str],
-                       facts: dict[str, str]) -> list[Path]:
-    """The diffs this plugin patches `target` with, in the order it applies them."""
+def fragments_by_target(plugin_dir: Path, manifest: dict, vars: dict[str, str],
+                        facts: dict[str, str]) -> dict[str, list[Path]]:
+    """Each file this plugin patches, with the diffs it patches it with in the order it applies
+    them."""
     ops = normalize_install(manifest.get("install", {}), facts)
     full_vars = {**vars, **load_user_vars(plugin_dir)}
-    return [plugin_dir / patch_def["patch"] for patch_def in ops["patches"]
-            if expand(patch_def["file"], full_vars) == target]
+    return {target: _diffs_for(plugin_dir, ops["patches"], target, full_vars)
+            for target in patched_targets(ops["patches"], full_vars)}
+
+
+def _diffs_for(plugin_dir: Path, patches: list[dict], target: str,
+               vars: dict[str, str]) -> list[Path]:
+    return [plugin_dir / patch_def["patch"] for patch_def in patches
+            if expand(patch_def["file"], vars) == target]
 
 
 def owners_and_unreadable(plugin_root: Path, adopter_dir: Path, target: str,
@@ -34,7 +41,7 @@ def owners_and_unreadable(plugin_root: Path, adopter_dir: Path, target: str,
     others = [plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root)
               if plugin_dir != adopter_dir]
     read = {plugin_dir: readable_manifest(plugin_dir) for plugin_dir in others}
-    patching = {plugin_dir: _fragments_against(plugin_dir, manifest, target, vars, facts)
+    patching = {plugin_dir: fragments_by_target(plugin_dir, manifest, vars, facts).get(target, [])
                 for plugin_dir, manifest in read.items() if manifest is not None}
     owners = {plugin_dir: fragments for plugin_dir, fragments in patching.items() if fragments}
     return owners, [plugin_dir.name for plugin_dir, manifest in read.items() if manifest is None]

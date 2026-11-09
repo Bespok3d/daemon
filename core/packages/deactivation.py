@@ -17,9 +17,9 @@ from .patch_reversion import revert_patched_files
 from .placement import remove_plugin_symlinks
 from .plugin_venv import remove_plugin_venv
 from .python_deps import remove_plugin_site_links
+from .switched_off_marker import DEACTIVATED_MARKER
 from .user_vars import expand, load_user_vars
 
-DEACTIVATED_MARKER = "deactivated.json"
 RECOVERY_FAILURE_MARKER = "recovery_failure.json"
 _KMODULE_LOAD_PHASE = "kmodule-load"
 

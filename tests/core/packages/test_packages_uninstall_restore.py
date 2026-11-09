@@ -45,7 +45,8 @@ def test_a_stock_backup_emptied_since_it_was_saved_still_gets_written_to_the_dev
     device_file = tmp_path / "device" / "moonraker.conf"
     device_file.parent.mkdir(parents=True)
     device_file.write_text("a working moonraker config\n")
-    _write_manifest(plugin_dir, "corrupt-backup", {"patches": [{"file": str(device_file)}]})
+    patch_entry = {"file": str(device_file), "patch": "patches/01-moonraker.patch"}
+    _write_manifest(plugin_dir, "corrupt-backup", {"patches": [patch_entry]})
     (plugin_dir / "patches_orig").mkdir()
     (plugin_dir / "patches_orig" / "moonraker.conf").write_text("")
 

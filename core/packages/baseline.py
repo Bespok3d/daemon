@@ -24,7 +24,7 @@ STOCK_COPIES_DIR = "patches_orig"
 WORK_COPY_SUFFIX = ".b3work"
 
 
-def _strip_carriage_returns(text: str) -> bytes:
+def unix_line_bytes(text: str) -> bytes:
     return text.encode().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
 
@@ -35,7 +35,7 @@ def _probe(source_text: str, fragment_paths: list[Path], reverse: bool) -> str |
     ordered = list(reversed(fragment_paths)) if reverse else fragment_paths
     with tempfile.TemporaryDirectory() as scratch_dir:
         work_path = Path(scratch_dir) / "baseline-probe"
-        work_path.write_bytes(_strip_carriage_returns(source_text))
+        work_path.write_bytes(unix_line_bytes(source_text))
         applied = all(fragment_applies(work_path, patch_file, reverse) for patch_file in ordered)
         return work_path.read_text(errors="replace") if applied else None
 

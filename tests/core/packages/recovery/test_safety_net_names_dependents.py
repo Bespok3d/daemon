@@ -14,24 +14,13 @@ import pytest
 
 from core.packages.deactivation import DEACTIVATED_MARKER
 from core.packages.recovery import restart
-from core.safety import AttributionIndex, FailureEvidence, OperationContext, OperationKind
+from core.safety import FailureEvidence, OperationContext, OperationKind
 from core.safety.decision import Decision
-from protocol import DeviceHealth, FailureSignals, ServiceHealth
+from tests.core.packages.recovery.printer_down import printer_down
 
 FEEDER = "filament-feeder"
 FEED_SERVICE = "filament-feed"
 SPOOL_TRACKER = "spool-tracker"
-KLIPPER_SERVICE = "klipper"
-
-
-def _printer_down() -> FailureEvidence:
-    return FailureEvidence(
-        health=DeviceHealth(
-            services={KLIPPER_SERVICE: ServiceHealth(ready=False, detail="")},
-            diagnosis="", signals=FailureSignals(),
-        ),
-        index=AttributionIndex(by_path={}, by_module={}, by_section={}),
-    )
 
 
 def _install(plugin_root: Path, plugin_id: str, manifest: dict) -> None:
@@ -47,13 +36,13 @@ def _recover_blaming_the_feeder(plugin_root: Path, monkeypatch: pytest.MonkeyPat
         return Decision(culprit=culprit, signal="klipper down", fixer="stub")
 
     def still_down(root: Path, plugin_vars: dict[str, str]) -> FailureEvidence:
-        return _printer_down()
+        return printer_down()
 
     monkeypatch.setattr(restart, "decide", blame_the_feeder)
     monkeypatch.setattr(restart, "gather_evidence", still_down)
     monkeypatch.setattr(restart, "run_restart_batch", lambda commands: None)
     ctx = restart.op_context(OperationKind.INSTALL, {"name": FEEDER})
-    return restart._auto_recover(plugin_root, ["restart klipper"], {}, ctx, _printer_down())
+    return restart._auto_recover(plugin_root, ["restart klipper"], {}, ctx, printer_down())
 
 
 def test_the_net_takes_the_dependents_off_with_the_plugin_they_need(

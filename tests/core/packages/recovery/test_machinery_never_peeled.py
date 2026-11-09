@@ -15,23 +15,12 @@ import pytest
 from core.packages.deactivation import DEACTIVATED_MARKER
 from core.packages.machinery import DAEMON_PACKAGE
 from core.packages.recovery import restart
-from core.safety import AttributionIndex, FailureEvidence, OperationContext, OperationKind
+from core.safety import FailureEvidence, OperationContext, OperationKind
 from core.safety.decision import Decision
-from protocol import DeviceHealth, FailureSignals, ServiceHealth
+from tests.core.packages.recovery.printer_down import printer_down
 
 JINNI_PACKAGE = "bespok3d-jinni-snapmaker-u1"
 PLUGIN = "spoolman"
-KLIPPER_SERVICE = "klipper"
-
-
-def _printer_down() -> FailureEvidence:
-    return FailureEvidence(
-        health=DeviceHealth(
-            services={KLIPPER_SERVICE: ServiceHealth(ready=False, detail="")},
-            diagnosis="", signals=FailureSignals(),
-        ),
-        index=AttributionIndex(by_path={}, by_module={}, by_section={}),
-    )
 
 
 def _plugin_root(tmp_path: Path, installed: list[str]) -> Path:
@@ -60,14 +49,14 @@ def _peeled_by_the_safety_net(monkeypatch: pytest.MonkeyPatch, plugin_root: Path
         return [plugin_id]
 
     def still_down(root: Path, plugin_vars: dict[str, str]) -> FailureEvidence:
-        return _printer_down()
+        return printer_down()
 
     monkeypatch.setattr(restart, "decide", blame_in_turn)
     monkeypatch.setattr(restart, "deactivate_with_dependents", record)
     monkeypatch.setattr(restart, "gather_evidence", still_down)
     monkeypatch.setattr(restart, "run_restart_batch", lambda commands: None)
     ctx = restart.op_context(OperationKind.INSTALL, {"name": PLUGIN})
-    restart._auto_recover(plugin_root, ["restart klipper"], {}, ctx, _printer_down())
+    restart._auto_recover(plugin_root, ["restart klipper"], {}, ctx, printer_down())
 
     return peeled
 

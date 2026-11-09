@@ -14,6 +14,7 @@ from core.packages import installer, patch_handover
 from core.packages.baseline import kept_original, stock_copies
 from core.packages.deactivation import finalize_install_outcome
 from core.packages.manifest import manifest_at
+from core.packages.wiring_record import RESTORE_ACTION, WIRING_RECORD
 from tests import fake_actuation
 
 PANEL = "/opt/fakeprinter/ui/panel.py"
@@ -31,6 +32,8 @@ COLS_FRAGMENT = (
 )
 PANEL_TWEAKS = "panel-tweaks"
 BASE_LAYER = "base-layer"
+PANEL_PATCHER = "panel-patcher"
+PLUGINS = "plugins"
 
 
 def install_panel_patcher(plugin_root: Path, plugin_id: str, kept_copy: str | None,
@@ -111,3 +114,18 @@ def run_install(printer_root: Path, plugin_dir: Path,
     )
     finalize_install_outcome(plugin_dir, {}, phases)
     return phases
+
+
+def patcher_holding_the_old_original(printer_root: Path, live_panel_text: str,
+                                     needs: dict) -> tuple[Path, dict, Path, Path]:
+    """A plugin that patched the panel before a firmware update and kept the old firmware's original
+    of it, on a printer whose panel now reads `live_panel_text`. `needs` adds manifest fields."""
+    live_panel = serve_panel(printer_root, live_panel_text)
+    plugin_dir = install_panel_patcher(printer_root / PLUGINS, PANEL_PATCHER, None,
+                                       target=str(live_panel))
+    manifest = {**json.loads((plugin_dir / "manifest.json").read_text()), **needs}
+    (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
+    kept_panel = keep_stock_copy(plugin_dir, str(live_panel), STOCK_PANEL)
+    (plugin_dir / WIRING_RECORD).write_text(json.dumps(
+        {"reversions": [{"action": RESTORE_ACTION, "path": str(live_panel)}]}))
+    return plugin_dir, manifest, live_panel, kept_panel

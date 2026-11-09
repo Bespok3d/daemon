@@ -30,12 +30,16 @@ from .plugin_venv import remove_plugin_venv
 from .print_guard import guard_no_print_for_removal
 from .python_deps import remove_plugin_site_links
 from .recovery import restart_services
+from .settle_originals import settle_kept_originals_before_removal
 from .user_vars import expand, load_user_vars
 
 
 def _uninstall_from_manifest(plugin_dir: Path, manifest: dict, vars: dict[str, str]) -> None:
     install_spec = normalize_install(manifest.get("install", {}), jinni_client.variant_facts())
     full_vars = {**vars, **load_user_vars(plugin_dir)}
+    # After a firmware update the kept copies are the old firmware's files: never write those back.
+    # First, so a printer that cannot be read stops the removal before anything is taken off.
+    settle_kept_originals_before_removal(plugin_dir, manifest, full_vars)
     run_stop_commands(install_spec["stops"] + manifest.get("stop", []), full_vars)
     remove_plugin_symlinks(install_spec["symlinks"], plugin_dir, full_vars)
     revert_patched_files(plugin_dir, install_spec["patches"], full_vars)

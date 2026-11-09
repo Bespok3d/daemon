@@ -7,23 +7,30 @@ from ...results import SERVICES_PLUGIN_ID
 from ...safety import OperationContext, OperationKind
 from ..batch_progress import BatchProgress, ProgressSink, make_progress
 from ..deactivation import DEACTIVATED_MARKER
-from ..dependencies import provided_services, topo_sort
-from ..manifest import readable_manifest
+from ..dependencies import provided_services
+from ..dependency_order import order_by_dependency
+from ..manifest import installed_manifest_dirs, installed_manifests, readable_manifest
 from ..print_guard import guard_no_print
 from ..repair import restore_printer_state
+from .put_back import plugins_to_put_back
 from .reapply import ServiceLedger, record_failure, recover_one
 from .reboot_replaces import reboot_replaces_restart
 from .restart import restart_services
+from .stale_originals import drop_kept_originals, settle_kept_originals_of_switched_off
+from .turn_order import next_to_recover
 
 
 def recoverable_plugin_dirs(plugin_root: Path) -> list[Path]:
-    """Everything installed that recovery puts back: not deactivated, still carrying a manifest."""
-    return [
-        plugin_dir for plugin_dir in plugin_root.iterdir()
-        if plugin_dir.is_dir()
-        and (plugin_dir / "manifest.json").exists()
-        and not (plugin_dir / DEACTIVATED_MARKER).exists()
-    ]
+    """Everything installed that recovery puts back: the plugins that are on, and the ones the
+    safety net switched off (`put_back`)."""
+    switched_on = [plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root)
+                   if not (plugin_dir / DEACTIVATED_MARKER).exists()]
+    return [*switched_on, *plugins_to_put_back(plugin_root)]
+
+
+def _staying_off(plugin_root: Path, put_back: list[Path]) -> list[Path]:
+    return [plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root)
+            if (plugin_dir / DEACTIVATED_MARKER).exists() and plugin_dir not in put_back]
 
 
 UNREADABLE_MANIFEST = "manifest unreadable: reinstall the plugin"
@@ -38,8 +45,19 @@ def _readable_manifests_and_torn(plugin_dirs: list[Path]) -> tuple[dict[Path, di
     return usable, [plugin_dir for plugin_dir in plugin_dirs if plugin_dir not in usable]
 
 
-def _services_the_installed_set_provides(manifests: dict[Path, dict]) -> set[str]:
-    return {service for manifest in manifests.values() for service in provided_services(manifest)}
+def _switch_off_torn(plugin_dir: Path, vars: dict[str, str]) -> dict:
+    """Switch off a plugin whose manifest cannot be read. Without it no kept original can be
+    checked against the printer's file, so after a firmware update any of them may be the old
+    firmware's: they are dropped before anything can write them back."""
+    drop_kept_originals(plugin_dir)
+    return record_failure(plugin_dir, vars, UNREADABLE_MANIFEST, {}, [])
+
+
+def _services_installed_plugins_provide(plugin_root: Path) -> set[str]:
+    """Switched-off plugins count: a plugin whose provider stays off must go off too, not be wired
+    back to stop the printer at the next start."""
+    manifests = installed_manifests(plugin_root).values()
+    return {service for manifest in manifests for service in provided_services(manifest)}
 
 
 def _recover_in_order(
@@ -49,12 +67,17 @@ def _recover_in_order(
     vars: dict[str, str],
     progress: BatchProgress,
 ) -> tuple[list[dict], list[str]]:
-    """Re-apply each plugin in dependency order, naming it as it starts so the app can show the user
-    where recovery is. Returns the per-plugin results and the restarts held back to the end."""
+    """Re-apply each plugin in dependency order, naming it by its place in the announced plan as it
+    starts so the app can show the user where recovery is. Returns the per-plugin results and the
+    restarts held back to the end."""
+    plan_position = {plugin_dir: position for position, plugin_dir in enumerate(ordered)}
     results: list[dict] = []
     deferred_restarts: list[str] = []
-    for position, plugin_dir in enumerate(ordered):
-        progress.plugin(plugin_dir.name, position, len(ordered))
+    waiting = ordered
+    while waiting:
+        plugin_dir = next_to_recover(waiting, manifests, services)
+        waiting = [other for other in waiting if other != plugin_dir]
+        progress.plugin(plugin_dir.name, plan_position[plugin_dir], len(ordered))
         result, deferred = recover_one(plugin_dir, manifests[plugin_dir], services, vars, progress.phase)  # noqa: E501
         results.append(result)
         if result["ok"]:
@@ -75,27 +98,29 @@ def run_recovery(
     data_root: Path, plugin_root: Path, vars: dict[str, str], publish: ProgressSink | None = None,
     reboot_follows: bool = False,
 ) -> list[dict]:
-    """Make the printer sound, then re-apply all installed, non-deactivated plugins (after an OTA,
-    or after anything else left the printer half done). Every problem `selfcheck` reports is one
-    this clears. Announces its own plan first: unlike a batch, the set and its order are decided
-    here, from what is on the printer. Returns per-plugin results. `reboot_follows` is the caller's
-    promise to reboot the printer right after, which makes the services restart redundant."""
+    """Make the printer sound, then re-apply the installed plugins that are on and the ones the
+    safety net switched off (after an OTA, or after anything else left the printer half done).
+    Every problem `selfcheck` reports is one this clears. Announces its own plan first: unlike a
+    batch, the set and its order are decided here, from what is on the printer. Returns per-plugin
+    results. `reboot_follows` is the caller's promise to reboot the printer right after, which makes
+    the services restart redundant."""
     guard_no_print()
     restore_printer_state(data_root, plugin_root, vars)
     if not plugin_root.exists():
         return []
     plugin_dirs = recoverable_plugin_dirs(plugin_root)
+    staying_off = _staying_off(plugin_root, plugin_dirs)
+    unchecked_results = settle_kept_originals_of_switched_off(staying_off, vars)
     if not plugin_dirs:
-        return []
+        return unchecked_results
     manifests, torn = _readable_manifests_and_torn(plugin_dirs)
-    torn_results = [record_failure(plugin_dir, vars, UNREADABLE_MANIFEST, {}, [])
-                    for plugin_dir in torn]
-    ordered = topo_sort(list(manifests))
-    services = ServiceLedger(set(), _services_the_installed_set_provides(manifests))
+    torn_results = [_switch_off_torn(plugin_dir, vars) for plugin_dir in torn]
+    ordered = order_by_dependency(list(manifests), manifests)
+    services = ServiceLedger(set(), _services_installed_plugins_provide(plugin_root))
     progress = make_progress(publish)
     progress.plan([plugin_dir.name for plugin_dir in ordered])
     recovered, deferred_restarts = _recover_in_order(ordered, manifests, services, vars, progress)
-    results = [*torn_results, *recovered]
+    results = [*unchecked_results, *torn_results, *recovered]
     unique_restarts = list(dict.fromkeys(deferred_restarts))
     if unique_restarts:
         progress.plugin(SERVICES_PLUGIN_ID, len(ordered), len(ordered))

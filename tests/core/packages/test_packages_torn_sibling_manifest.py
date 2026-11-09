@@ -13,7 +13,7 @@ import pytest
 from api.routes import feeds as routes_feeds
 from api.schemas import ManifestWarning, PackResultsResponse
 from core import jinni_client, packages
-from core.packages import dependencies, install_refusals
+from core.packages import dependencies, dependency_order, install_refusals
 from core.packages.recovery import evidence
 from tests.core.packages.fake_panel_printer import (
     BASE_LAYER,
@@ -79,7 +79,7 @@ def test_a_torn_manifest_orders_nowhere_and_the_rest_still_order(tmp_path: Path)
         {"name": "rfid-ntag", "require": [{"service": "spool-tracking"}]},
     )
 
-    ordered = dependencies.topo_sort([dependent_dir, torn_dir, provider_dir])
+    ordered = dependency_order.topo_sort([dependent_dir, torn_dir, provider_dir])
 
     assert set(ordered) == {dependent_dir, torn_dir, provider_dir}
     assert ordered.index(provider_dir) < ordered.index(dependent_dir)

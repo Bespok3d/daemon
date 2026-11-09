@@ -16,8 +16,10 @@ from pathlib import Path
 from .. import jinni_client
 from ..safety import OperationContext, OperationKind
 from .deactivation import neutralize_plugin
+from .manifest import manifest_at
 from .print_guard import guard_no_print
 from .recovery import restart_services
+from .settle_originals import settle_or_drop_kept_originals
 from .uninstaller import remove_all_plugins
 
 GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"
@@ -26,6 +28,9 @@ GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"
 def _deactivate_plugin_dir(plugin_dir: Path, vars: dict[str, str]) -> None:
     if not plugin_dir.is_dir() or not (plugin_dir / "manifest.json").exists():
         return
+    # Copies that cannot be checked are dropped, so switching off never writes an old firmware's
+    # file back; recovery captures fresh ones when the plugins are switched on again.
+    settle_or_drop_kept_originals(plugin_dir, manifest_at(plugin_dir), vars)
     neutralize_plugin(plugin_dir, vars)
 
 

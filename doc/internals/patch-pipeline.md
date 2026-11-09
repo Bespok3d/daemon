@@ -77,13 +77,48 @@ own output: the apply fails on every retry and the plugin silently stops working
 deduplicated, so a file patched by several fragments is restored once, and an empty kept copy is
 skipped rather than truncating the printer's file to nothing.
 
+After a firmware update a kept original is the old firmware's file wherever the update replaced
+the printer's file, and writing it back would put old firmware code on a printer that runs the new
+one. So before a plugin is switched off (on request, by the safety net, all at once, or by recovery
+because a service it needs did not come back or a setting it requires is missing) and before it is
+removed, `settle_originals.settle_kept_originals()` makes each kept original the original of the
+printer's file as it is now: the file with this plugin's patches reversed off it
+(`baseline.without_patches()`). That puts the new firmware's lines back and keeps a user's own edit
+and another plugin's patches. When the patches cannot be reversed off the file (the update replaced
+it and the change is gone), the copy is dropped together with its undo step in the wiring record,
+and the file is left as the new firmware made it. A copy an older daemon kept under the bare file
+name, when the plugin patches two files of that name, cannot say which one it came from and is left
+as it is. A failed install or update never settles: its kept copies are the true originals and must
+go back.
+
+A switch-off cannot be refused, so a check that fails there (the printer does not answer, the
+settings file is torn, a missing setting names the patched file) drops the plugin's copies, leaves
+the file as it is and says so in the reason (`settle_before_switch_off()`); a removal raises instead.
+
+A plugin switched off before the update already put its originals back but still keeps them, so
+removing it later would write them again. At the start of every recovery,
+`recovery/stale_originals.settle_kept_originals_of_switched_off()` settles them the same way. A
+plugin whose manifest cannot be read names no patches, so none of its copies can be checked:
+recovery drops them all (`drop_kept_originals()`), and a reinstall captures the file afresh. A check
+that fails drops the plugin's copies the same way, the row's reason says so, and the rest of the
+printer is recovered.
+
+Recovery also puts back on the plugins the safety net switched off, and the plugins switched off
+along with them (`recovery/put_back.py`): a firmware update wipes files plugins link into the
+printer, so the net can switch a working plugin off before recovery links them again. The safety
+net judges them again afterwards. A plugin a person switched off stays off, and so do the plugins
+switched off with it (`stranded_on_request_reason()`). A plugin the net switches off during a
+recovery has failed with everything linked again, so its reason (`safety_net_reason()`) keeps the
+next recovery from putting it back.
+
 A plugin whose `manifest.json` cannot be read has nothing left to say which files it patched. The
 kept copies say it themselves: each is filed under the full path of the file it was taken from, so
 where it sits names its target. `lost_manifest_restore.restore_originals_without_manifest()` reads
 the targets back out and restores through the same write, and uninstall takes that route whenever
-the manifest is unreadable, because the removal is the last moment those copies exist. A copy filed
-by an older daemon under the bare file name carries no path, so it is left alone rather than written
-over a guessed one.
+the manifest is unreadable, because the removal is the last moment those copies exist. Recovery
+has already dropped the copies of a plugin it found torn, so this route only acts for a manifest torn
+since the last recovery. A copy filed by an older daemon under the bare file name carries no path,
+so it is left alone rather than written over a guessed one.
 
 ## Handover: one file, one owner
 
@@ -91,11 +126,15 @@ More than one installed plugin can patch the same target today, and each keeps i
 file's original in its own `patches_orig/`. `patch_handover.adopt_patch_ownership()` collapses that to
 a single owner:
 
-- It reads the installed manifests to find every plugin that patches the target, and adopts the one
-  kept copy that no known patch has been applied to.
-- When no kept copy qualifies, it reverses the known patches back off the live file to recover the
-  original. If neither works it refuses with `NO_STOCK_ORIGINAL` rather than baking another plugin's
-  changes in as the baseline.
+- It reads the installed manifests to find every plugin that patches the target, and takes each
+  one's patches back off the live file (`live_original.original_of_the_live_file()`). A kept copy is
+  never adopted as it is: after a firmware update it is the old firmware's file, and adopting it put
+  a firmware 2.0 file back on a printer running 2.1.
+- The result counts only when every owner's patches are proven off it: they came off it, they fit
+  it again, or the owner cannot have them on the file. A switched-off owner took them off when it was switched off.
+  In a recovery, patches that neither fit the file nor come off it were written for the firmware the
+  printer ran before. Otherwise it refuses with `NO_STOCK_ORIGINAL` rather than baking another
+  plugin's changes in as the baseline.
 - The old owners' copies of that file are dropped once the new owner holds it, so a later restore can
   only ever write back one original.
 - It is **idempotent by state and carries no marker file**: a plugin that already holds the file is
