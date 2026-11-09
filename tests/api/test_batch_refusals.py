@@ -10,7 +10,6 @@ closing frame, and that the uploaded packages are wiped off the printer either w
 No package is ever really applied here: the apply step is replaced by the refusal under test.
 """
 import asyncio
-import json
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +18,9 @@ import pytest
 
 from api import app
 from api.routes.feeds import install_hub
-from core import access_requests, auth, packages
+from core import packages
+from tests.fake_owner import ISSUED_TOKEN
 
-_ISSUED_TOKEN = "fake-issued-token-0000"
 _A_RESTART_MID_PRINT = "/etc/init.d/S55klipper restart"
 _BOTH_BATCH_ROUTES = [
     ("/packages/install-batch", "install_batch"),
@@ -29,16 +28,7 @@ _BOTH_BATCH_ROUTES = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def daemon_acl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    acl = {
-        "keys": ["fake-owner"], "roles": {"fake-owner": "admin"}, "labels": {"fake-owner": "Owner"},
-        "tokens": [_ISSUED_TOKEN], "token_identity": {_ISSUED_TOKEN: "fake-owner"},
-    }
-    (tmp_path / "acl.json").write_text(json.dumps(acl))
-    monkeypatch.setattr(auth, "ACL_PATH", tmp_path / "acl.json")
-    monkeypatch.setattr(access_requests, "PENDING_PATH", tmp_path / "pending.json")
-    monkeypatch.delenv("BESPOK3D_DEV_OPEN", raising=False)
+pytestmark = pytest.mark.usefixtures("daemon_acl")
 
 
 def _refusing(monkeypatch: pytest.MonkeyPatch, apply_step: str, refusal: Exception) -> None:
@@ -57,7 +47,7 @@ async def _apply_two_packages(route: str) -> httpx.Response:
     ) as client:
         return await client.post(
             route, files=uploads, data={"vars_json": ""},
-            headers={"Authorization": f"Bearer {_ISSUED_TOKEN}"},
+            headers={"Authorization": f"Bearer {ISSUED_TOKEN}"},
         )
 
 

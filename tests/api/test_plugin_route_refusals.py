@@ -10,40 +10,28 @@ An unexpected fault must not read as any of those, so it is a 422 and the app sa
 
 Every plugin id here is made up; no package is installed and no device is touched.
 """
-import json
-from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
 from api import app
-from core import access_requests, auth
 from core import packages as package_ops
 from core.packages.errors import BlockedActionError, DependentsError, MissingSettingError
+from tests.fake_owner import ISSUED_TOKEN
 
-_ISSUED_TOKEN = "fake-issued-token-0000"
 _A_PLUGIN = "fake-camera"
 _ITS_DEPENDENT = "fake-overlay"
 _A_RESTART_MID_PRINT = "/etc/init.d/S55klipper restart"
 
 
-@pytest.fixture(autouse=True)
-def daemon_acl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    acl = {
-        "keys": ["fake-owner"], "roles": {"fake-owner": "admin"}, "labels": {"fake-owner": "Owner"},
-        "tokens": [_ISSUED_TOKEN], "token_identity": {_ISSUED_TOKEN: "fake-owner"},
-    }
-    (tmp_path / "acl.json").write_text(json.dumps(acl))
-    monkeypatch.setattr(auth, "ACL_PATH", tmp_path / "acl.json")
-    monkeypatch.setattr(access_requests, "PENDING_PATH", tmp_path / "pending.json")
-    monkeypatch.delenv("BESPOK3D_DEV_OPEN", raising=False)
+pytestmark = pytest.mark.usefixtures("daemon_acl")
 
 
 @pytest.fixture
 def app_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
-                             headers={"Authorization": f"Bearer {_ISSUED_TOKEN}"})
+                             headers={"Authorization": f"Bearer {ISSUED_TOKEN}"})
 
 
 def _refusing(monkeypatch: pytest.MonkeyPatch, operation: str, refusal: Exception) -> None:

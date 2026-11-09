@@ -10,16 +10,10 @@ If the exempt check were ever loosened from an exact match to a prefix match, a 
 merely starts with an exempt path would slip through unauthenticated. This test pins the
 exact-match boundary so that regression cannot land silently.
 """
-import json
-from pathlib import Path
-
 import httpx
 import pytest
 
 from api import app
-from core import access_requests, auth
-
-_ISSUED_TOKEN = "fake-issued-token-0000"
 
 _NEAR_MISS_PATHS = [
     "/access/requestx",
@@ -32,17 +26,7 @@ _NEAR_MISS_PATHS = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def daemon_acl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    acl = {
-        "keys": ["fake-owner"], "roles": {"fake-owner": "admin"}, "labels": {"fake-owner": "Owner"},
-        "tokens": [_ISSUED_TOKEN], "token_identity": {_ISSUED_TOKEN: "fake-owner"},
-    }
-    (tmp_path / "acl.json").write_text(json.dumps(acl))
-    monkeypatch.setattr(auth, "ACL_PATH", tmp_path / "acl.json")
-    monkeypatch.setattr(access_requests, "PENDING_PATH", tmp_path / "pending.json")
-    # Pin dev-open off so this boundary test never rides on a stray environment setting.
-    monkeypatch.delenv("BESPOK3D_DEV_OPEN", raising=False)
+pytestmark = pytest.mark.usefixtures("daemon_acl")
 
 
 @pytest.fixture

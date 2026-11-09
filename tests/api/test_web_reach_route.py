@@ -4,30 +4,17 @@
 
 The try itself is replaced here; tests/core/test_web_reach.py covers it against a real server.
 """
-import json
-from pathlib import Path
-
 import httpx
 import pytest
 
 from api import app
 from api.routes import reach
-from core import access_requests, auth
+from tests.fake_owner import ISSUED_TOKEN
 
-_ISSUED_TOKEN = "fake-issued-token-0000"
 _TYPED_ADDRESS = "http://spoolman.fake:7912"
 
 
-@pytest.fixture(autouse=True)
-def daemon_acl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    acl = {
-        "keys": ["fake-owner"], "roles": {"fake-owner": "admin"}, "labels": {"fake-owner": "Owner"},
-        "tokens": [_ISSUED_TOKEN], "token_identity": {_ISSUED_TOKEN: "fake-owner"},
-    }
-    (tmp_path / "acl.json").write_text(json.dumps(acl))
-    monkeypatch.setattr(auth, "ACL_PATH", tmp_path / "acl.json")
-    monkeypatch.setattr(access_requests, "PENDING_PATH", tmp_path / "pending.json")
-    monkeypatch.delenv("BESPOK3D_DEV_OPEN", raising=False)
+pytestmark = pytest.mark.usefixtures("daemon_acl")
 
 
 def _daemon(token: str) -> httpx.AsyncClient:
@@ -45,7 +32,7 @@ async def test_the_printer_reports_the_code_the_typed_address_answered_with(
         return 404
     monkeypatch.setattr(reach, "http_code_at", answers_not_found)
 
-    async with _daemon(_ISSUED_TOKEN) as daemon:
+    async with _daemon(ISSUED_TOKEN) as daemon:
         response = await daemon.post("/net/reach", json={"url": _TYPED_ADDRESS})
 
     assert response.status_code == 200
@@ -58,7 +45,7 @@ async def test_the_printer_reports_no_answer_as_null(monkeypatch: pytest.MonkeyP
         return None
     monkeypatch.setattr(reach, "http_code_at", nothing_answers)
 
-    async with _daemon(_ISSUED_TOKEN) as daemon:
+    async with _daemon(ISSUED_TOKEN) as daemon:
         response = await daemon.post("/net/reach", json={"url": _TYPED_ADDRESS})
 
     assert response.json() == {"http_code": None}
