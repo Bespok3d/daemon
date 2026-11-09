@@ -12,8 +12,8 @@ puts back files from the old firmware. This covers a plugin you switch off or re
 printer switches off because it failed or because something it needs did not come back, and a
 plugin you had switched off before the update. The plugin's own change comes off the file, and the
 new firmware's lines, your own edits and other plugins' changes stay. When the printer cannot be
-checked, or the plugin's files are damaged, the saved copies are thrown away and the printer's file
-is left as it is; reinstalling the plugin fixes it.
+checked, the saved copies are thrown away and the printer's file is left as it is; recovery does the
+same for a plugin whose files are damaged. Reinstalling the plugin fixes it.
 
 After a firmware update, a plugin that takes over a printer file another plugin already changes now
 keeps the new firmware's file as its original. Before, it could take the old firmware's copy the

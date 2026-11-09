@@ -11,6 +11,7 @@ mutation, so the daemon asks the jinni to do it (ADR-0037); the daemon owns only
 (the plugin dirs and the deactivated marker).
 """
 
+import logging
 from pathlib import Path
 
 from .. import jinni_client
@@ -19,10 +20,11 @@ from .deactivation import neutralize_plugin
 from .manifest import manifest_at
 from .print_guard import guard_no_print
 from .recovery import restart_services
-from .settle_originals import settle_or_drop_kept_originals
+from .settle_originals import COPIES_REMOVED_UNCHECKED, settle_or_drop_kept_originals
 from .uninstaller import remove_all_plugins
 
 GLOBAL_DEACTIVATED_MARKER = "etc/deactivated"
+_log = logging.getLogger(__name__)
 
 
 def _deactivate_plugin_dir(plugin_dir: Path, vars: dict[str, str]) -> None:
@@ -30,7 +32,9 @@ def _deactivate_plugin_dir(plugin_dir: Path, vars: dict[str, str]) -> None:
         return
     # Copies that cannot be checked are dropped, so switching off never writes an old firmware's
     # file back; recovery captures fresh ones when the plugins are switched on again.
-    settle_or_drop_kept_originals(plugin_dir, manifest_at(plugin_dir), vars)
+    check_error = settle_or_drop_kept_originals(plugin_dir, manifest_at(plugin_dir), vars)
+    if check_error is not None:
+        _log.warning("%s: %s: %s", plugin_dir.name, COPIES_REMOVED_UNCHECKED, check_error)
     neutralize_plugin(plugin_dir, vars)
 
 

@@ -6,6 +6,7 @@ back the NEW firmware's file, never the old firmware's copy the plugin kept befo
 Every way a plugin is switched off or removed outside a recovery is covered: on request, by the
 safety net, all plugins at once, and a removal. The printer is the made-up panel printer."""
 import json
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -86,8 +87,9 @@ def test_without_a_firmware_update_the_kept_original_comes_back(tmp_path: Path,
     assert live_panel.read_text() == STOCK_PANEL
 
 
+@pytest.mark.parametrize("switch_off", [_switch_off_on_request, _switch_off_by_the_safety_net])
 def test_a_printer_error_during_the_check_still_switches_the_plugin_off(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, switch_off: SwitchOff,
 ) -> None:
     """The copy could not be checked, so it may be the old firmware's file: it is dropped and the
     file is left as it is, and the reason says why."""
@@ -95,7 +97,7 @@ def test_a_printer_error_during_the_check_still_switches_the_plugin_off(
         tmp_path / DATA_ROOT_PLUGINS, NEW_FIRMWARE_WITH_THE_TWEAK, {})
     monkeypatch.setattr(jinni_client, "fetch", _printer_not_answering)
 
-    switched_off = _switch_off_on_request(tmp_path)
+    switched_off = switch_off(tmp_path)
 
     assert switched_off == [PANEL_PATCHER]
     reason = json.loads((plugin_dir / DEACTIVATED_MARKER).read_text())["reason"]
@@ -108,10 +110,26 @@ def _printer_not_answering(_path: str) -> str | None:
     raise ConnectionError("the printer did not answer")
 
 
+def test_a_printer_error_while_switching_everything_off_is_logged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Switching everything off writes no reason per plugin, so the dropped copies are logged."""
+    _plugin_dir, _manifest, live_panel, kept_panel = patcher_holding_the_old_original(
+        tmp_path / DATA_ROOT_PLUGINS, NEW_FIRMWARE_WITH_THE_TWEAK, {})
+    monkeypatch.setattr(jinni_client, "fetch", _printer_not_answering)
+
+    with caplog.at_level(logging.WARNING):
+        _switch_off_everything(tmp_path)
+
+    assert not kept_panel.exists()
+    assert live_panel.read_text() == NEW_FIRMWARE_WITH_THE_TWEAK
+    assert f"{PANEL_PATCHER}: {COPIES_REMOVED_UNCHECKED}" in caplog.text
+
+
 def test_a_printer_error_during_the_check_stops_a_removal_before_anything_is_taken_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    plugin_dir, _manifest, _live_panel, kept_panel = patcher_holding_the_old_original(
+    plugin_dir, _manifest, live_panel, kept_panel = patcher_holding_the_old_original(
         tmp_path / DATA_ROOT_PLUGINS, NEW_FIRMWARE_WITH_THE_TWEAK, {"stop": [PANEL_STOP]})
     stops_run: list[list[str]] = []
     monkeypatch.setattr(jinni_client, "fetch", _printer_not_answering)
@@ -122,4 +140,5 @@ def test_a_printer_error_during_the_check_stops_a_removal_before_anything_is_tak
 
     assert stops_run == []
     assert kept_panel.exists()
+    assert live_panel.read_text() == NEW_FIRMWARE_WITH_THE_TWEAK
     assert plugin_dir.exists()

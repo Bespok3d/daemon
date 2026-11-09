@@ -93,7 +93,8 @@ go back.
 
 A switch-off cannot be refused, so a check that fails there (the printer does not answer, the
 settings file is torn, a missing setting names the patched file) drops the plugin's copies, leaves
-the file as it is and says so in the reason (`settle_before_switch_off()`); a removal raises instead.
+the file as it is and says so in the reason (`settle_before_switch_off()`), or in the daemon's log
+when every plugin is switched off at once; a removal raises instead.
 
 A plugin switched off before the update already put its originals back but still keeps them, so
 removing it later would write them again. At the start of every recovery,
