@@ -1,11 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Property tests for the daemon's service dependency logic (topological recover ordering and the
-installed-dependents lookup). These are filesystem-backed (the functions read each plugin's
-manifest.json), so each example writes a small generated service graph into a fresh temp dir.
+dependents lookup). They run on the pure cores over in-memory manifests: a disk write per example
+made each one slow enough under load to trip Hypothesis' per-example deadline, a flake with no
+bearing on the logic under test.
 """
-import json
-import tempfile
 from pathlib import Path
 
 from hypothesis import given, settings
@@ -29,42 +28,37 @@ def acyclic_graph(draw: st.DrawFn) -> list[list[int]]:
     return requirements
 
 
-def write_plugin(root: Path, index: int, requires: list[int]) -> Path:
-    plugin_dir = root / f"p{index}"
-    plugin_dir.mkdir()
-    manifest = {
-        "name": f"p{index}",
-        "version": "1.0.0",
-        "provides": [{"service": f"svc{index}"}],
-        "require": [{"service": f"svc{provider}"} for provider in requires],
+def plugin_manifests(graph: list[list[int]]) -> dict[str, dict]:
+    """Plugin p{i} provides svc{i} and requires the services of its providers in `graph`."""
+    return {
+        f"p{index}": {
+            "name": f"p{index}",
+            "provides": [{"service": f"svc{index}"}],
+            "require": [{"service": f"svc{provider}"} for provider in requires],
+        }
+        for index, requires in enumerate(graph)
     }
-    (plugin_dir / "manifest.json").write_text(json.dumps(manifest))
-    return plugin_dir
 
 
 @settings(max_examples=50)
 @given(acyclic_graph())
-def test_topo_sort_places_every_provider_before_its_requirers(graph: list[list[int]]) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        dirs = [write_plugin(root, index, requires) for index, requires in enumerate(graph)]
-        ordered = dependency_order.topo_sort(dirs)
-        position = {entry.name: slot for slot, entry in enumerate(ordered)}
-        assert len(ordered) == len(dirs)
-        for index, requires in enumerate(graph):
-            for provider in requires:
-                assert position[f"p{provider}"] < position[f"p{index}"]
+def test_order_places_every_provider_before_its_requirers(graph: list[list[int]]) -> None:
+    manifests = {Path(plugin_id): manifest
+                 for plugin_id, manifest in plugin_manifests(graph).items()}
+    ordered = dependency_order.order_by_dependency(list(manifests), manifests)
+    position = {node.name: slot for slot, node in enumerate(ordered)}
+    assert len(ordered) == len(graph)
+    for index, requires in enumerate(graph):
+        for provider in requires:
+            assert position[f"p{provider}"] < position[f"p{index}"]
 
 
 @settings(max_examples=50)
 @given(acyclic_graph())
-def test_installed_dependents_lists_every_requirer_of_a_provided_service(
+def test_dependents_are_exactly_the_requirers_of_a_provided_service(
     graph: list[list[int]],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        for index, requires in enumerate(graph):
-            write_plugin(root, index, requires)
-        for index, requires in enumerate(graph):
-            for provider in requires:
-                assert f"p{index}" in dependencies.installed_dependents(root, f"p{provider}")
+    manifests = plugin_manifests(graph)
+    for provider in range(len(graph)):
+        requirers = {f"p{index}" for index, requires in enumerate(graph) if provider in requires}
+        assert set(dependencies.dependents_of(manifests, f"p{provider}")) == requirers

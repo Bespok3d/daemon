@@ -6,7 +6,7 @@ No I/O, no monkeypatching - this is the brain, exercised with values. `escaped` 
 catch-all) is asserted true ONLY for a genuinely unattributable failure, so a regression that lets a
 known failure slip past its specific fixer fails here.
 """
-from core.packages.recovery import restart
+from core.packages.recovery import net_report
 from core.safety import (
     AttributionIndex,
     FailureEvidence,
@@ -75,7 +75,7 @@ def test_recovery_result_reports_first_failure_traceback_not_clean_log() -> None
     decision = Decision(culprit="moonraker-notify", signal="notifier failed to import apprise",
                         fixer="component-failure")
 
-    result = restart._recovery_result(["moonraker-notify"], decision, final, failure)
+    result = net_report.recovery_result(["moonraker-notify"], decision, final, failure)
 
     assert result["ok"] is True
     output = result["log"][0]["items"][0]["output"]

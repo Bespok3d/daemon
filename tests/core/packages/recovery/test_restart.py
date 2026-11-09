@@ -26,8 +26,8 @@ def test_op_context_carries_operation_facts() -> None:
 
 
 def test_touches_core_service_true_for_klipper_restart() -> None:
-    assert restart._touches_core_service(["/etc/init.d/S60klipper restart"]) is True
+    assert restart.touches_core_service(["/etc/init.d/S60klipper restart"]) is True
 
 
 def test_touches_core_service_false_for_plugin_service_bounce() -> None:
-    assert restart._touches_core_service(["/etc/init.d/S65camera-hw restart"]) is False
+    assert restart.touches_core_service(["/etc/init.d/S65camera-hw restart"]) is False

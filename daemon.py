@@ -21,6 +21,7 @@ DEFAULT_PORT = 4269
 CERT_FILE = Path("/userdata/bespok3d/etc/daemon/server.crt")
 KEY_FILE = Path("/userdata/bespok3d/etc/daemon/server.key")
 TOKEN_REDACTION = "token_redaction"
+CORE_LOGGER = "core"
 
 
 def _ssl_kwargs() -> dict:
@@ -30,15 +31,18 @@ def _ssl_kwargs() -> dict:
 
 
 def log_config() -> dict[str, Any]:
-    """uvicorn's own logging, with every handler passing records through the token redaction."""
+    """uvicorn's own logging, with every handler passing records through the token redaction, and
+    the daemon's own `core` records (what the safety net decided) written beside them."""
     redacting_handlers = {
         name: {**handler, "filters": [TOKEN_REDACTION]}
         for name, handler in LOGGING_CONFIG["handlers"].items()
     }
+    core_logger = {"handlers": ["default"], "level": "INFO", "propagate": False}
     return {
         **LOGGING_CONFIG,
         "filters": {TOKEN_REDACTION: {"()": TokenRedactionFilter}},
         "handlers": redacting_handlers,
+        "loggers": {**LOGGING_CONFIG["loggers"], CORE_LOGGER: core_logger},
     }
 
 

@@ -14,7 +14,7 @@ from ..print_guard import guard_no_print
 from ..repair import restore_printer_state
 from .put_back import plugins_to_put_back
 from .reapply import ServiceLedger, record_failure, recover_one
-from .reboot_replaces import reboot_replaces_restart
+from .reboot_replaces import forget_restarts_left_to_reboot, leave_restarts_to_reboot
 from .restart import restart_services
 from .stale_originals import drop_kept_originals, settle_kept_originals_of_switched_off
 from .turn_order import next_to_recover
@@ -86,10 +86,10 @@ def _recover_in_order(
     return results, deferred_restarts
 
 
-def _services_row(plugin_root: Path, held_restarts: list[str], vars: dict[str, str],
-                  reboot_follows: bool) -> dict:
+def _services_row(data_root: Path, plugin_root: Path, held_restarts: list[str],
+                  vars: dict[str, str], reboot_follows: bool) -> dict:
     if reboot_follows:
-        return reboot_replaces_restart(held_restarts)
+        return leave_restarts_to_reboot(data_root, held_restarts)
     recover_context = OperationContext(OperationKind.RECOVER)
     return restart_services(plugin_root, held_restarts, vars, recover_context)
 
@@ -102,15 +102,17 @@ def run_recovery(
     safety net switched off (after an OTA, or after anything else left the printer half done).
     Every problem `selfcheck` reports is one this clears. Announces its own plan first: unlike a
     batch, the set and its order are decided here, from what is on the printer. Returns per-plugin
-    results. `reboot_follows` is the caller's promise to reboot the printer right after, which makes
-    the services restart redundant."""
+    results. `reboot_follows` is the caller's promise to reboot the printer right after: the reboot
+    does the services restart, and the caller asks for the safety net check once the printer is
+    back (`check_after_reboot`)."""
     guard_no_print()
+    forget_restarts_left_to_reboot(data_root)
     restore_printer_state(data_root, plugin_root, vars)
     if not plugin_root.exists():
         return []
     plugin_dirs = recoverable_plugin_dirs(plugin_root)
-    staying_off = _staying_off(plugin_root, plugin_dirs)
-    unchecked_results = settle_kept_originals_of_switched_off(staying_off, vars)
+    unchecked_results = settle_kept_originals_of_switched_off(
+        _staying_off(plugin_root, plugin_dirs), vars)
     if not plugin_dirs:
         return unchecked_results
     manifests, torn = _readable_manifests_and_torn(plugin_dirs)
@@ -124,6 +126,6 @@ def run_recovery(
     unique_restarts = list(dict.fromkeys(deferred_restarts))
     if unique_restarts:
         progress.plugin(SERVICES_PLUGIN_ID, len(ordered), len(ordered))
-        results.append(_services_row(plugin_root, unique_restarts, vars, reboot_follows))
+        results.append(_services_row(data_root, plugin_root, unique_restarts, vars, reboot_follows))
 
     return results

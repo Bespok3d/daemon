@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .daemon_services import DAEMON_SERVICES
 from .deactivation import DEACTIVATED_MARKER
-from .manifest import installed_manifest_dirs, readable_manifest
+from .manifest import installed_manifest_dirs, installed_manifests, readable_manifest
 
 
 def provided_services(manifest: dict) -> list[str]:
@@ -31,21 +31,21 @@ def required_services(manifest: dict) -> list[str]:
     return [service for service in legacy if service != "base"]
 
 
-def _depends_on_any(plugin_dir: Path, services: set[str]) -> bool:
-    """A manifest that cannot be read declares nothing, so it holds no removal back."""
-    manifest = readable_manifest(plugin_dir)
-    return manifest is not None and bool(set(required_services(manifest)) & services)
+def dependents_of(manifests: dict[str, dict], plugin_id: str) -> list[str]:
+    """The plugins among `manifests` (by plugin id) that require a service the target provides."""
+    provided = set(provided_services(manifests.get(plugin_id, {})))
+    if not provided:
+        return []
+    return [other_id for other_id, manifest in manifests.items()
+            if other_id != plugin_id and provided & set(required_services(manifest))]
 
 
 def installed_dependents(plugin_root: Path, plugin_id: str) -> list[str]:
-    """Installed plugins that depend on a service the target plugin provides."""
-    target_dir = plugin_root / plugin_id
-    target_manifest = readable_manifest(target_dir)
-    provided = set(provided_services(target_manifest)) if target_manifest else set()
-    if not provided:
+    """Installed plugins that depend on a service the target plugin provides. A manifest that
+    cannot be read declares nothing, so it holds no removal back."""
+    if not provided_services(readable_manifest(plugin_root / plugin_id) or {}):
         return []
-    others = [plugin_dir for plugin_dir in installed_manifest_dirs(plugin_root) if plugin_dir != target_dir]  # noqa: E501
-    return [plugin_dir.name for plugin_dir in others if _depends_on_any(plugin_dir, provided)]
+    return dependents_of(installed_manifests(plugin_root), plugin_id)
 
 
 def services_the_printer_can_serve(plugin_root: Path, being_applied: frozenset[str]) -> set[str]:

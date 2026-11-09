@@ -49,3 +49,27 @@ def test_build_index_maps_modules_and_sections(tmp_path: Path) -> None:
     ])
     assert index.by_section["notifier phone"] == "moonraker-notify"
     assert index.by_module["humanize"] == "print-time-human"
+
+
+def test_a_section_klipper_reports_in_lowercase_is_attributed(tmp_path: Path) -> None:
+    # Junior: a plugin placed [AFC]; Klipper halted with "Section 'afc' is not a valid config
+    # section", and a case-sensitive match left the plugin on and the printer stopped.
+    afc_config = tmp_path / "AFC.cfg"
+    afc_config.write_text("[AFC]\nVarFile: ../../AFC.var\n")
+    index = build_index([Placement("afc-lite", destinations=[str(afc_config)], module_names=[])])
+    culprit, signal = attribute(FailureSignals(sections=("afc",)), index)
+    assert culprit == "afc-lite"
+    assert "[AFC]" in signal
+
+
+def test_a_section_matching_in_exact_case_beats_one_in_another_case(tmp_path: Path) -> None:
+    capital_config = tmp_path / "capital.cfg"
+    capital_config.write_text("[Toolhead]\n")
+    small_config = tmp_path / "small.cfg"
+    small_config.write_text("[toolhead]\n")
+    index = build_index([
+        Placement("capital-plugin", destinations=[str(capital_config)], module_names=[]),
+        Placement("small-plugin", destinations=[str(small_config)], module_names=[]),
+    ])
+    culprit, _ = attribute(FailureSignals(sections=("toolhead",)), index)
+    assert culprit == "small-plugin"
