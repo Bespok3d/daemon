@@ -35,6 +35,16 @@ class AttributionIndex:
     def plugin_for_section(self, section: str) -> str | None:
         return self.by_section.get(section)
 
+    def placed_section(self, reported_section: str) -> tuple[str, str] | None:
+        """The placed section a failure report names, as (declared name, owning plugin). A service
+        may report a section in another case than the file declares it, so case is ignored when no
+        section matches exactly; an exact match always wins."""
+        if reported_section in self.by_section:
+            return reported_section, self.by_section[reported_section]
+        wanted = reported_section.lower()
+        return next(((declared, plugin_id) for declared, plugin_id in self.by_section.items()
+                     if declared.lower() == wanted), None)
+
     def plugin_for_module(self, module: str) -> str | None:
         return self.by_module.get(module)
 
@@ -73,9 +83,11 @@ def attribute(signals: FailureSignals, index: AttributionIndex) -> tuple[str | N
     """Name the plugin a jinni-reported failure signal points to, by matching the failing identifier
     (a config section, an import module, a traceback file) against the placement index. Generic: the
     daemon authors no device-specific text and reads no log."""
-    for section in signals.sections:
-        if section in index.by_section:
-            return index.by_section[section], f"the config section [{section}] it placed failed to load"  # noqa: E501
+    placed_sections = (index.placed_section(section) for section in signals.sections)
+    failed_section = next(filter(None, placed_sections), None)
+    if failed_section is not None:
+        declared_section, section_owner = failed_section
+        return section_owner, f"the config section [{declared_section}] it placed failed to load"
     for module in signals.modules:
         if module in index.by_module:
             return index.by_module[module], f"the Python import of {module!r} failed"

@@ -7,6 +7,10 @@ off, the same as a plugin that failed itself. Before, it stayed in the printer's
 and the printer stopped with an error every time it started. Its files are kept, the reason names
 what it was missing, and you can install it again once the plugin it needs works.
 
+When Klipper stopped on a plugin's config section written in capitals, such as `[AFC]`, the printer
+did not find which plugin it came from, because Klipper names it in small letters. It now finds it
+either way and switches that plugin off, so the printer starts again.
+
 ## 0.14.1
 
 An optional setting left blank now installs. Before, the printer refused the whole install because
