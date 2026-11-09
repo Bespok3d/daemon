@@ -7,8 +7,8 @@ single `router` that `api` mounts. Health checks and capabilities live in `healt
 live feeds in `feeds`, the single-plugin commands (install/reconfigure/uninstall) under `/plugins/`
 in `plugins`, the multipart batch-apply commands (update-batch/install-batch) under `/packages/` in
 `batch`, the other pack commands (recover/uninstall-batch) under `/packages/` in `packages`, the
-narrow setup repair in `setup_repair`, deactivate/teardown in `lifecycle`, and the access-control
-flow in `access`.
+narrow setup repair in `setup_repair`, deactivate/teardown in `lifecycle`, the access-control
+flow in `access`, and the printer's own try of a web address in `reach`.
 """
 from fastapi import APIRouter
 
@@ -21,6 +21,7 @@ from . import (
     packages,
     plugin_install,
     plugins,
+    reach,
     setup_repair,
 )
 
@@ -34,3 +35,4 @@ router.include_router(packages.router)
 router.include_router(setup_repair.router)
 router.include_router(lifecycle.router)
 router.include_router(access.router)
+router.include_router(reach.router)

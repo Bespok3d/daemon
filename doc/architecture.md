@@ -135,8 +135,8 @@ daemon asks; the jinni answers.
 This split is intentional and stable.
 
 - **HTTP** carries commands that need a definite request, response, and status code: install, uninstall,
-  reconfigure, recover, update-batch, teardown, deactivate, status, capabilities, selfcheck, and the
-  access flow. The caller gets one body and one status code.
+  reconfigure, recover, update-batch, teardown, deactivate, status, capabilities, selfcheck, the
+  access flow, and the printer's own try of a web address. The caller gets one body and one status code.
 - **Websockets** carry state that pushes on change: `/ws/print-state` (the jinni's blocked-action token
   set, relayed verbatim), `/ws/install-progress`, `/ws/plugin-log`. They are authenticated by a token
   query parameter (the bearer middleware is HTTP-only) and relay only on change.
@@ -201,7 +201,9 @@ New code lands in the right concern, never in a growing god file, and never name
   how it is keyed, patch handover).
 - **`api/routes/`** is thin route registration that delegates to core, one `APIRouter` per concern
   aggregated in `__init__`: `health`, `feeds` (the live websocket handlers), `plugins`, `packages`,
-  `lifecycle`, `access`. Handlers stay thin; the shared data-root constant lives in `core/data_root.py`.
+  `lifecycle`, `access`, `reach` (tries a web address from the printer, so the app can check a service
+  address from where a plugin will use it; the try itself is `core/web_reach.py`). Handlers stay thin;
+  the shared data-root constant lives in `core/data_root.py`.
 - **`core/intent.py`** translates the intent-based install block (`place` / `instrument` / `service` /
   `restart`) into mechanism operations, naming no device value: a placement or instrument resolves its
   CLASS through the jinni, and a restart resolves its HOOK through the jinni. It keeps only the

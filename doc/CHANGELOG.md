@@ -16,6 +16,9 @@ check from its next version on.
 The printer's log now says which plugin the safety net blamed and why, so a problem can be
 followed after the fact.
 
+The app can now ask the printer to try a web address, such as the address of a Spoolman server.
+The answer says whether the address works from the printer, which is where the plugin will use it.
+
 ## 0.14.2
 
 After a firmware update, a plugin that needs another plugin that did not come back is now switched
