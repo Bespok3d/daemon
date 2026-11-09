@@ -80,6 +80,28 @@ async def _recover_or_refuse(reboot_follows: bool) -> list[dict]:
         raise HTTPException(status_code=422, detail=f"{type(exc).__name__}: {exc}") from exc
 
 
+@router.post(
+    "/packages/recover/after-reboot",
+    response_model=PackResultsResponse,
+    summary="Run the safety net check a recover left to the printer reboot",
+)
+async def check_packages_after_reboot() -> PackResultsResponse:
+    """Called once the printer is back from the reboot that followed a `reboot_follows` recover.
+    No rows when that recover left no restart to the reboot."""
+    try:
+        results = await asyncio.to_thread(packages.check_after_reboot, jinni_client.paths())
+    except packages.BlockedActionError as exc:
+        raise HTTPException(status_code=409, detail={"error": "blocked", "blocked_actions": exc.blocked}) from exc  # noqa: E501
+    except Exception as exc:
+        # The check waits on the services and may deactivate plugins; a fault in it is reported,
+        # never a 500.
+        raise HTTPException(status_code=422, detail=f"{type(exc).__name__}: {exc}") from exc
+    return PackResultsResponse(
+        ok=all(entry["ok"] for entry in results),
+        results=[PluginRecoveryResult(**entry) for entry in results],
+    )
+
+
 class UninstallBatchBody(BaseModel):
     plugin_ids: list[str]
     cascade: bool = False

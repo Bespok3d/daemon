@@ -23,6 +23,12 @@ def installed_manifest_dirs(plugin_root: Path) -> list[Path]:
     ]
 
 
+def installed_manifests(plugin_root: Path) -> dict[str, dict]:
+    """Every installed plugin's manifest by plugin id. One that cannot be read declares nothing."""
+    return {plugin_dir.name: readable_manifest(plugin_dir) or {}
+            for plugin_dir in installed_manifest_dirs(plugin_root)}
+
+
 def readable_manifest(plugin_dir: Path) -> dict | None:
     """One plugin's manifest, or None when it cannot be read: absent, half written by a power cut,
     or holding something that is not a manifest. A plugin whose manifest is unreadable still has to

@@ -155,3 +155,25 @@ def test_one_torn_manifest_is_switched_off_while_every_other_plugin_recovers(
     assert by_id["torn-plugin"]["ok"] is False
     assert "manifest" in by_id["torn-plugin"]["reason"]
     assert (torn_dir / DEACTIVATED_MARKER).exists()
+
+
+def test_run_recovery_switches_off_a_dependent_whose_provider_is_already_off(
+        tmp_path: Path) -> None:
+    """A provider the safety net switched off earlier still declares its service. Recover must not
+    wire its dependent back: the printer would stop on it at the next start."""
+    plugin_root = tmp_path / "plugins"
+    _plugin(plugin_root, "rfid-reader", {
+        "version": "0.1.0", "install": BARE_INSTALL, "provides": [{"service": "rfid"}],
+    })
+    (plugin_root / "rfid-reader" / DEACTIVATED_MARKER).write_text("{}")
+    _plugin(plugin_root, "afc-lite", {
+        "version": "0.1.0", "install": BARE_INSTALL, "require": [{"service": "rfid"}],
+    })
+
+    results = run.run_recovery(tmp_path / "data", plugin_root, {})
+
+    assert results == [{
+        "plugin_id": "afc-lite", "ok": False, "skipped": True,
+        "reason": "dependency not satisfied: rfid", "log": [],
+    }]
+    assert (plugin_root / "afc-lite" / DEACTIVATED_MARKER).exists()

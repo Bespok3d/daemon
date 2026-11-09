@@ -51,6 +51,7 @@ from .manifest_warnings import (  # noqa: F401  re-export for api.routes
 from .plugin_dir import contained_plugin_dir  # noqa: F401  re-export for api.routes
 from .print_guard import guard_no_print  # noqa: F401  re-export for api.routes
 from .reconfigurer import run_reconfigure
+from .recovery import check_after_reboot as run_check_after_reboot
 from .recovery import (  # noqa: F401  re-export for api.routes
     recover_one,
     restart_services,
@@ -106,8 +107,14 @@ def recover(vars: dict[str, str], publish: ProgressSink | None = None) -> list[d
 
 def recover_before_reboot(vars: dict[str, str], publish: ProgressSink | None = None) -> list[dict]:
     """The full recover for a caller that reboots the printer right after: the reboot restarts
-    every service, so the services batch is left to it."""
+    every service, so the services batch is left to it, and so is the safety net check, which the
+    caller asks for with `check_after_reboot` once the printer is back."""
     return run_recovery(DATA_ROOT, PLUGIN_ROOT, vars, publish, reboot_follows=True)
+
+
+def check_after_reboot(vars: dict[str, str]) -> list[dict]:
+    """The safety net check a `recover_before_reboot` left to the reboot, run once it is back."""
+    return run_check_after_reboot(DATA_ROOT, PLUGIN_ROOT, vars)
 
 
 def repair_setup(vars: dict[str, str], selfcheck: Selfcheck) -> list[dict]:

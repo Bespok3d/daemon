@@ -12,11 +12,12 @@ from collections.abc import Iterator
 
 import pytest
 
-from daemon import log_config
+from core.packages.recovery import restart
+from daemon import CORE_LOGGER, log_config
 
 FEED_TOKEN = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 CLIENT = "10.6.9.4:55925"
-UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+DAEMON_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", CORE_LOGGER)
 
 
 def _logger_state(logger: logging.Logger) -> tuple[list[logging.Handler], int, bool]:
@@ -30,7 +31,7 @@ def _restore_logger(logger: logging.Logger, state: tuple[list[logging.Handler], 
 @pytest.fixture
 def daemon_log() -> Iterator[io.StringIO]:
     """The text the daemon's log handlers write, while the daemon's logging config is in force."""
-    loggers = [logging.getLogger(name) for name in UVICORN_LOGGERS]
+    loggers = [logging.getLogger(name) for name in DAEMON_LOGGERS]
     saved_states = [_logger_state(logger) for logger in loggers]
     logging.config.dictConfig(log_config())
     written = io.StringIO()
@@ -85,3 +86,12 @@ def test_a_traceback_that_names_the_url_logs_no_token(daemon_log: io.StringIO) -
 
     assert FEED_TOKEN not in daemon_log.getvalue()
     assert "RuntimeError: feed failed for /ws/print-state?[token redacted]" in daemon_log.getvalue()
+
+
+def test_a_safety_net_decision_reaches_the_daemon_log_without_a_token(
+    daemon_log: io.StringIO,
+) -> None:
+    restart._log.info(
+        "safety net: %s blamed %s (%s)", "stub", "spoolman", f"token={FEED_TOKEN}")
+
+    assert "safety net: stub blamed spoolman ([token redacted])" in daemon_log.getvalue()

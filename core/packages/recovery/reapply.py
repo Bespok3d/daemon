@@ -51,8 +51,9 @@ def announce_nothing(_finished_phase: dict) -> None:
 @dataclass
 class ServiceLedger:
     """What recovery knows about services while it walks the plugins in dependency order: which are
-    back up already, and which any installed plugin provides at all. A requirement no installed
-    plugin provides belongs to nothing on this printer, so it never holds a re-apply back."""
+    back up already, and which any installed plugin provides at all, switched off or not. A
+    requirement no installed plugin provides belongs to nothing on this printer, so it never holds
+    a re-apply back."""
 
     satisfied: set[str]
     provided_by_installed: set[str]

@@ -15,7 +15,7 @@ import pytest
 from core import packages
 from core.packages import repair, setup_repair
 from core.packages.recovery import run
-from core.packages.recovery.reboot_replaces import REBOOT_REPLACES_RESTART
+from core.packages.recovery.reboot_replaces import REBOOT_REPLACES_RESTART, RESTARTS_LEFT_TO_REBOOT
 
 MP = pytest.MonkeyPatch
 KLIPPER_RESTART = "/etc/init.d/S60klipper restart"
@@ -141,6 +141,8 @@ def test_a_recover_with_a_reboot_after_runs_no_services_batch(
     assert services["reason"] == REBOOT_REPLACES_RESTART
     assert [entry["label"] for entry in services["log"][0]["items"]] == [
         f"left to the reboot: {KLIPPER_RESTART}"]
+    kept_for_the_check = packages.DATA_ROOT / RESTARTS_LEFT_TO_REBOOT
+    assert json.loads(kept_for_the_check.read_text()) == [KLIPPER_RESTART]
 
 
 def test_a_recover_without_a_reboot_after_still_restarts_the_services(
@@ -155,3 +157,18 @@ def test_a_recover_without_a_reboot_after_still_restarts_the_services(
     packages.recover(VARS)
 
     assert printer["restarts"] == [[KLIPPER_RESTART]]
+
+
+def test_a_new_recover_forgets_restarts_an_earlier_one_left_to_a_reboot(
+    printer: dict[str, list], monkeypatch: MP,
+) -> None:
+    def restart_nothing(_root: Path, _held: list[str], *_rest: object) -> dict:
+        return {"plugin_id": "(services)", "ok": True, "skipped": False, "reason": "", "log": []}
+
+    monkeypatch.setattr(run, "restart_services", restart_nothing)
+    packages.recover_before_reboot(VARS)
+    assert (packages.DATA_ROOT / RESTARTS_LEFT_TO_REBOOT).exists()
+
+    packages.recover(VARS)
+
+    assert not (packages.DATA_ROOT / RESTARTS_LEFT_TO_REBOOT).exists()

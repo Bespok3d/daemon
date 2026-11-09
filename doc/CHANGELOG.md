@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.14.3
+
+When a plugin needs another plugin that is switched off, the printer now switches it off at once,
+together with every plugin that needed it in turn. Before, Klipper stopped on one of them at a
+time, so the printer restarted once for each: ten restarts and almost ten minutes on a printer
+with eight RFID readers, longer than the app waits. Now it takes one restart.
+It is also done before any restart, and recovery after a firmware update no longer puts such a
+plugin back.
+
+A change that ends in a printer reboot can now get the same check after the reboot that a restart
+gets, so a plugin that stops Klipper from starting is switched off then too. The app asks for this
+check from its next version on.
+
+The printer's log now says which plugin the safety net blamed and why, so a problem can be
+followed after the fact.
+
 ## 0.14.2
 
 After a firmware update, a plugin that needs another plugin that did not come back is now switched

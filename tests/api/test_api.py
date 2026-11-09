@@ -74,7 +74,7 @@ async def test_status_returns_ok(client: httpx.AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
-    assert body["version"] == "0.14.2"
+    assert body["version"] == "0.14.3"
 
 
 async def test_status_reports_the_persisted_printer_uuid(
@@ -493,6 +493,50 @@ async def test_recover_route_reports_a_top_level_fault_as_422_not_500(
     monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
     monkeypatch.setattr(packages, "recover", boom)
     response = await client.post("/packages/recover")
+    assert response.status_code == 422
+    assert "no reply from the jinni" in response.json()["detail"]
+
+
+async def test_after_reboot_route_returns_the_safety_net_row(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    net_row = {"plugin_id": "(services)", "ok": True, "skipped": False, "reason": "",
+               "log": [], "auto_deactivated": "spoolman"}
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "check_after_reboot", lambda _vars: [net_row])
+
+    response = await client.post("/packages/recover/after-reboot")
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["auto_deactivated"] == "spoolman"
+
+
+async def test_after_reboot_route_refuses_mid_print_as_409(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse_mid_print(_vars: dict[str, str]) -> list[dict]:
+        raise packages.BlockedActionError(frozenset({"restart-klipper"}))
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "check_after_reboot", refuse_mid_print)
+
+    response = await client.post("/packages/recover/after-reboot")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {"error": "blocked", "blocked_actions": ["restart-klipper"]}
+
+
+async def test_after_reboot_route_reports_a_fault_as_422_not_500(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def jinni_never_answers(_vars: dict[str, str]) -> list:
+        raise RuntimeError("no reply from the jinni for 'health'")
+
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", _MockAdapter)
+    monkeypatch.setattr(packages, "check_after_reboot", jinni_never_answers)
+
+    response = await client.post("/packages/recover/after-reboot")
+
     assert response.status_code == 422
     assert "no reply from the jinni" in response.json()["detail"]
 
