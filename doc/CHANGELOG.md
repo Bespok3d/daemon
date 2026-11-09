@@ -5,7 +5,14 @@
 The app can now ask the printer to try a web address, such as the address of a Spoolman server.
 The answer says whether the address works from the printer, which is where the plugin will use it.
 
-## 0.14.3
+Access tokens no longer end up in the printer's log. Tokens an older version wrote there are wiped
+when the printer starts.
+
+A printer that only lost its Bespok3d setup lines is now put right without installing every plugin
+again, so the repair is much quicker. If anything else is wrong, this quick repair is not used.
+
+Recovery no longer restarts the printer's services one by one when a reboot comes right after, which
+made it slow. The report says the reboot took care of them.
 
 When a plugin needs another plugin that is switched off, the printer now switches it off at once,
 together with every plugin that needed it in turn. Before, Klipper stopped on one of them at a
@@ -16,12 +23,10 @@ plugin back.
 
 A change that ends in a printer reboot can now get the same check after the reboot that a restart
 gets, so a plugin that stops Klipper from starting is switched off then too. The app asks for this
-check from its next version on.
+check from 0.7.7 on.
 
 The printer's log now says which plugin the safety net blamed and why, so a problem can be
 followed after the fact.
-
-## 0.14.2
 
 After a firmware update, a plugin that needs another plugin that did not come back is now switched
 off, the same as a plugin that failed itself. Before, it stayed in the printer's settings
@@ -53,8 +58,6 @@ switched off together with it.
 When Klipper stopped on a plugin's config section written in capitals, such as `[AFC]`, the printer
 did not find which plugin it came from, because Klipper names it in small letters. It now finds it
 either way and switches that plugin off, so the printer starts again.
-
-## 0.14.1
 
 An optional setting left blank now installs. Before, the printer refused the whole install because
 an empty value did not pass the allowed-characters check, even when the plugin said the setting
