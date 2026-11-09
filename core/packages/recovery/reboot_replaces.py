@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ...results import SERVICES_PLUGIN_ID, item, phase
 from ...safety import OperationContext, OperationKind
+from ..batch_rows import switched_off_rows
 from ..print_guard import guard_no_print
 from .restart import safety_net_check, touches_core_service
 
@@ -35,9 +36,10 @@ def leave_restarts_to_reboot(data_root: Path, held_restarts: list[str]) -> dict:
 
 def check_after_reboot(data_root: Path, plugin_root: Path, vars: dict[str, str]) -> list[dict]:
     """The safety net check for the restarts a recover left to the reboot: no rows when none were
-    left or none of them restarts a core service, one services row otherwise. The kept restarts
-    are spent once the check has run, so a later call never checks an old recover a second time;
-    a check that fails or is refused during a print keeps them for the next call."""
+    left or none of them restarts a core service, otherwise one row for each plugin the net
+    switched off and then the services row. The kept restarts are spent once the check has run, so
+    a later call never checks an old recover a second time; a check that fails or is refused during
+    a print keeps them for the next call."""
     marker = data_root / RESTARTS_LEFT_TO_REBOOT
     if not marker.exists():
         return []
@@ -59,7 +61,10 @@ def _check_held_restarts(plugin_root: Path, held_restarts: list[str],
         return []
     recovered = safety_net_check(plugin_root, held_restarts, vars,
                                  OperationContext(OperationKind.RECOVER))
-    return [recovered if recovered is not None else _healthy_row()]
+    if recovered is None:
+        return [_healthy_row()]
+
+    return [*switched_off_rows(recovered), recovered]
 
 
 def _healthy_row() -> dict:

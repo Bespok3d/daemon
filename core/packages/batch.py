@@ -14,7 +14,7 @@ from pathlib import Path
 from ..results import SERVICES_PLUGIN_ID
 from ..safety import OperationContext, OperationKind
 from .batch_one import apply_one
-from .batch_plan import BatchPlan
+from .batch_plan import BatchPlan, Spec
 from .batch_progress import BatchProgress
 from .batch_rows import failed_result, install_error, settle_after_safety_net
 from .dependencies import provided_services
@@ -41,33 +41,47 @@ def _apply_or_report(
         return failed_result(plugin_id, install_error(exc), []), []
 
 
+def _take_turn(
+    plugin_root: Path, plan: BatchPlan, spec: Spec, left_out: str | None, notify: PhaseListener,
+) -> tuple[dict, list[str]]:
+    package_path, manifest = spec
+    plugin_id = manifest["name"]
+    if left_out is not None:
+        return skipped_result(plugin_id, left_out), []
+
+    return _apply_or_report(plugin_root, plan, package_path, plugin_id, notify)
+
+
+def _unreadable_rows(plan: BatchPlan, progress: BatchProgress) -> list[dict]:
+    rows = [failed_result(plugin_id, reason, []) for plugin_id, reason in plan.unreadable.items()]
+    for unreadable_row in rows:
+        progress.outcome(unreadable_row)
+
+    return rows
+
+
 def _apply_each(
     plugin_root: Path, plan: BatchPlan, progress: BatchProgress, kind: OperationKind,
 ) -> tuple[list[dict], list[str]]:
-    """Apply each package in order (announcing the plugin and streaming its phases), collecting the
-    per-plugin results and every deferred restart command for the caller to run once.
+    """Apply each package in order (announcing the plugin, streaming its phases and then how its
+    turn ended), collecting the per-plugin results and every deferred restart command for the
+    caller to run once.
 
     A plugin only gets its turn once the plugins it needs are actually on the printer, decided here
     and now rather than at the start of the call, so a plugin the printer rolled back mid-batch
     takes the plugins that need it out with it instead of leaving them running against a service
     that is not there. This is recover's per-plugin precondition skip, on the install side."""
-    results: list[dict] = [
-        failed_result(plugin_id, reason, []) for plugin_id, reason in plan.unreadable.items()
-    ]
+    results = _unreadable_rows(plan, progress)
     deferred_restarts: list[str] = []
     satisfied = services_already_on_the_printer(plugin_root, plan.plugin_ids())
     providers = plan.providers_in_batch()
     total = len(plan.specs)
-    for index, (package_path, manifest) in enumerate(plan.specs):
-        plugin_id = manifest["name"]
-        progress.plugin(plugin_id, index, total)
+    for index, spec in enumerate(plan.specs):
+        manifest = spec[1]
+        progress.plugin(manifest["name"], index, total)
         left_out = why_not_applied(manifest, plan.refused, providers, satisfied, kind)
-        if left_out is not None:
-            results.append(skipped_result(plugin_id, left_out))
-            continue
-        result, deferred = _apply_or_report(
-            plugin_root, plan, package_path, plugin_id, progress.phase,
-        )
+        result, deferred = _take_turn(plugin_root, plan, spec, left_out, progress.phase)
+        progress.outcome(result)
         if result["ok"]:
             satisfied.update(provided_services(manifest))
         results.append(result)
@@ -89,4 +103,4 @@ def run_batch(
     ctx = OperationContext(kind, plugin_id=lone_plugin_id)
     services_row = restart_services(plugin_root, unique_restarts, plan.base_vars, ctx)
 
-    return [*settle_after_safety_net(results, services_row), services_row]
+    return [*settle_after_safety_net(results, services_row, progress), services_row]

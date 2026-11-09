@@ -220,3 +220,47 @@ def test_run_recovery_switches_off_a_dependent_whose_provider_is_already_off(
         "reason": "dependency not satisfied: rfid", "log": [],
     }]
     assert (plugin_root / "afc-lite" / DEACTIVATED_MARKER).exists()
+
+
+def test_run_recovery_announces_a_dependent_whose_provider_is_off_as_skipped(
+        tmp_path: Path) -> None:
+    """The live list must show the switched-off dependent as left out, never ticked as done."""
+    plugin_root = tmp_path / "plugins"
+    _plugin(plugin_root, "rfid-reader", {
+        "version": "0.1.0", "install": BARE_INSTALL, "provides": [{"service": "rfid"}],
+    })
+    (plugin_root / "rfid-reader" / DEACTIVATED_MARKER).write_text("{}")
+    _plugin(plugin_root, "afc-lite", {
+        "version": "0.1.0", "install": BARE_INSTALL, "require": [{"service": "rfid"}],
+    })
+    published: list[dict] = []
+
+    run.run_recovery(tmp_path / "data", plugin_root, {}, published.append)
+
+    outcomes = [event for event in published if event["type"] == "outcome"]
+    assert outcomes == [{"type": "outcome", "plugin_id": "afc-lite", "ok": False, "skipped": True}]
+
+
+def _net_switches_off_camera(_plugin_root: Path, _restarts: list[str], _vars: dict[str, str],
+                             _ctx: object) -> dict:
+    return {"plugin_id": "(services)", "ok": False, "skipped": False, "reason": "", "log": [],
+            "auto_deactivated": "camera", "fix_detail": "klipper did not come back"}
+
+
+def test_run_recovery_reports_a_plugin_the_closing_restart_switched_off_as_failed(
+        tmp_path: Path, monkeypatch: MP) -> None:
+    """The closing restart's safety net took the plugin off, so its row and its live outcome must
+    say it failed, not keep the success its re-apply had before the restart."""
+    plugin_root = tmp_path / "plugins"
+    _plugin(plugin_root, "camera", {"version": "0.1.0", "install": {
+        **BARE_INSTALL, "start": ["/etc/init.d/S60klipper restart"]}})
+    monkeypatch.setattr(run, "restart_services", _net_switches_off_camera)
+    published: list[dict] = []
+
+    results = run.run_recovery(tmp_path / "data", plugin_root, {}, published.append)
+
+    camera = next(result for result in results if result["plugin_id"] == "camera")
+    assert (camera["ok"], camera["auto_deactivated"]) == (False, "camera")
+    assert "klipper did not come back" in camera["reason"]
+    outcomes = [event["ok"] for event in published if event["type"] == "outcome"]
+    assert outcomes == [True, False]
