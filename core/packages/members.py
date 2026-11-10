@@ -11,10 +11,12 @@ carrying one is refused whole rather than partly trusted.
 Containment. The daemon unpacks as root, and a member name is chosen by whoever built the package.
 An absolute name discards the plugin directory entirely (`Path("/a/b") / "/etc/passwd"` is
 `/etc/passwd`) and a `../` name stays textual in pathlib but is resolved by the kernel on the
-`unlink` syscall, so either one points the pre-write delete at a path elsewhere on the printer.
+`unlink` syscall, so either one points the pre-write delete at a path elsewhere on the printer. A
+name with a `..` is refused even when it resolves back inside: ZipFile drops the `..` that pathlib
+keeps, so the zip writes it at another path than the one every check measured.
 """
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TypeGuard
 
 from .signatures import SIGNATURE_MEMBER
@@ -71,13 +73,13 @@ def stays_inside_its_parent_dir(chosen_name: object) -> TypeGuard[str]:
 
 def undeclared_members(archive_members: list[str], manifest_files: object) -> list[str]:
     """The archive's members that the manifest never listed, and therefore never signed."""
-    declared = _declared_paths(manifest_files)
+    declared = declared_paths(manifest_files)
     return sorted(name for name in archive_members if _needs_declaring(name, declared))
 
 
 def escaping_members(plugin_dir: Path, archive_members: list[str]) -> list[str]:
     """The members whose destination lands outside the plugin's own directory."""
-    return sorted(name for name in archive_members if not _stays_inside(plugin_dir, name))
+    return sorted(name for name in archive_members if not stays_contained(plugin_dir, name))
 
 
 def escaping_declared_paths(plugin_dir: Path, manifest_files: object) -> list[str]:
@@ -86,19 +88,45 @@ def escaping_declared_paths(plugin_dir: Path, manifest_files: object) -> list[st
     absolute path here aims that chmod at a file elsewhere on the printer even when every archive
     member stays contained. doc/ paths are measured too: apply_modes never drops them."""
     return sorted(
-        path for path in _declared_paths(manifest_files) if not _stays_inside(plugin_dir, path)
+        path for path in declared_paths(manifest_files) if not stays_contained(plugin_dir, path)
     )
 
 
-def _declared_paths(manifest_files: object) -> set[str]:
-    """The paths a manifest declares. A malformed files[] declares nothing, so its members are
-    refused as undeclared instead of crashing the install on an attacker-shaped manifest."""
+def declared_entries(manifest_files: object) -> list[dict]:
+    """The files[] entries that name a path. A malformed files[] declares nothing, so its members
+    are refused as undeclared instead of crashing the install on an attacker-shaped manifest."""
     if not isinstance(manifest_files, list):
-        return set()
-    return {
-        entry["path"] for entry in manifest_files
+        return []
+    return [
+        entry for entry in manifest_files
         if isinstance(entry, dict) and isinstance(entry.get("path"), str)
-    }
+    ]
+
+
+def declared_paths(manifest_files: object) -> set[str]:
+    return {entry["path"] for entry in declared_entries(manifest_files)}
+
+
+def stays_contained(plugin_dir: Path, name: str) -> bool:
+    """Whether a package-chosen name is written, and measured, inside the plugin dir."""
+    return walks_only_down(name) and lands_inside(plugin_dir, name)
+
+
+def walks_only_down(name: str) -> bool:
+    """Whether a package-chosen name only ever steps down into the folder it is joined to."""
+    name_path = PurePosixPath(name)
+    return not name_path.is_absolute() and ".." not in name_path.parts
+
+
+def lands_inside(plugin_dir: Path, name: str) -> bool:
+    """Whether `name`, joined to the plugin dir and resolved through any symlink, is still in it.
+    A symlink loop leads nowhere that can be shown inside, and Python 3.11 reports it as a
+    RuntimeError rather than an OSError."""
+    try:
+        (plugin_dir / name).resolve().relative_to(plugin_dir.resolve())
+    except (ValueError, OSError, RuntimeError):
+        return False
+    return True
 
 
 def _needs_declaring(name: str, declared: set[str]) -> bool:
@@ -106,11 +134,3 @@ def _needs_declaring(name: str, declared: set[str]) -> bool:
         return False
     # A zip may carry an entry for a directory itself; only the files inside it are payload.
     return not name.endswith("/")
-
-
-def _stays_inside(plugin_dir: Path, name: str) -> bool:
-    try:
-        (plugin_dir / name).resolve().relative_to(plugin_dir.resolve())
-    except (ValueError, OSError):
-        return False
-    return True

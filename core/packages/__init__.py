@@ -5,8 +5,9 @@
 Re-exports the public package API the routes import and owns the plugin root, injecting it into the
 worker modules. Install and reconfigure live in `installer.py`; the batched-apply engine in
 `batch.py` drives the batched update (`updater.py`) and the batched install (`installer_batch.py`);
-the uninstall family in `uninstaller.py`, the deactivate/teardown lifecycle in `lifecycle.py`, and
-the post-OTA re-apply in `recovery/run.py`.
+the uninstall family in `uninstaller.py`, the deactivate/teardown lifecycle in `lifecycle.py`, the
+post-OTA re-apply in `recovery/run.py`, and the installed-file hashes and their restore in
+`file_drift.py` and `restore.py`.
 
 A .b3 package is a zip of manifest.json plus the plugin file tree. Signature verification is
 deferred until packages are signed.
@@ -17,6 +18,7 @@ from pathlib import Path
 from ..data_root import DATA_ROOT
 from .batch_progress import ProgressSink  # noqa: F401  re-export for api.routes
 from .batch_uninstaller import run_uninstall_batch
+from .damaged_zip import DamagedRestoreArchiveError  # noqa: F401  re-export for api.routes
 from .deactivation import DEACTIVATED_MARKER  # noqa: F401  re-export for api.routes
 from .deactivator import run_deactivate
 from .dependencies import provided_services  # noqa: F401  re-export for api.routes
@@ -30,6 +32,7 @@ from .errors import (
     NeedsFullRecoverError,  # noqa: F401  re-export for api.routes
     RequirementError,  # noqa: F401  re-export for api.routes
 )
+from .file_drift import file_hashes  # noqa: F401  re-export for api.routes
 from .installer import (
     PhaseListener,  # noqa: F401  re-export for api.routes
     run_install,
@@ -55,6 +58,7 @@ from .recovery import (  # noqa: F401  re-export for api.routes
     restart_services,
     run_recovery,
 )
+from .restore import restore_files  # noqa: F401  re-export for api.routes
 from .setup_repair import Selfcheck, run_setup_repair
 from .uninstaller import run_uninstall
 from .updater import run_update_batch

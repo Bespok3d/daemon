@@ -5,8 +5,9 @@ permissions. A .b3 is a zip of manifest.json plus the plugin's files; doc/ is ca
 deployed (printer space is at a premium).
 
 unpack_package brackets the extraction with the safety checks that belong to it: refuse a package
-this daemon is too old for, refuse mid-print, and refuse a package that would not fit, all before a
-byte is written, then validate the plugin's baked Python deps right after. Extraction itself is
+this daemon is too old for, refuse mid-print, refuse a package that would not fit, and refuse a
+package that left out a file the printer does not already hold as signed, all before a byte is
+written, then validate the plugin's baked Python deps right after. Extraction itself is
 in extraction.py, which is also what takes a part written extraction back off the printer.
 """
 
@@ -32,6 +33,7 @@ from .members import (
     undeclared_members,
 )
 from .pair_guard import guard_daemon_reaches_the_package_floor
+from .partial_package import refuse_unbacked_left_out_files
 from .plugin_dir import contained_plugin_dir
 from .print_guard import guard_no_print_during_restart
 from .unpacked_size import refuse_package_that_does_not_fit
@@ -79,7 +81,10 @@ def unpack_package(plugin_root: Path, package_path: Path) -> tuple[dict, Path, i
         # Refused before the plugin dir is created or touched, so a reinstall that trips a
         # containment check leaves the working install it would have replaced intact.
         _refuse_uncontained_package(plugin_dir, zf.namelist(), members, manifest.get("files", []))
+        # Measured first: it reads only the zip's own directory, while the next check hashes every
+        # kept file the package left out.
         refuse_package_that_does_not_fit(zf, plugin_root, members)
+        refuse_unbacked_left_out_files(plugin_dir, members, manifest)
         replacing_an_install = plugin_dir.is_dir()
         plugin_dir.mkdir(parents=True, exist_ok=True)
         extract_or_discard(zf, plugin_dir, members, replacing_an_install)

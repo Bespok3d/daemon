@@ -150,7 +150,11 @@ Do not stream a command's result over a side channel, and do not poll for state 
 - **Venv isolation.** The daemon's dependencies live in its own venv. It never pips into the system,
   Klipper, or Moonraker interpreters. A plugin's Python deps are baked into its package and installed
   offline (its own venv) or symlinked into the target interpreter's site-packages (a Klipper/Moonraker
-  extra), never installed live on the printer.
+  extra), never installed live on the printer. pip skips a wheel already installed at its version,
+  so after the offline install each baked wheel's files are checked against the RECORD pip wrote,
+  and only the torn wheels are installed again (`core/packages/venv_health.py`). A baked
+  distribution whose RECORD is gone loses its dist-info before the install, since pip cannot
+  uninstall it without one.
 - **Version single-source.** `version.py` `DAEMON_VERSION` is the source of truth. `manifest.json` mirrors
   it (`tests/test_manifest_version.py` enforces equality), and `tests/api/test_api.py` tracks it. The
   app derives its expected version from `version.py` at build time (generated, not hand-mirrored), so
@@ -202,8 +206,11 @@ New code lands in the right concern, never in a growing god file, and never name
 - **`api/routes/`** is thin route registration that delegates to core, one `APIRouter` per concern
   aggregated in `__init__`: `health`, `feeds` (the live websocket handlers), `plugins`, `packages`,
   `lifecycle`, `access`, `reach` (tries a web address from the printer, so the app can check a service
-  address from where a plugin will use it; the try itself is `core/web_reach.py`). Handlers stay thin;
-  the shared data-root constant lives in `core/data_root.py`.
+  address from where a plugin will use it; the try itself is `core/web_reach.py`), `plugin_files`
+  (the hashes of an installed plugin's files, and putting back the changed ones from a zip checked
+  against the installed manifest; the work is `core/packages/file_drift.py` and `restore.py`, and
+  `damaged_zip.py` tells a zip that does not unpack, a 400, from a fault of the printer's own).
+  Handlers stay thin; the shared data-root constant lives in `core/data_root.py`.
 - **`core/intent.py`** translates the intent-based install block (`place` / `instrument` / `service` /
   `restart`) into mechanism operations, naming no device value: a placement or instrument resolves its
   CLASS through the jinni, and a restart resolves its HOOK through the jinni. It keeps only the

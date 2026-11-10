@@ -68,3 +68,12 @@ def requirements_install_command(venv_path: Path, wheel_files: list[Path]) -> li
         str(venv_path / "bin" / "pip"), "install", "--no-index", "--no-deps",
         *[str(wheel) for wheel in wheel_files],
     ]
+
+
+def wheel_repair_command(venv_path: Path, broken_wheel_files: list[Path]) -> list[str]:
+    """Reinstall the given baked wheels over what is there: pip otherwise skips a wheel whose name
+    and version are already installed, however torn its files are."""
+    return [
+        str(venv_path / "bin" / "pip"), "install", "--no-index", "--no-deps", "--force-reinstall",
+        *[str(wheel) for wheel in broken_wheel_files],
+    ]

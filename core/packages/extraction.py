@@ -9,7 +9,9 @@ extraction stops part written, and a part written plugin left on disk would make
 a plugin it never installed.
 """
 
+import os
 import shutil
+import stat
 import zipfile
 from pathlib import Path
 
@@ -24,7 +26,7 @@ def extract_or_discard(
     also where the older version's stock originals and settings live: deleting it would take the
     only copy of the files the printer needs to get back to stock."""
     try:
-        _write_members(zf, plugin_dir, members)
+        write_members(zf, plugin_dir, members)
     except (zipfile.BadZipFile, OSError) as damage:
         if not replacing_an_install:
             discard_extraction(plugin_dir)
@@ -76,14 +78,30 @@ def _discard_one(written: Path) -> None:
     written.unlink(missing_ok=True)
 
 
-def _write_members(zf: zipfile.ZipFile, plugin_dir: Path, members: list[str]) -> None:
+def write_members(package_zip: zipfile.ZipFile, plugin_dir: Path, members: list[str]) -> None:
     # Unlink an existing file before extracting over it. Overwriting a running binary in place fails
     # with ETXTBSY ("Text file busy"); unlinking keeps the running process's inode and writes a new
     # file, so a reinstall or version switch can replace a binary that is currently executing. The
     # delete runs as root, which is why the caller refuses an escaping member before the plugin dir
     # is ever created.
     for name in members:
-        dest = plugin_dir / name
-        if dest.is_file() or dest.is_symlink():
-            dest.unlink()
-        zf.extract(name, plugin_dir)
+        _unlink_what_is_in_the_way(plugin_dir / name)
+        package_zip.extract(name, plugin_dir)
+
+
+def entry_the_write_unlinks(member_path: Path) -> os.stat_result | None:
+    """What sits at a member's path and goes before the member is written there: anything but a
+    folder, a fifo included, since the write opens the path to fill it and a fifo would hang the
+    root daemon on that open until something reads it. None when nothing is in the way, and when
+    the disk cannot even look the path up: the write then fails on that same path, and that failure
+    is what reports the package that did not unpack."""
+    try:
+        on_disk = member_path.lstat()
+    except OSError:
+        return None
+    return None if stat.S_ISDIR(on_disk.st_mode) else on_disk
+
+
+def _unlink_what_is_in_the_way(member_path: Path) -> None:
+    if entry_the_write_unlinks(member_path) is not None:
+        member_path.unlink()

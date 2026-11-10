@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Where the fields the restore tests break sit in a zip's records (PKWARE APPNOTE 4.3.7, 4.3.12
+and 4.3.16), each offset counted from the start of its record."""
+
+LOCAL_HEADER_SIGNATURE = b"PK\x03\x04"
+LOCAL_FLAG_OFFSET = 6
+LOCAL_NAME_OFFSET = 30
+CENTRAL_DIRECTORY_SIGNATURE = b"PK\x01\x02"
+CENTRAL_EXTRACT_VERSION_OFFSET = 6
+CENTRAL_FLAG_OFFSET = 8
+CENTRAL_EXTRA_LENGTH_OFFSET = 30
+CENTRAL_HEADER_OFFSET_OFFSET = 42
+CENTRAL_NAME_OFFSET = 46
+END_RECORD_SIGNATURE = b"PK\x05\x06"
+END_RECORD_DIRECTORY_SIZE_OFFSET = 12
+END_RECORD_DIRECTORY_OFFSET_OFFSET = 16

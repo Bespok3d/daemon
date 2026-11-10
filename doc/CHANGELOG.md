@@ -67,6 +67,25 @@ an empty value did not pass the allowed-characters check, even when the plugin s
 could stay empty. Whether a blank is allowed is now the plugin's call, and a required setting left
 blank is still refused.
 
+An update can now leave out files the printer already has exactly as the plugin ships them, so
+updating a plugin with large files sends much less. If a file left out is missing on the printer
+or is not the same, the printer refuses the whole update before it changes anything, and the
+reason says which files. When several plugins update together, only that plugin's update is
+refused.
+
+The app can now ask the printer which of a plugin's files changed since it was installed, and put
+back just those files. Only the plugin's own files can be put back, and only exactly as the plugin
+shipped them; anything else is refused before a file is written. This is refused during a print,
+or when the printer has too little free space.
+
+A package with a file name that contains `..` is now refused. The printer wrote such a file
+somewhere else than where it checked it.
+
+A plugin that runs in its own Python setup now gets that setup repaired when it was damaged, for
+example by a power cut during an install. This happens on the next install, update or recovery.
+Before, the damaged part was kept, because it looked already installed. Only the damaged parts are
+installed again.
+
 ## 0.14.0
 
 Plugins that used to change Snapmaker's own program files now hand those files over to the base

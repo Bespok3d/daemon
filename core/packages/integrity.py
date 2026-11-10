@@ -8,6 +8,7 @@ into the printer.
 """
 
 import hashlib
+from io import BufferedIOBase
 from pathlib import Path
 
 # Why the archive did not match its signed manifest. Relayed as TOKENS the client localizes
@@ -16,12 +17,14 @@ CHECKSUM_MISMATCH = "checksum_mismatch"
 UNDECLARED_MEMBER = "undeclared_member"
 ESCAPING_MEMBER = "escaping_member"
 ESCAPING_PLUGIN_ID = "escaping_plugin_id"
+MISSING_MEMBER = "missing_member"
 
 
 class IntegrityError(Exception):
     """Install was refused because the package did not match its signed manifest: a file whose
-    sha256 differs, a member the manifest never listed, a member aimed outside the plugin dir, or a
-    plugin name that is not a plain directory name."""
+    sha256 differs, a member the manifest never listed, a member aimed outside the plugin dir, a
+    plugin name that is not a plain directory name, or a listed file the package left out that the
+    printer does not already hold as signed."""
 
     def __init__(self, plugin_id: str, reason: str, paths: list[str]) -> None:
         self.plugin_id = plugin_id
@@ -39,10 +42,16 @@ def _matches(plugin_dir: Path, entry: dict) -> bool:
     """An entry the packer never hashed cannot be vouched for, so a missing sha256 is a mismatch."""
     target = plugin_dir / entry["path"]
     recorded: object = entry.get("sha256")
-    return target.exists() and recorded == _sha256(target)
+    return target.exists() and recorded == sha256_of(target)
 
 
-def _sha256(target: Path) -> str:
-    digest = hashlib.sha256()
-    digest.update(target.read_bytes())
-    return digest.hexdigest()
+def sha256_of(target: Path) -> str:
+    """The hex sha256 of a file."""
+    with target.open("rb") as stream:
+        return sha256_of_stream(stream)
+
+
+def sha256_of_stream(stream: BufferedIOBase) -> str:
+    """The hex sha256 of an open file, read in chunks so a large binary never sits whole in
+    memory."""
+    return hashlib.file_digest(stream, "sha256").hexdigest()

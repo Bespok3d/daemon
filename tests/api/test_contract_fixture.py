@@ -25,11 +25,13 @@ from typing import Any
 
 from api.schemas import (
     CapabilitiesResponse,
+    FileHashesResponse,
     InstallResponse,
     PackResultsResponse,
     PluginConfigResponse,
     PluginRecoveryResult,
     ReconfigureResponse,
+    RestoreFilesResponse,
     StatusResponse,
 )
 from core.packages.batch_progress import BatchProgress
@@ -126,6 +128,10 @@ def _sample_fixture() -> dict[str, Any]:
     plugin_config = PluginConfigResponse.model_validate(
         {"vars": {"SPOOLMAN_SERVER": "http://spoolman.example:7912"}}
     )
+    file_hashes = FileHashesResponse(
+        files={"files/spoolman.cfg": "ab" * 32, "files/gone.cfg": None},
+    )
+    restore_files = RestoreFilesResponse(restored=["files/spoolman.cfg"])
     return {
         "install": install.model_dump(mode="json"),
         "reconfigure": reconfigure.model_dump(mode="json"),
@@ -134,6 +140,8 @@ def _sample_fixture() -> dict[str, Any]:
         "status": status.model_dump(mode="json"),
         "plugin_config": plugin_config.model_dump(mode="json"),
         "install_progress": _sample_install_progress(),
+        "file_hashes": file_hashes.model_dump(mode="json"),
+        "restore_files": restore_files.model_dump(mode="json"),
     }
 
 

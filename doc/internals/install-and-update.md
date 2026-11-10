@@ -53,7 +53,8 @@ Today the set holds one name, `migrate-patch`.
 | The package asks for a newer daemon than this printer runs | `IncompatiblePairError` (daemon side) | `pair_guard.py` | before extraction |
 | The jinni is older than this daemon will drive | `IncompatiblePairError` (jinni side) | `pair_guard.py` | before the op |
 | The package does not fit the printer's free space | `ValueError` | `unpacked_size.py` | before extraction |
-| The zip carries a member the manifest does not declare, or one whose path escapes the plugin directory | `IntegrityError` | `archive.py` | during extraction |
+| The zip carries a member the manifest does not declare, or one whose path escapes the plugin directory or has a `..` in it (the zip write drops a `..`, so such a name is written somewhere else than where it was checked) | `IntegrityError` | `archive.py` | during extraction |
+| The zip leaves out a file the manifest lists, and the printer does not already hold that file as the plugin's own regular file, reached through no link, with one hard link and the listed sha256, that writing the zip would not unlink (checked by inode, so a directory entry spelled `./` or `//` counts; a kept file the printer cannot read counts as missing; a doc file and a template's render target may always be left out) | `IntegrityError` (`MISSING_MEMBER`) | `partial_package.py` | before extraction |
 | A member unpacks to more than it declared, or the write fails part way through | `ValueError` | `extraction.py` | during extraction |
 | A placed file's sha256 does not match the manifest | `IntegrityError` (`CHECKSUM_MISMATCH`) | `file_drift.py` | after extraction |
 | The package's Python dependencies were never baked into it | `ValueError` | `baked_deps.py` | after extraction |
