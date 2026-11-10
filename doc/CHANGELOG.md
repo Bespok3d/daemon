@@ -14,6 +14,9 @@ again, so the repair is much quicker. If anything else is wrong, this quick repa
 Recovery no longer restarts the printer's services one by one when a reboot comes right after, which
 made it slow. The report says the reboot took care of them.
 
+The app now hears how each plugin's install turn ended, so a plugin that was skipped or switched
+off is never shown as done in the install list.
+
 When a plugin needs another plugin that is switched off, the printer now switches it off at once,
 together with every plugin that needed it in turn. Before, Klipper stopped on one of them at a
 time, so the printer restarted once for each: ten restarts and almost ten minutes on a printer
