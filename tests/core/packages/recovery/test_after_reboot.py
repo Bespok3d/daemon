@@ -14,6 +14,7 @@ import pytest
 
 from core.packages.errors import BlockedActionError
 from core.packages.recovery import reboot_replaces, restart
+from core.results import SERVICES_PLUGIN_ID
 from core.safety import AttributionIndex, FailureEvidence, OperationContext
 from core.safety.decision import Decision
 from protocol import DeviceHealth, FailureSignals, ServiceHealth
@@ -76,7 +77,8 @@ def test_a_plugin_that_breaks_the_printer_after_the_reboot_is_taken_off(
 
     assert seen["peeled"] == [PLUGIN]
     assert seen["restarts"] == [[KLIPPER_RESTART]]
-    assert [(row["ok"], row["auto_deactivated"]) for row in rows] == [(True, PLUGIN)]
+    assert [(row["plugin_id"], row["ok"], row["auto_deactivated"]) for row in rows] == [
+        (PLUGIN, False, PLUGIN), (SERVICES_PLUGIN_ID, True, PLUGIN)]
     assert not (data_root / reboot_replaces.RESTARTS_LEFT_TO_REBOOT).exists()
 
 

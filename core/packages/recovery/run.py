@@ -6,6 +6,7 @@ from pathlib import Path
 from ...results import SERVICES_PLUGIN_ID
 from ...safety import OperationContext, OperationKind
 from ..batch_progress import BatchProgress, ProgressSink, make_progress
+from ..batch_rows import settle_after_safety_net
 from ..deactivation import DEACTIVATED_MARKER
 from ..dependencies import provided_services
 from ..dependency_order import order_by_dependency
@@ -68,8 +69,8 @@ def _recover_in_order(
     progress: BatchProgress,
 ) -> tuple[list[dict], list[str]]:
     """Re-apply each plugin in dependency order, naming it by its place in the announced plan as it
-    starts so the app can show the user where recovery is. Returns the per-plugin results and the
-    restarts held back to the end."""
+    starts and saying how its turn ended, so the app can show the user where recovery is. Returns
+    the per-plugin results and the restarts held back to the end."""
     plan_position = {plugin_dir: position for position, plugin_dir in enumerate(ordered)}
     results: list[dict] = []
     deferred_restarts: list[str] = []
@@ -79,6 +80,7 @@ def _recover_in_order(
         waiting = [other for other in waiting if other != plugin_dir]
         progress.plugin(plugin_dir.name, plan_position[plugin_dir], len(ordered))
         result, deferred = recover_one(plugin_dir, manifests[plugin_dir], services, vars, progress.phase)  # noqa: E501
+        progress.outcome(result)
         results.append(result)
         if result["ok"]:
             deferred_restarts.extend(deferred)
@@ -124,8 +126,9 @@ def run_recovery(
     recovered, deferred_restarts = _recover_in_order(ordered, manifests, services, vars, progress)
     results = [*unchecked_results, *torn_results, *recovered]
     unique_restarts = list(dict.fromkeys(deferred_restarts))
-    if unique_restarts:
-        progress.plugin(SERVICES_PLUGIN_ID, len(ordered), len(ordered))
-        results.append(_services_row(data_root, plugin_root, unique_restarts, vars, reboot_follows))
+    if not unique_restarts:
+        return results
+    progress.plugin(SERVICES_PLUGIN_ID, len(ordered), len(ordered))
+    services_row = _services_row(data_root, plugin_root, unique_restarts, vars, reboot_follows)
 
-    return results
+    return [*settle_after_safety_net(results, services_row, progress), services_row]
