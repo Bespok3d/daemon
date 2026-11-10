@@ -7,19 +7,22 @@ Exposes FastAPI over HTTPS when a TLS cert is present (generated at enrollment).
 Auth: every request must carry a bearer token from the ACL.
 """
 
-from pathlib import Path
 from typing import Any
 
 import uvicorn
 from uvicorn.config import LOGGING_CONFIG
 
 from api import app
+from core.data_root import DATA_ROOT
 from core.log_redaction import TokenRedactionFilter
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 4269
-CERT_FILE = Path("/userdata/bespok3d/etc/daemon/server.crt")
-KEY_FILE = Path("/userdata/bespok3d/etc/daemon/server.key")
+# The certificate lives under the daemon's own data root, wherever that root is. On the U1 that is
+# /userdata/bespok3d; on a Klipper host it is the printer user's own $HOME/bespok3d. Spelling the
+# U1's path here made a generic daemon carry one device's fact and serve plain HTTP everywhere else.
+CERT_FILE = DATA_ROOT / "etc/daemon/server.crt"
+KEY_FILE = DATA_ROOT / "etc/daemon/server.key"
 TOKEN_REDACTION = "token_redaction"
 CORE_LOGGER = "core"
 

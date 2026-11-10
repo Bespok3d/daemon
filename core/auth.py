@@ -3,7 +3,7 @@
 """
 Auth: ACL enforcement and multi-client access management.
 
-ACL file: /userdata/bespok3d/auth/acl.json
+ACL file: $BESPOK3D/auth/acl.json
   {
     "keys": ["<identity>", ...],            # GPG fingerprint (PGP on) or client id (PGP off)
     "roles": { "<identity>": "admin|user" },

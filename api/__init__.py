@@ -3,7 +3,6 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -16,7 +15,9 @@ from core.printer_identity import ensure_printer_uuid
 from .middleware import BearerTokenMiddleware
 from .routes import router
 
-_CERT_FILE = Path("/userdata/bespok3d/etc/daemon/server.crt")
+# Where daemon.py puts the enrollment certificate, under whatever data root this printer uses.
+# Its presence is how the daemon tells a printer from a dev run, so it has to follow the root.
+_CERT_FILE = DATA_ROOT / "etc/daemon/server.crt"
 _on_printer = _CERT_FILE.exists()
 
 
