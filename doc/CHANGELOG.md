@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.2
+
+A plugin that changes one of the printer's own files now still installs after a firmware update
+adds a line at the start or the end of that file. Before, the printer refused it, even though the
+plugin's change still fitted the file.
+
 ## 0.15.1
 
 The printer now looks for its certificate inside its own Bespok3d folder, wherever that folder was

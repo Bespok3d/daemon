@@ -15,13 +15,12 @@ result is WRITTEN back through the jinni once. Undoing it is `patch_reversion`'s
 
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
 from .. import jinni_client
 from ..results import MAX_OUTPUT_BYTES, item, phase
 from . import baseline
-from .patch_tool import strictness_flags
+from .patch_tool import run_fragment
 from .user_vars import expand
 
 
@@ -75,14 +74,13 @@ def _apply_fragment(work_path: Path, patch_file: Path, patch_rel: str, crlf_stri
     builds on it (the old in-place cumulative patching, now on a bespok3d-tree copy). The item is
     named for the fragment, so a conflict points at the exact diff to re-author.
 
-    Applied under the same rules the fragment was PROVED to fit under (`strictness_flags`), because
+    Applied under the same rules the fragment was PROVED to fit under (`run_fragment`), because
     a probe and an apply that disagree hand the user a refusal nobody can act on. Asking BusyBox
     patch to skip an already-applied hunk (`-N`) made it read a plain addition at the end of a file
     as a reversed patch and reject it, on a file the very same BusyBox patch took without that
     flag: the printer refused a base package it had just proved fitted. Nothing needs the flag
     here, since every fragment goes onto a fresh copy of the file's own kept original."""
-    command = ["patch", *strictness_flags(), "--strip=1", str(work_path), str(patch_file)]
-    result = subprocess.run(command, capture_output=True, check=False)
+    result = run_fragment(work_path, patch_file, reverse=False)
     raw = (result.stdout + result.stderr).decode(errors="replace") + _collect_rej(work_path)
     _drop_the_mismatch_backup(work_path)
     ok = result.returncode == 0

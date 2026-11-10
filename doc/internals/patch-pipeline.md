@@ -59,6 +59,13 @@ the copy a printer needs to get back to stock, and nothing migrates or rewrites 
    that is neither is also left alone, so the normal apply reports its own reject and a plugin author
    sees why their patch did not fit instead of a silent pre-emption.
 
+Every probe and every apply hands `patch` each hunk with its context evened out
+(`hunk_context.context_evened`): where `diff` wrote fewer context lines on one side because the file
+began or ended there, the longer side is cut down to match. GNU and BusyBox patch otherwise pin such a
+hunk to that end of the file, and Apple's patch does not, so a firmware update that adds a line at the
+end of a file made the same install pass on a Mac and fail on the printer. The cost: the context lines
+cut off are not checked. A hunk with no context at all on one side is left as it is.
+
 Without step 2, a re-provision that captures an already-patched file traps the plugin re-patching its
 own output: the apply fails on every retry and the plugin silently stops working.
 
