@@ -17,6 +17,7 @@ from typing import Any
 
 from .. import jinni_client
 from ..data_root import PLUGIN_ROOT_RELATIVE
+from ..watch import rebooting
 from . import printer_state
 from .printer_state import (  # noqa: F401  re-export: the vocabulary of a printer-level problem
     PROBLEM_DIRECTORY_MISSING,
@@ -57,9 +58,10 @@ def _drift_reports(data_root: Path, vars: dict[str, str]) -> list[dict[str, Any]
 def _reboot_required() -> list[str]:
     """What the printer says only a power cycle will clear. A jinni older than this daemon has never
     heard the question, and that is "nothing to report", never a reason to lose the whole self-check
-    for a printer that is otherwise answering."""
+    for a printer that is otherwise answering. A state the watch is already rebooting to clear is
+    left out, so the user is not asked to power cycle a printer that is restarting itself."""
     try:
-        return jinni_client.reboot_required()
+        return rebooting.not_being_cleared(jinni_client.reboot_required())
     except Exception:  # noqa: BLE001  an unanswered question is not a finding
         return []
 

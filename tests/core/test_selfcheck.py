@@ -7,6 +7,7 @@ import pytest
 
 from core import selfcheck
 from core.selfcheck import printer_state
+from core.watch import rebooting
 
 MP = pytest.MonkeyPatch
 
@@ -296,3 +297,15 @@ def test_selfcheck_uses_persisted_user_vars(tmp_path: Path) -> None:
     issue = drift[0]["symlink_issues"][0]
     assert issue["kind"] == selfcheck.ISSUE_MISSING
     assert issue["link_path"] == str(extras_dir / "mod.py")
+
+
+def test_selfcheck_leaves_out_a_state_the_watch_is_rebooting_to_clear(
+    tmp_path: Path, monkeypatch: MP
+) -> None:
+    _sound_tree(tmp_path)
+    reported = ["screen-stuck", "other-state"]
+    monkeypatch.setattr(selfcheck.jinni_client, "reboot_required", lambda: reported)
+    monkeypatch.setattr(rebooting, "clearing", set())
+    rebooting.start_clearing("screen-stuck")
+
+    assert selfcheck.run_selfcheck(_vars(tmp_path))["reboot_required"] == ["other-state"]

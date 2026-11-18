@@ -87,6 +87,7 @@ def _sample_capabilities() -> CapabilitiesResponse:
         "kernel": {"release": "6.1.99", "vermagic": "6.1.99 SMP preempt mod_unload aarch64"},
         "klipper_version": "0.12.0",
         "jinni_version": "0.1.1",
+        "min_jinni_version": "0.1.10",
         "capability_flags": ["overlay", "managed-service"],
         "interface_extras": [],
         "preferred_registries": ["github:Bespok3d/main-index/index.json"],

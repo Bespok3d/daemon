@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The app<->daemon JSON response contract, split by concern. Importers keep their
 `from api.schemas import X`; each model lives in the sibling file for its concern (health, packages,
-capabilities, lifecycle, access, selfcheck, reach, plugin_files). The wire shapes the app parses raw
-are pinned by the golden fixture (tests/api/test_contract_fixture.py + contract_fixture.json)
-against contract.ts.
+capabilities, lifecycle, access, selfcheck, reach, plugin_files, active_watch). The wire shapes the
+app parses raw are pinned by the golden fixture (tests/api/test_contract_fixture.py +
+contract_fixture.json) against contract.ts.
 """
 from .access import (
     AccessActionResponse,
@@ -15,6 +15,7 @@ from .access import (
     AccessRequestResponse,
     PendingClient,
 )
+from .active_watch import ActiveWatchSetting
 from .capabilities import CapabilitiesResponse, Endpoint, KernelInfo
 from .health import LicenseResponse, OomReportResponse, StatusResponse
 from .lifecycle import DeactivateResponse, TeardownResponse
@@ -41,6 +42,7 @@ __all__ = [
     "AccessIdentityBody",
     "AccessRequestBody",
     "AccessRequestResponse",
+    "ActiveWatchSetting",
     "CapabilitiesResponse",
     "DeactivateResponse",
     "Endpoint",

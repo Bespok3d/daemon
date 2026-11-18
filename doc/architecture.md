@@ -138,7 +138,8 @@ This split is intentional and stable.
   reconfigure, recover, update-batch, teardown, deactivate, status, capabilities, selfcheck, the
   access flow, and the printer's own try of a web address. The caller gets one body and one status code.
 - **Websockets** carry state that pushes on change: `/ws/print-state` (the jinni's blocked-action token
-  set, relayed verbatim), `/ws/install-progress`, `/ws/plugin-log`. They are authenticated by a token
+  set, relayed verbatim), `/ws/install-progress`, `/ws/plugin-log`, `/ws/active-watch` (what the
+  active watch found and did). They are authenticated by a token
   query parameter (the bearer middleware is HTTP-only) and relay only on change.
 
 Do not stream a command's result over a side channel, and do not poll for state that already has a feed.
@@ -223,6 +224,20 @@ New code lands in the right concern, never in a growing god file, and never name
   `log_capture`). `print_state` stays device-free: `app_frame` shapes the jinni's blocked-action token
   set into the `/ws/print-state` frame, and the route relays the `subscribe_blocked_actions` stream
   verbatim, so the daemon classifies no print state.
+- **`core/watch/`** is the active watch: the printer reads its live logs (by default `/dev/kmsg`),
+  asks the jinni whether a line reports a state only a power cycle clears (today `screen-stuck`), and
+  carries out the user's remedy for it. Once seen, the token stays in `/selfcheck` `reboot_required`
+  until the next boot, whatever the remedy, except while a reboot the watch started is about to
+  clear it (`rebooting.py`, in memory). `notify` sends a `/ws/active-watch` frame.
+  `reboot-when-idle` reboots the printer when nothing is printing, and tells the user instead while a
+  print runs (or while the jinni cannot tell). It sends the reboot frame with a reboot `id`, waits
+  5 s, and checks again. The reboot is taken back when a print started meanwhile, the printer refused
+  it, the watch was stopped or changed during the 5 s, or the printer is still up 2 minutes after
+  accepting it: a notify frame carrying the same `id` tells the app. Nothing is kept on the printer
+  but the setting, `$BESPOK3D/etc/active-watch.json`, read and saved through `GET`/`PUT
+  /active-watch`: `{"enabled": bool, "files": [path, ...], "remedies": {token: "notify" |
+  "reboot-when-idle"}}`. A missing file means the defaults (on, `/dev/kmsg`, every token on
+  `notify`). A file that does not read as a setting is ignored, with a warning in the log.
 
 Each change is its own reviewed step: gate green to start, write the failing test first, make the
 change, gate green, stop for review.

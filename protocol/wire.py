@@ -42,7 +42,7 @@ CONTRACT_VERBS = frozenset({
     "run_actions", "wire", "unwire",
     "prune_dead_config_links", "remove_bespok3d_includes", "restore_bespok3d_includes",
     "bespok3d_include_status", "prune_bespok3d_config_dir", "reboot_required",
-    "fetch", "write_files",
+    "fetch", "write_files", "watch_line", "reboot_printer",
 })
 
 

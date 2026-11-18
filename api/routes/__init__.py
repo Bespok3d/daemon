@@ -9,12 +9,14 @@ in `plugins`, an installed plugin's file hashes and file restore in `plugin_file
 batch-apply commands (update-batch/install-batch) under `/packages/` in `batch`, the other pack
 commands (recover/uninstall-batch) under `/packages/` in `packages`, the
 narrow setup repair in `setup_repair`, deactivate/teardown in `lifecycle`, the access-control
-flow in `access`, and the printer's own try of a web address in `reach`.
+flow in `access`, the printer's own try of a web address in `reach`, and the active watch (its
+setting and its live feed) in `active_watch`.
 """
 from fastapi import APIRouter
 
 from . import (
     access,
+    active_watch,
     batch,
     feeds,
     health,
@@ -39,3 +41,4 @@ router.include_router(setup_repair.router)
 router.include_router(lifecycle.router)
 router.include_router(access.router)
 router.include_router(reach.router)
+router.include_router(active_watch.router)

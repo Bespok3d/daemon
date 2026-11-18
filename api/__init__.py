@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (C) 2026 unlucio and the Bespok3d contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -11,14 +12,27 @@ from core import jinni_client
 from core.data_root import DATA_ROOT
 from core.packages import BlockedActionError
 from core.printer_identity import ensure_printer_uuid
+from core.watch.settings import load_settings
 
 from .middleware import BearerTokenMiddleware
 from .routes import router
+from .routes.active_watch import watch_runner
 
 # Where daemon.py puts the enrollment certificate, under whatever data root this printer uses.
 # Its presence is how the daemon tells a printer from a dev run, so it has to follow the root.
 _CERT_FILE = DATA_ROOT / "etc/daemon/server.crt"
 _on_printer = _CERT_FILE.exists()
+
+_log = logging.getLogger(__name__)
+
+
+def _start_watch() -> None:
+    """The watch is one feature: when it cannot start, the daemon serves on without it, so the app
+    can still reach, recover and set up the printer."""
+    try:
+        watch_runner.start(load_settings())
+    except (OSError, RuntimeError):
+        _log.exception("active watch: could not start, the printer is not watched")
 
 
 @asynccontextmanager
@@ -32,8 +46,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # in-process. The spawn blocks on the handshake, so it runs off the event loop.
     process = await asyncio.to_thread(jinni_client.start_jinni) if _on_printer else None
     try:
+        # The watch reads the printer's own kernel log, so it starts only where the jinni child
+        # does.
+        if process is not None:
+            await asyncio.to_thread(_start_watch)
         yield
     finally:
+        await asyncio.to_thread(watch_runner.stop)
         if process is not None:
             jinni_client.stop_jinni(process)
 

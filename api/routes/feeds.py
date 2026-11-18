@@ -5,11 +5,13 @@ import contextlib
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket
 
 from core import auth, jinni_client, packages
 from core.data_root import DATA_ROOT
 from core.live import install_progress, log_capture, print_state
+
+from .feed_relay import relay_queue, relay_until_client_closes, wait_for_client_close
 
 router = APIRouter()
 
@@ -25,13 +27,6 @@ async def _relay_blocked_actions(websocket: WebSocket) -> None:
         await websocket.send_json(print_state.app_frame(blocked))
 
 
-async def _wait_for_client_close(websocket: WebSocket) -> None:
-    """Return when the app closes the socket (it never sends), so we can drop the relay side."""
-    with contextlib.suppress(WebSocketDisconnect):
-        while True:
-            await websocket.receive_text()
-
-
 @router.websocket("/ws/print-state")
 async def print_state_feed(websocket: WebSocket, token: str = Query(default="")) -> None:
     """Live blocked-action feed: token-auth the handshake (the HTTP bearer middleware skips ws),
@@ -42,7 +37,7 @@ async def print_state_feed(websocket: WebSocket, token: str = Query(default=""))
         return
     await websocket.accept()
     relay = asyncio.create_task(_relay_blocked_actions(websocket))
-    watch = asyncio.create_task(_wait_for_client_close(websocket))
+    watch = asyncio.create_task(wait_for_client_close(websocket))
     try:
         await asyncio.wait({relay, watch}, return_when=asyncio.FIRST_COMPLETED)
     finally:
@@ -53,11 +48,6 @@ async def print_state_feed(websocket: WebSocket, token: str = Query(default=""))
         await asyncio.gather(relay, watch, return_exceptions=True)
         with contextlib.suppress(Exception):
             await websocket.close()
-
-
-async def _relay_install_progress(websocket: WebSocket, queue: "asyncio.Queue[dict]") -> None:
-    while True:
-        await websocket.send_json(await queue.get())
 
 
 @router.websocket("/ws/install-progress")
@@ -71,16 +61,10 @@ async def install_progress_feed(websocket: WebSocket, token: str = Query(default
         return
     await websocket.accept()
     queue = install_hub.subscribe()
-    relay = asyncio.create_task(_relay_install_progress(websocket, queue))
-    watch = asyncio.create_task(_wait_for_client_close(websocket))
     try:
-        await asyncio.wait({relay, watch}, return_when=asyncio.FIRST_COMPLETED)
+        await relay_until_client_closes(websocket, relay_queue(websocket, queue))
     finally:
-        relay.cancel()
-        watch.cancel()
         install_hub.unsubscribe(queue)
-        with contextlib.suppress(Exception):
-            await websocket.close()
 
 
 def _plugin_log_source(plugin_id: str, pattern: str) -> tuple[Path, re.Pattern[str]] | None:
@@ -133,12 +117,6 @@ async def plugin_log_feed(
         return
     log_path, compiled = source
     await websocket.accept()
-    relay = asyncio.create_task(_relay_plugin_log(websocket, log_path, compiled, pattern or "url"))
-    watch = asyncio.create_task(_wait_for_client_close(websocket))
-    try:
-        await asyncio.wait({relay, watch}, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        relay.cancel()
-        watch.cancel()
-        with contextlib.suppress(Exception):
-            await websocket.close()
+    await relay_until_client_closes(
+        websocket, _relay_plugin_log(websocket, log_path, compiled, pattern or "url"),
+    )

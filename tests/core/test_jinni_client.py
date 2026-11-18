@@ -87,6 +87,38 @@ def test_capabilities_report_folds_in_interface_extras(fake_jinni: FakeKlipperJi
     assert "interface_extras" in report
 
 
+REBOOT_TOKEN = "a-reboot-token"
+LINE_NAMING_A_REBOOT = "a kernel line the jinni recognises"
+
+
+class _RebootWatchJinni:
+    """Names one kernel line as a reboot condition and records the reboot it was asked for. The
+    daemon never knows which lines matter, so the line and the token are opaque here."""
+
+    def __init__(self) -> None:
+        self.reboots_asked = 0
+
+    def watch_line(self, line: str) -> str | None:
+        return REBOOT_TOKEN if line == LINE_NAMING_A_REBOOT else None
+
+    def reboot_printer(self) -> None:
+        self.reboots_asked += 1
+
+
+def test_watch_line_relays_the_jinni_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    jinni = _RebootWatchJinni()
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", lambda: jinni)
+    assert jinni_client.watch_line(LINE_NAMING_A_REBOOT) == REBOOT_TOKEN
+    assert jinni_client.watch_line("an ordinary kernel line") is None
+
+
+def test_reboot_printer_asks_the_jinni_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    jinni = _RebootWatchJinni()
+    monkeypatch.setattr(jinni_client.dispatch, "get_jinni", lambda: jinni)
+    jinni_client.reboot_printer()
+    assert jinni.reboots_asked == 1
+
+
 def test_health_on_a_generic_target_reports_no_services(monkeypatch: pytest.MonkeyPatch) -> None:
     # The seam does not narrow to a printer tier: a generic box answers health() too, declaring no
     # critical services (so it is vacuously healthy).

@@ -9,8 +9,9 @@ runtime. On the printer the daemon spawns its jinni child (`supervisor.py`) and 
 over the Unix socket; in dev / tests the jinni is INJECTED, not imported.
 
 The seam splits by concern: `dispatch` (the routing mechanism + the `get_jinni` injection point a
-test overrides), `verbs` (the typed contract surface), `supervisor` (the jinni child lifecycle), and
-`transport` (the in-process-vs-socket switch). This package re-exports them as one facade.
+test overrides), `verbs` (the typed contract surface), `reboot` (the reboot verbs), `supervisor`
+(the jinni child lifecycle), and `transport` (the in-process-vs-socket switch). This package
+re-exports them as one facade.
 """
 from . import (
     dispatch,  # noqa: F401  exposes jinni_client.dispatch.get_jinni as the test injection point
@@ -25,6 +26,7 @@ from .actuation import (
     wire,
     write_files,
 )
+from .reboot import reboot_printer, reboot_required, watch_line
 from .supervisor import default_socket_path, start_jinni, stop_jinni
 from .transport import use_in_process, use_socket
 from .verbs import (
@@ -41,7 +43,6 @@ from .verbs import (
     oom_report,
     paths,
     placement_destination,
-    reboot_required,
     render_module_script,
     render_service_script,
     restart_command,
@@ -56,7 +57,7 @@ __all__ = [
     "capability_flags", "variant_facts", "classify_commands", "paths",
     "capabilities_report",
     "health", "blocked_actions", "subscribe_blocked_actions", "oom_report",
-    "bespok3d_include_status", "reboot_required",
+    "bespok3d_include_status", "reboot_required", "watch_line", "reboot_printer",
     "run_actions", "wire", "unwire",
     "prune_dead_config_links", "remove_bespok3d_includes", "restore_bespok3d_includes",
     "prune_bespok3d_config_dir",

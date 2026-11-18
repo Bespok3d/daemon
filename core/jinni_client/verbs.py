@@ -38,13 +38,6 @@ def bespok3d_include_status() -> dict[str, bool]:
     return cast(dict[str, bool], route("bespok3d_include_status", []))
 
 
-def reboot_required() -> list[str]:
-    """The tokens for every state this printer has got into that only a power cycle clears, empty
-    when there is none. Which states those are is device knowledge the daemon must never learn: a
-    printer whose jinni recognises none answers empty and nothing is offered to the user."""
-    return cast(list[str], route("reboot_required", []))
-
-
 def restart_command(hook: str) -> str | None:
     return cast(str | None, route("restart_command", [hook]))
 

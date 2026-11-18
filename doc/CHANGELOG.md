@@ -1,12 +1,14 @@
 # Changelog
 
-## 0.15.2
+## 0.15.0
+
+The printer now watches its kernel log and tells the app when its screen is stuck. You can choose
+to have it reboot itself instead, when it is not printing. After such a restart the app tells you
+why, even if it was closed at the time. It needs the printer's adapter at version 0.2.0 or later.
 
 A plugin that changes one of the printer's own files now still installs after a firmware update
 adds a line at the start or the end of that file. Before, the printer refused it, even though the
 plugin's change still fitted the file.
-
-## 0.15.1
 
 The printer now looks for its certificate inside its own Bespok3d folder, wherever that folder was
 put, so a printer that does not keep Bespok3d where a Snapmaker U1 keeps it still answers the app
@@ -17,8 +19,6 @@ is a Linux box, where Bespok3d lives in the printer user's own home folder.
 
 Nothing changes on a Snapmaker U1: the folder it has always used is the folder the daemon now asks
 for.
-
-## 0.15.0
 
 The app can now ask the printer to try a web address, such as the address of a Spoolman server.
 The answer says whether the address works from the printer, which is where the plugin will use it.
