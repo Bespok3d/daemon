@@ -2,6 +2,10 @@
 
 ## 0.15.0
 
+A plugin update that adds a new setting now installs and recovers with that setting's default.
+Before, the camera plugin failed with "no value supplied for CAMERA_FREEZE_RECOVERY" when the app
+or the saved settings did not know the new setting yet.
+
 The printer now watches its kernel log and tells the app when its screen is stuck. You can choose
 to have it reboot itself instead, when it is not printing. After such a restart the app tells you
 why, even if it was closed at the time. It needs the printer's adapter at version 0.2.0 or later.

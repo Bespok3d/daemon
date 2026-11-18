@@ -85,6 +85,23 @@ def declared_variables(manifest: dict) -> list[dict]:
     return cast(list[dict], manifest.get("requires", {}).get("variables", []))
 
 
+def _user_setting_fields(manifest: dict) -> list[dict]:
+    return cast(list[dict], manifest.get("config") or [])
+
+
+def _required_names(manifest: dict) -> set[str]:
+    return {spec["name"] for spec in declared_variables(manifest) if spec.get("required")}
+
+
+def _user_setting_defaults(manifest: dict) -> dict[str, str]:
+    # A required setting's default is only a form placeholder (e.g. "your-topic"); filling it in
+    # would install against a dummy value instead of refusing the missing setting.
+    required = _required_names(manifest)
+    return {field["key"]: _setting_as_text(field["default"])
+            for field in _user_setting_fields(manifest)
+            if "key" in field and "default" in field and field["key"] not in required}
+
+
 def with_declared_defaults(manifest: dict, supplied: dict[str, str]) -> dict[str, str]:
     """The settings an op actually applies: what the client sent, plus the manifest's own default
     for every setting the client did not send at all.
@@ -93,11 +110,15 @@ def with_declared_defaults(manifest: dict, supplied: dict[str, str]) -> dict[str
     about that setting, so a client that omits it must get that value. Without this the omitted
     name is in no expansion table, and the config file keeps the literal `$NAME` text.
 
+    The user-facing `config` fields count too: a plugin update that adds one finds saved settings
+    without it (recover, update), and an app that read an older catalog entry never sends it.
+
     A name the client DID send keeps the value it sent, empty string included: clearing a field is
     the user saying something, not the user saying nothing."""
-    defaults = {spec["name"]: _setting_as_text(spec["default"])
-                for spec in declared_variables(manifest) if "default" in spec}
-    return {**defaults, **supplied}
+    setting_defaults = _user_setting_defaults(manifest)
+    variable_defaults = {spec["name"]: _setting_as_text(spec["default"])
+                         for spec in declared_variables(manifest) if "default" in spec}
+    return {**setting_defaults, **variable_defaults, **supplied}
 
 
 def missing_required_vars(manifest: dict, available: dict[str, str]) -> list[str]:

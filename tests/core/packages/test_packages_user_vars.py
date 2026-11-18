@@ -117,6 +117,41 @@ def test_a_non_text_default_is_rendered_the_way_a_config_file_holds_it() -> None
     }
 
 
+def test_a_user_setting_added_by_an_update_gets_its_default() -> None:
+    """Saved settings from before an update lack the new setting; its default must still apply."""
+    manifest = {"name": "camera-hw-accel", "requires": {"variables": []}, "config": [
+        {"key": "WEBRTC_ENABLED", "type": "toggle", "default": "1"},
+        {"key": "CAMERA_FREEZE_RECOVERY", "type": "toggle", "default": "1"},
+    ]}
+
+    assert user_vars.with_declared_defaults(manifest, {"WEBRTC_ENABLED": "0"}) == {
+        "WEBRTC_ENABLED": "0", "CAMERA_FREEZE_RECOVERY": "1",
+    }
+
+
+def test_a_variable_default_wins_over_the_same_user_setting_default() -> None:
+    manifest = {"name": "spoolman",
+                "requires": {"variables": [{"name": "SPOOLMAN_MODE", "default": "auto"}]},
+                "config": [{"key": "SPOOLMAN_MODE", "type": "select", "default": "manual"}]}
+
+    assert user_vars.with_declared_defaults(manifest, {}) == {"SPOOLMAN_MODE": "auto"}
+
+
+def test_a_required_setting_placeholder_default_is_not_filled_in() -> None:
+    manifest = {"name": "moonraker-notify",
+                "requires": {"variables": [{"name": "APPRISE_URL", "required": True}]},
+                "config": [{"key": "APPRISE_URL", "type": "url",
+                            "default": "ntfy://ntfy.sh/your-topic"}]}
+
+    assert user_vars.with_declared_defaults(manifest, {}) == {}
+
+
+def test_a_config_field_without_a_key_is_ignored() -> None:
+    manifest = {"name": "odd", "config": [{"name": "MODE", "default": "auto"}]}
+
+    assert user_vars.with_declared_defaults(manifest, {}) == {}
+
+
 def test_refuse_missing_settings_names_the_required_setting_with_no_value() -> None:
     manifest = {"name": "spoolman", "requires": {"variables": [
         {"name": "SPOOLMAN_SERVER", "required": True},
