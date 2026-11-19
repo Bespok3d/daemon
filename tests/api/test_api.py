@@ -149,6 +149,30 @@ async def test_capabilities_reports_which_plugins_kept_their_signature(
     assert body["stored_signatures"] == ["spoolman"]
 
 
+async def test_capabilities_reports_the_fingerprint_each_installed_package_carried(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    packed_fingerprint = "ab" * 32
+    fingerprinted = tmp_path / "plugins" / "spoolman"
+    fingerprinted.mkdir(parents=True)
+    (fingerprinted / "manifest.json").write_text(json.dumps({"fingerprint": packed_fingerprint}))
+    monkeypatch.setattr(capabilities, "PLUGIN_ROOT", tmp_path / "plugins")
+
+    body = (await client.get("/capabilities")).json()
+    assert body["installed_fingerprints"] == {"spoolman": packed_fingerprint}
+
+
+async def test_capabilities_reports_the_fingerprint_each_machinery_package_was_placed_with(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    placed_fingerprint = "cd" * 32
+    (tmp_path / "bespok3d-daemon.json").write_text(json.dumps({"fingerprint": placed_fingerprint}))
+    monkeypatch.setattr(capabilities, "MACHINERY_MANIFEST_DIR", tmp_path)
+
+    body = (await client.get("/capabilities")).json()
+    assert body["machinery_fingerprints"] == {"bespok3d-daemon": placed_fingerprint}
+
+
 async def test_capabilities_installed_is_a_dict(client: httpx.AsyncClient) -> None:
     response = await client.get("/capabilities")
     body = response.json()

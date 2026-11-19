@@ -2,6 +2,14 @@
 
 ## 0.15.0
 
+The printer now tells the app the fingerprint of each installed plugin's package, so a plugin
+rebuilt at the same version can be offered as an update. Plugins packed before fingerprints existed
+are simply not listed.
+
+The printer now also tells the app the fingerprint of the daemon and the jinni it runs, so a daemon
+or a jinni rebuilt at the same version can be offered as an update too. A printer set up before
+this change reports none until the app next installs or updates them.
+
 A plugin update that adds a new setting now installs and recovers with that setting's default.
 Before, the camera plugin failed with "no value supplied for CAMERA_FREEZE_RECOVERY" when the app
 or the saved settings did not know the new setting yet.

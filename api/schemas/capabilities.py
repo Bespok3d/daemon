@@ -39,6 +39,16 @@ class CapabilitiesResponse(BaseModel):
         description="Installed plugins still holding the manifest signature their package shipped; "
                     "presence on disk only, never a verification result",
     )
+    installed_fingerprints: dict[str, str] = Field(
+        default_factory=dict,
+        description="Plugin ID → the fingerprint its stored signed manifest carries; a plugin "
+                    "packed before fingerprints existed is left out",
+    )
+    machinery_fingerprints: dict[str, str] = Field(
+        default_factory=dict,
+        description="Machinery package name (the daemon, the jinni) → the fingerprint of the "
+                    "signed manifest it was placed with; a package placed without one is left out",
+    )
     firmware_version: str = Field(description="Printer firmware version string, or 'unknown'")
     arch: str = Field(
         default="unknown",

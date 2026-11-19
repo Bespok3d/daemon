@@ -81,6 +81,8 @@ def _sample_capabilities() -> CapabilitiesResponse:
         "installed": {"spoolman": "0.1.8"},
         "deactivated": [],
         "stored_signatures": ["spoolman"],
+        "installed_fingerprints": {"spoolman": "ab" * 32},
+        "machinery_fingerprints": {"bespok3d-daemon": "cd" * 32},
         "firmware_version": "1.4.1",
         "arch": "aarch64",
         "board_class": "standard",

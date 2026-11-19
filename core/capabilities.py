@@ -9,14 +9,20 @@ The daemon just consumes them: it asks the jinni (through the seam) for the targ
 from api.schemas import CapabilitiesResponse
 from core import jinni_client
 from core.packages import PLUGIN_ROOT
+from core.packages.fingerprints import installed_fingerprints
+from core.packages.machinery_fingerprints import MACHINERY_MANIFEST_DIR, machinery_fingerprints
 from core.packages.signatures import plugins_with_stored_signature
 
 
 def get_capabilities() -> CapabilitiesResponse:
-    """The target's facts from the jinni, plus the one capability the daemon answers itself: which
-    installed plugins still hold the detached signature they shipped with (ADR-0037 gives the daemon
-    the filesystem, so a filesystem fact is not worth a round trip through the jinni)."""
+    """The target's facts from the jinni, plus the capabilities the daemon answers itself: which
+    installed plugins still hold the detached signature they shipped with, the fingerprint each
+    one's stored manifest carries, and the fingerprint the daemon and the jinni were placed with
+    (ADR-0037 gives the daemon the filesystem, so a filesystem fact is not worth a round trip
+    through the jinni)."""
     return CapabilitiesResponse(
         **jinni_client.capabilities_report(),
         stored_signatures=plugins_with_stored_signature(PLUGIN_ROOT),
+        installed_fingerprints=installed_fingerprints(PLUGIN_ROOT),
+        machinery_fingerprints=machinery_fingerprints(MACHINERY_MANIFEST_DIR),
     )
