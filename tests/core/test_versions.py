@@ -24,10 +24,17 @@ def test_orders_dotted_numbers_by_number_and_not_by_text(
     assert compare_versions(version, bound) == order
 
 
-@pytest.mark.parametrize("unreadable", ["", "unknown", "0.1.x", "v0.1.10", "0.1.10-beta"])
+@pytest.mark.parametrize("unreadable", ["", "unknown", "0.1.x", "v0.1.10", "0.1.x-beta"])
 def test_a_version_that_is_not_purely_numeric_compares_to_nothing(unreadable: str) -> None:
     assert compare_versions(unreadable, "0.1.10") is None
     assert compare_versions("0.1.10", unreadable) is None
+
+
+@pytest.mark.parametrize("tagged", ["0.1.10-pre", "0.1.10-beta.2", "0.1.10+dev.3a7f1c2"])
+def test_a_prerelease_or_build_tag_is_the_release_it_names(tagged: str) -> None:
+    """A staging daemon (`0.15.0-pre`) still proves a bad pair, as the app's floor check does."""
+    assert compare_versions(tagged, "0.1.10") == 0
+    assert known_to_be_below(tagged, "0.1.11")
 
 
 def test_at_least_and_at_most_meet_at_the_bound() -> None:

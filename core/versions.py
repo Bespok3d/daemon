@@ -7,16 +7,21 @@ Every version question the daemon asks is the same question (does this firmware 
 The app asks it in TypeScript, in `@bespok3d/contract`; those two are the only comparators in the
 system and they answer by the same rule.
 
-The rule: dotted numeric, the shorter side zero-padded so `1.4` and `1.4.0` are equal, and a version
-that is not purely numeric compares to nothing at all. Answering None rather than False keeps "older
-than the floor" apart from "no readable version", which is the difference between a pair that is
-proven bad and a question that could not be asked.
+The rule: the release triple alone, as the app's `compareReleases` reads it, so a staging
+prerelease (`0.15.0-pre`) or a build tag (`+dev.3a7f1c2`) is the release it names. Dotted
+numeric, the shorter side zero-padded so `1.4` and `1.4.0` are equal, and a release that is not
+purely numeric compares to nothing at all. Answering None rather than False keeps "older than the
+floor" apart from "no readable version", which is the difference between a pair that is proven bad
+and a question that could not be asked.
 """
+
+BUILD_TAG_SEPARATOR = "+"
+PRERELEASE_SEPARATOR = "-"
 
 
 def compare_versions(version: str, bound: str) -> int | None:
-    """`version` against `bound` as -1 / 0 / 1 by dotted-numeric order, or None when either side is
-    not purely numeric (an 'unknown' or malformed version compares to nothing)."""
+    """`version` against `bound` as -1 / 0 / 1 by dotted-numeric order, or None when either side's
+    release is not purely numeric (an 'unknown' or malformed version compares to nothing)."""
     version_key, bound_key = _numeric_key(version), _numeric_key(bound)
     if version_key is None or bound_key is None:
         return None
@@ -49,10 +54,15 @@ def known_to_be_below(version: str, floor: str) -> bool:
 def _numeric_key(version: str) -> tuple[int, ...] | None:
     # str(): a bound written unquoted (`"fw_min": 1.5`) reaches here as a JSON number; coerce so the
     # version the author meant compares, rather than crashing on `.split` of a float.
-    parts = str(version).split(".")
+    parts = _release_part(str(version)).split(".")
     if not all(part.isdigit() for part in parts):
         return None
     return tuple(int(part) for part in parts)
+
+
+def _release_part(version: str) -> str:
+    """The release a version names, without its build tag (`+...`) or prerelease label (`-...`)."""
+    return version.split(BUILD_TAG_SEPARATOR)[0].split(PRERELEASE_SEPARATOR)[0]
 
 
 def _zero_padded(
