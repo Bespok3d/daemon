@@ -34,6 +34,7 @@ def test_a_version_that_is_not_purely_numeric_compares_to_nothing(unreadable: st
 def test_a_prerelease_or_build_tag_is_the_release_it_names(tagged: str) -> None:
     """A staging daemon (`0.15.0-pre`) still proves a bad pair, as the app's floor check does."""
     assert compare_versions(tagged, "0.1.10") == 0
+    assert not known_to_be_below(tagged, "0.1.10")
     assert known_to_be_below(tagged, "0.1.11")
 
 
